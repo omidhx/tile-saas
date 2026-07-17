@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { sql } from "./client";
+import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 
 // تستِ یکپارچه — نیازمند DATABASE_URL به یک Postgres تازه. schema.sql خودش بارگذاری می‌شه.
@@ -13,11 +13,7 @@ const LOT1 = "a4444444-4444-4444-4444-444444444444"; // on_hand 100
 const LOT2 = "a9999999-9999-9999-9999-999999999999"; // on_hand 3
 
 before(async () => {
-  // BEGIN;/COMMIT; حذف می‌شن: postgres.js تراکنش صریح روی کانکشن pool را رد می‌کنه
-  // (UNSAFE_TRANSACTION). بدون آن‌ها، multi-statement روی simple-protocol خودش atomic است.
-  const schema = readFileSync(new URL("../../../db/schema.sql", import.meta.url), "utf8")
-    .replace(/^BEGIN;$/m, "").replace(/^COMMIT;$/m, "");
-  await sql.unsafe(schema);
+  await resetSchema();
   await sql.unsafe(`
     INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
     INSERT INTO product (id,tenant_id,code,name) VALUES ('a1111111-1111-1111-1111-111111111111','${T}','P1','P1');
