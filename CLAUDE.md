@@ -54,9 +54,28 @@ Vertical SaaS چندمستأجری برای کارخانه‌های کاشی/س�
 - `brand` روی `Product` بمونه (nullable، آماده‌ی مهاجرت به Lot اگه بچ‌ها relabel می‌شن).
 - TTL رزرو: پیش‌فرض ۲۴ ساعت. مشتری نهایی: متن آزاد در MVP (نه Entity).
 
-## دستورها
+## ساختار و دستورها
 
-_هنوز اسکلت پروژه ساخته نشده. به‌محض `create-next-app` و تنظیم دیتابیس، این بخش رو با دستورهای واقعی (`dev`, `build`, `test`, `lint`, migration) پر کن — این خودش یکی از اولین کارهاییه که باید انجام بشه._
+- `db/schema.sql` — اسکیمای Postgres، **منبع حقیقت**. RLS/composite FK اینجاست، نه در ORM.
+- `db/test_schema.sql` — تست دود schema (روی Postgres واقعی سبز).
+- `web/` — اپ Next.js (App Router, TS, src-dir) + Drizzle (introspect، نه بازتعریف).
+- `web/src/db/client.ts` — `withTenant()` که `app.tenant_id` را SET می‌کنه (RLS فعال).
+- `web/src/db/reservations.ts` — **الگوریتم رزرو**، پیاده‌سازی مرجعِ بخش ۶ spec.
+- `docs/ux-wireframes.md` — قرارداد رفتاریِ صفحه‌های نماینده.
+
+```bash
+# schema روی یه Postgres محلی
+psql "$DATABASE_URL" -f db/schema.sql
+
+cd web
+npm run dev        # سرور توسعه
+npm run build      # بیلد پروडاکشن
+npm test           # تست یکپارچه‌ی رزرو (نیازمند DATABASE_URL به Postgres تازه)
+npm run db:pull    # introspect اسکیمای typed از دیتابیس → src/db/generated/
+```
+
+اپ باید با نقشِ **non-superuser** به Postgres وصل شه، وگرنه RLS بایپس می‌شه.
+`DATABASE_URL` در `web/.env` (gitignored)؛ نمونه در `web/.env.example`.
 
 ## مرجع کامل
 
