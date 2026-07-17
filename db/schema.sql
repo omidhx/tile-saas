@@ -466,8 +466,8 @@ SELECT
         WHERE ri.lot_id = b.lot_id
           AND r.status = 'active'
           AND r.expires_at > now()
-    ), 0) AS held_qty_boxes,
-    b.on_hand_qty_boxes
+    ), 0)::int AS held_qty_boxes,     -- ::int چون SUM بیگ‌اینت می‌ده و رشته برمی‌گرده
+    (b.on_hand_qty_boxes
       - COALESCE((
             SELECT SUM(ri.quantity_boxes)
             FROM reservation_item ri
@@ -477,8 +477,28 @@ SELECT
               AND r.expires_at > now()
         ), 0)
       - b.allocated_qty_boxes
-      - b.blocked_qty_boxes AS available_qty_boxes
+      - b.blocked_qty_boxes)::int AS available_qty_boxes
 FROM inventory_balance b;
+
+-- ---------------------------------------------------------------------------
+-- bootstrap هویت: «کاربر عضو کدوم tenant/نمایندگی‌هاست؟»
+-- ---------------------------------------------------------------------------
+-- این کوئری ذاتاً cross-tenant است (قبل از انتخاب tenant اجرا می‌شه)، پس با RLSِ
+-- تک‌تننتی گیر می‌کنه. SECURITY DEFINER از RLS عبور می‌کنه ولی امنه چون فقط برای
+-- p_user_id داده‌شده ردیف می‌ده — اپ همیشه userIdِ احرازشده (از JWT) رو پاس می‌ده،
+-- هرگز ورودی کلاینت. این تنها راهِ درستِ عبور از RLS برای این نوع bootstrap است.
+CREATE FUNCTION user_contexts(p_user_id UUID)
+RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT)
+LANGUAGE sql SECURITY DEFINER STABLE AS $$
+    SELECT t.id, t.name, aa.id, aa.legal_name
+    FROM tenant_membership tm
+    JOIN tenant t         ON t.id = tm.tenant_id AND t.is_active
+    JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id
+    JOIN agent_account aa  ON aa.id = aau.agent_account_id AND aa.is_active
+    WHERE tm.user_id = p_user_id AND tm.is_active
+$$;
+REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;
+-- در دیپلوی: GRANT EXECUTE ON FUNCTION user_contexts(UUID) TO <نقشِ اپ>;
 
 -- ---------------------------------------------------------------------------
 -- ۸. RLS — لایه‌ی دوم دفاعی، روی هر جدولِ دارای tenant_id

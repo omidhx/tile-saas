@@ -140,4 +140,27 @@ BEGIN
     RAISE NOTICE 'تست ۴ (ایزوله‌ی RLS بین تننت‌ها) OK';
 END $$;
 
+-- =========================================================================
+-- تست ۵: user_contexts از RLS عبور می‌کنه (bootstrap هویتِ cross-tenant)
+-- =========================================================================
+GRANT EXECUTE ON FUNCTION user_contexts(UUID) TO app_role;
+INSERT INTO tenant_membership (tenant_id, user_id, role, is_active)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'a8888888-8888-8888-8888-888888888888', 'agent', true);
+INSERT INTO agent_account_user (tenant_id, agent_account_id, user_id, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'a5555555-5555-5555-5555-555555555555',
+          'a8888888-8888-8888-8888-888888888888', 'operator');
+DO $$
+DECLARE v_n INT; v_t UUID;
+BEGIN
+    SET LOCAL ROLE app_role;
+    -- app.tenant_id عمداً ست نشده — یعنی RLS باید همه‌چی رو فیلتر کنه، ولی تابعِ
+    -- SECURITY DEFINER بازم context کاربر رو می‌ده. این کلِ هدفِ تابعه.
+    SELECT count(*) INTO v_n FROM user_contexts('a8888888-8888-8888-8888-888888888888');
+    SELECT tenant_id INTO v_t FROM user_contexts('a8888888-8888-8888-8888-888888888888') LIMIT 1;
+    RESET ROLE;
+    ASSERT v_n = 1, format('باید ۱ context برگرده (tenant B نباید بیاد)، شد %s', v_n);
+    ASSERT v_t = '11111111-1111-1111-1111-111111111111', 'context باید tenant A باشه';
+    RAISE NOTICE 'تست ۵ (user_contexts از RLS عبور می‌کنه) OK';
+END $$;
+
 SELECT 'همه‌ی تست‌ها پاس شدن' AS result;

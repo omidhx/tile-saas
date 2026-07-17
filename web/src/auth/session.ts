@@ -18,7 +18,7 @@ export async function setSessionCookie(userId: string) {
   const token = await issueSession(userId);
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production", // در dev روی http، کوکی Secure برنمی‌گرده
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
