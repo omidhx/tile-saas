@@ -116,9 +116,9 @@ BEGIN
         RAISE EXCEPTION 'تست ۳ب شکست: backorder با lot باید رد می‌شد';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
-    INSERT INTO sales_dispatch_item (tenant_id, dispatch_id, fulfillment_type, variant_id, quantity_boxes)
+    INSERT INTO sales_dispatch_item (tenant_id, dispatch_id, fulfillment_type, backorder_status, variant_id, quantity_boxes)
     VALUES ('11111111-1111-1111-1111-111111111111', 'a7777777-7777-7777-7777-777777777777',
-            'backorder', 'a2222222-2222-2222-2222-222222222222', 5);
+            'backorder', 'pending_production', 'a2222222-2222-2222-2222-222222222222', 5);
     RAISE NOTICE 'تست ۳ (guard backorder) OK';
 END $$;
 

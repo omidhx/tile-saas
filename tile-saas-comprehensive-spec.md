@@ -495,3 +495,70 @@ Event Sourcing/CQRS کامل (لجر append-only ساده همون فایده‌
 ## ۱۳. قدم بعدی
 
 مصاحبه‌ها (بخش ۷) مهم‌ترین قدم باقی‌مونده‌ان. بعد از اون: DDL نهایی PostgreSQL + wireframe متنی UX + `CLAUDE.md` (سند جدا، برای Claude Code).
+
+---
+
+## ۱۴. اصلاحات بازبینی v7.1 (بازخورد چند-مدلی)
+
+> این بخش بعد از بازبینی توسط چند مدل هوش مصنوعی اضافه شد. هر بند یا در `db/schema.sql` اعمال شده (با ✅) یا قرارداد/الگوریتمیه که پیاده‌سازی باید رعایت کنه. مواردی که رد شدن هم با دلیل ثبت شدن تا regression فکری برنگرده.
+
+### ۱۴.۱ چرخه‌ی عمر رزرو: تبدیل all-or-nothing (حذف `partially_converted`) ✅
+`held` فقط رزروهای `status='active'` رو می‌شمره. اگه `partially_converted` وجود داشت، به‌محض تبدیل جزئی کلِ hold از محاسبه خارج می‌شد و باقی‌مانده زودهنگام `available` دیده می‌شد. **MVP: تبدیل all-or-nothing** — statusها: `active/converted/expired/cancelled`. تبدیل جزئی به v2 موکول شد، و اگه لازم شد باید با `reservation_item.converted_qty_boxes` مدل بشه و `held = SUM(quantity - converted) WHERE status IN ('active') AND expires_at > now()`.
+
+### ۱۴.۲ الگوریتم Approval (تأیید SalesRequest: `held → allocated`)
+همون‌قدر که رزرو حساسه، این هم هست. باید در **یک تراکنش**:
+1. رزروِ مرجع رو بخون؛ شرط: `status='active' AND expires_at > now()` (نه فقط status — worker ممکنه هنوز expired نکرده باشه).
+2. `InventoryBalance` همه‌ی lotها رو `ORDER BY lot_id FOR UPDATE` قفل کن.
+3. `sales_request_allocation` رو بساز (مجموع تخصیصِ هر item ≤ `requested_qty_boxes`، فقط از lotهای هم‌variant/هم‌tenant).
+4. `allocated_qty_boxes += qty` (چک `allocated+blocked ≤ on_hand` توسط DB).
+5. رزرو → `converted` (از held خارج می‌شه، حالا در allocated است — بدون گپ زمانی).
+6. لجر append.
+7. COMMIT.
+
+### ۱۴.۳ الگوریتم `Dispatch → loaded` (idempotent و state-guarded)
+1. ردیف dispatch رو قفل کن؛ فقط اگه `status='ready_for_loading'` ادامه بده (guard علیه double-decrement).
+2. برای هر item `in_stock`: balance lot رو `FOR UPDATE` قفل، `on_hand -= qty` و `allocated -= qty`. item `backorder`: هیچ mutation موجودی.
+3. لجر append، `status='loaded'`، COMMIT.
+- `UPDATE ... WHERE status='ready_for_loading' RETURNING id` — اگه چیزی برنگشت، balance دست‌نخورده.
+- transition‌های ممنوع: `loaded→cancelled`، `delivered→cancelled`. لغوِ dispatch/request **قبل از** loaded باید `allocated` رو آزاد کنه (تراکنش معکوس).
+
+### ۱۴.۴ idempotency: scope + payload-hash ✅
+- `UNIQUE(tenant_id, idempotency_key)` (نه global) روی `reservation` و `import_batch`. ✅
+- `reservation.idempotency_request_hash` ✅: همون کلید + payload یکسان → همون رزرو (۲۰۰)؛ همون کلید + payload متفاوت → `409 idempotency_key_conflict` (نه رزرو بی‌سروصدا). پیاده‌شده در `reserve()` و تست‌شده.
+
+### ۱۴.۵ Snapshot import: scope + قواعد ✅ (schema) / قرارداد
+- `import_batch.scope_type (tenant/warehouse/brand)` + `scope_warehouse_id`/`scope_brand_id` ✅.
+- **قاعده:** ردیفِ غایب در فایل فقط **داخل همون scope** به صفر می‌ره، نه کل tenant (وگرنه فایل یک انبار، انبار دیگه رو wipe می‌کنه).
+- snapshot فقط `on_hand` رو دست می‌زنه، نه `allocated`/`held`. اگه `new_on_hand < allocated + blocked` → ردیف validation error می‌شه یا نیاز به override صریحِ staff داره؛ **هرگز** نباید موجودی زیر تعهدات رزروِ زنده بره.
+- **natural key برای Lot (تصمیم مصاحبه):** برای تشخیص «همون Lot قبلی» موقع import، به یه کلید طبیعی نیاز هست (مثلاً `tenant_id, variant_id, warehouse_id, batch_number, shade_code, caliber_code` با `NULLS NOT DISTINCT`). چون nullable بودن این‌ها به مصاحبه وابسته‌ست (بخش ۷.۱)، ایندکسش عمداً الان هاردکد نشده — قبل از پیاده‌سازی import قطعی کن.
+
+### ۱۴.۶ امنیت — عملیاتی
+- **سه نقش DB جدا:** `db_owner` (migration، مالک جدول‌ها)، `app_user` (اتصال اپ، **غیرمالک** — چون مالک جدول هم RLS رو bypass می‌کنه)، `readonly` (گزارش/بک‌آپ). `FORCE ROW LEVEL SECURITY` روی همه ✅ (schema).
+- **`SET LOCAL` در تراکنش** ✅: `withTenant()` از `set_config('app.tenant_id', …, true)` داخل `sql.begin` استفاده می‌کنه — پس context بین requestهای pool نشت نمی‌کنه.
+- **ایزوله‌ی سطح نماینده (نه فقط tenant):** RLS فقط tenant رو جدا می‌کنه. درون یک tenant، کوئری‌های agent-facing باید `agent_account_id` رو هم فیلتر کنن (staff همه رو می‌بینه، نماینده فقط مالِ خودش). این لایه در service layer است (`authorizeAgent`).
+- **`bin_location` فقط در API/DTO مخصوص staff** — endpointهای نماینده هرگز نباید selectش کنن (نه فقط UI). `/api/lots` رعایت می‌کنه.
+- **منبع tenant، نه body:** `authorizeAgent` هر `tenantId`/`agentAccountId` رو در برابر DB تأیید می‌کنه، پس مقدار body باور نمی‌شه.
+
+### ۱۴.۷ مدل داده — تکمیل‌ها ✅
+- `product_variant.sqcm_per_box`, `pieces_per_box` ✅ (برای «معادل X متر» و `per_piece`).
+- `sales_request_item`: `line_no` به‌جای `UNIQUE(request_id, variant_id)` ✅ + `requested_shade_code/caliber_code` — تا یک variant با دو شید در دو خطِ جدا (اتاق‌های مختلف) مجاز بشه.
+- `sales_dispatch_item`: CHECK قوی‌تر (`in_stock`⟺lot∧¬backorder_status؛ `backorder`⟺¬lot∧backorder_status) ✅ + composite FK `(tenant_id, lot_id, variant_id)` برای سازگاریِ lot↔variant ✅.
+- `agent_account_user` FK به `tenant_membership(tenant_id, user_id)` ✅ — کاربر باید عضو همون tenant باشه.
+- `audit_log.old_value/new_value JSONB` ✅ — برای اختلاف‌های مالی/موجودی.
+
+### ۱۴.۸ واحد پول و زمان (قرارداد)
+- **پول canonical = ریال (IRR) به‌صورت BIGINT.** UI می‌تونه تومان نشون بده (÷۱۰). هر جا پول ذخیره می‌شه همین واحد.
+- **timestampها UTC** در DB؛ UI با `Asia/Tehran` رندر می‌کنه؛ `now()` استانداردِ UTC.
+- **`blocked_qty_boxes`:** یعنی «فیزیکی موجوده ولی قابل‌فروش نیست» (QC/آسیب/hold). تغییرش فقط توسط staff و با `reason_code` در لجر.
+
+### ۱۴.۹ migration (قرارداد)
+`db/schema.sql` = اسکیمای مرجع برای نصب تازه. **هرگز روی دیتابیس production با داده دوباره اجراش نکن.** تغییرات prod فقط با migrationهای forward نسخه‌دار در `db/migrations/`. (فعلاً prod نداریم، پس اولین migration همون schema.sql است.)
+
+### ۱۴.۱۰ زیرساخت ایران (تکمیل بخش ۳)
+- **تصاویر محصول:** روی Object Storage داخل ایران (آروان/چابکان/…)، نه S3 خارجی. `next/image` رو با remote خارجی استفاده نکن (optimizer روی سرور ایران به fetch خارجی گیر می‌کنه) — یا `unoptimized`، یا لودر داخلی. (هم‌راستا با حذف `next/font/google` که همین دلیل رو داشت.)
+- **بک‌آپ:** اول روی VPS ایرانِ دومِ (دیتاسنتر متفاوت)، بعد کرون در ساعت خلوت به مقصد خارجی با retry.
+- **پنل پیامک:** ارائه‌دهنده‌ی ایرانی؛ `NotificationOutbox` با `attempt_count` + backoff برای تأخیر/شکست.
+
+### ۱۴.۱۱ رد شد (با دلیل)
+- **آرشیو/پارتیشن رزروهای منقضی، retention/partition برای audit/outbox/import:** برای مقیاس این پروژه (چند ده نماینده، بخش ۶) over-engineeringه؛ ایندکس جزئیِ `WHERE status='active'` کوئری held رو پوشش می‌ده. بعضی بازبین‌ها «۱۰۰۰ نماینده» فرض کردن که مقیاس این پروژه نیست. **trigger واقعی برای بازبینی:** اگه روزی هزاران رزرو فعالِ هم‌زمان شد.
+- **ورودی رزرو lot-based (نه variant-based با auto-FIFO):** MVP نماینده Lot رو می‌بینه و انتخاب می‌کنه (چون شید/کالیبر مهمه و ممکنه براش فرق کنه). auto-pickِ FIFO مقیدِ شید در سطح سرور، v2.

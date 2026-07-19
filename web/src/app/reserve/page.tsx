@@ -6,7 +6,7 @@ type Ctx = { tenantId: string; agentAccountId: string; agentLegalName: string; t
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
   shade_code: string | null; caliber_code: string | null;
-  available: number; boxes_per_pallet: number | null;
+  available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
 };
 
 export default function ReservePage() {
@@ -86,13 +86,15 @@ export default function ReservePage() {
       {lots.map((l) => {
         const bpp = l.boxes_per_pallet ?? 0;
         const pallets = bpp > 0 ? `${Math.floor(l.available / bpp)} پالت + ${l.available % bpp} کارتن` : null;
+        // شفافیت رند (wireframe/spec ۱۰): عدد واقعی متراژ، فقط اگه sqcm_per_box داشته باشیم
+        const meters = l.sqcm_per_box ? (l.available * l.sqcm_per_box / 10000).toFixed(2) : null;
         return (
           <div className="card" key={l.lot_id}>
             <div className="row">
               <strong>{l.name}</strong><span className="muted">{l.code}{l.grade ? ` — درجه ${l.grade}` : ""}</span>
             </div>
             <div className="muted">
-              قابل‌سفارش: {l.available} کارتن{pallets ? ` (${pallets})` : ""}
+              قابل‌سفارش: {l.available} کارتن{meters ? ` (معادل ${meters} متر)` : ""}{pallets ? ` — ${pallets}` : ""}
               {l.shade_code ? ` — شید ${l.shade_code}` : ""}{l.caliber_code ? ` کالیبر ${l.caliber_code}` : ""}
             </div>
             <div className="row" style={{ marginTop: ".5rem" }}>

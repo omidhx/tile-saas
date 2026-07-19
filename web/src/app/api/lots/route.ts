@@ -24,11 +24,12 @@ export async function GET(req: Request) {
     tx<{
       lot_id: string; name: string; code: string; grade: string | null;
       shade_code: string | null; caliber_code: string | null;
-      available: number; boxes_per_pallet: number | null;
+      available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
     }[]>`
       SELECT a.lot_id, p.name, p.code, pv.grade, l.shade_code, l.caliber_code,
              a.available_qty_boxes AS available,
-             COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet) AS boxes_per_pallet
+             COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet) AS boxes_per_pallet,
+             pv.sqcm_per_box
       FROM v_lot_availability a
       JOIN inventory_lot l    ON l.id = a.lot_id
       JOIN product_variant pv ON pv.id = l.variant_id

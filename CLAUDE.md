@@ -36,6 +36,7 @@ Vertical SaaS چندمستأجری برای کارخانه‌های کاشی/س�
 - ❌ `is_backorder` به‌صورت boolean ساده — کافی نیست؛ به‌جاش `fulfillment_type` (in_stock/backorder) + `backorder_status`
 - ❌ Redis / Optimistic Concurrency Control برای race condition — `SELECT FOR UPDATE` در تراکنش کوتاه برای این مقیاس (چند ده نماینده) کافیه
 - ❌ Event Sourcing / CQRS کامل، یا Prometheus/Grafana رسمی — over-engineering برای این مرحله
+- ❌ آرشیو/پارتیشن رزروهای منقضی یا retention policy زودهنگام — برای مقیاس این پروژه (چند ده نماینده) over-engineeringه؛ ایندکس جزئیِ `WHERE status='active'` کوئری held رو پوشش می‌ده. trigger واقعی برای بازبینی: اگه روزی هزاران رزرو فعالِ هم‌زمان شد (v2). چند بازبینِ AI این رو پیشنهاد دادن چون «۱۰۰۰ نماینده» فرض کردن که مقیاس این پروژه نیست.
 - ❌ رزرو یا سفارش در حالت آفلاین — PWA فقط برای مشاهده‌ی کش‌شده، نوشتن همیشه آنلاین
 - ❌ فیلد مالی cache‌شده (مثل «مانده‌ی حساب») بدون یه لجر مالی پشتش
 
@@ -64,7 +65,8 @@ Vertical SaaS چندمستأجری برای کارخانه‌های کاشی/س�
 - `docs/ux-wireframes.md` — قرارداد رفتاریِ صفحه‌های نماینده.
 
 ```bash
-# schema روی یه Postgres محلی
+# schema روی یه Postgres محلی/تازه (نصب مرجع). هرگز روی prodِ داده‌دار دوباره اجرا نکن —
+# تغییرات prod فقط با migration نسخه‌دار در db/migrations/ (بخش ۱۴.۹ spec).
 psql "$DATABASE_URL" -f db/schema.sql
 
 cd web

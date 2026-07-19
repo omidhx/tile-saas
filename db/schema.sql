@@ -81,7 +81,8 @@ CREATE TABLE agent_account_user (
     user_id          UUID NOT NULL REFERENCES app_user(id),
     role             TEXT NOT NULL,
     UNIQUE (agent_account_id, user_id),
-    FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id)
+    FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id),
+    FOREIGN KEY (tenant_id, user_id) REFERENCES tenant_membership(tenant_id, user_id)  -- کاربر باید عضو همین tenant باشه
 );
 
 -- ---------------------------------------------------------------------------
@@ -119,6 +120,8 @@ CREATE TABLE product_variant (
     grade           TEXT,                    -- درجه کیفی (یک/دو/سه/چهار) — بخش ۴
     sku             TEXT NOT NULL,
     boxes_per_pallet INT CHECK (boxes_per_pallet > 0),   -- بخش ۷.۶
+    sqcm_per_box    INT CHECK (sqcm_per_box > 0),    -- مساحت هر کارتن به cm² (نمایش «معادل X متر») — nullable تا مصاحبه
+    pieces_per_box  INT CHECK (pieces_per_box > 0),  -- برای price_basis=per_piece
     PRIMARY KEY (id),
     UNIQUE (tenant_id, sku),
     UNIQUE (tenant_id, id),
@@ -149,6 +152,7 @@ CREATE TABLE inventory_lot (
     boxes_per_pallet_override INT CHECK (boxes_per_pallet_override > 0),
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
+    UNIQUE (tenant_id, id, variant_id),   -- هدفِ composite FK از dispatch_item: سازگاریِ lot↔variant
     FOREIGN KEY (tenant_id, variant_id)   REFERENCES product_variant(tenant_id, id),
     FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id)
 );
@@ -203,13 +207,17 @@ CREATE TABLE reservation (
     id               UUID NOT NULL DEFAULT gen_random_uuid(),
     tenant_id        UUID NOT NULL REFERENCES tenant(id),
     agent_account_id UUID NOT NULL,
+    -- MVP: تبدیل all-or-nothing (active→converted). partially_converted حذف شد چون held فقط
+    -- active را می‌شمارد؛ نگه‌داشتنش hold باقی‌مانده را زودهنگام آزاد نشان می‌داد (بخش ۶، v2).
     status           TEXT NOT NULL DEFAULT 'active'
-        CHECK (status IN ('active','partially_converted','converted','expired','cancelled')),
+        CHECK (status IN ('active','converted','expired','cancelled')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at       TIMESTAMPTZ NOT NULL,
-    idempotency_key  TEXT UNIQUE,   -- ON CONFLICT (idempotency_key) DO NOTHING (بخش ۶)
+    idempotency_key          TEXT,
+    idempotency_request_hash TEXT,   -- reuseِ کلید با payload متفاوت → ۴۰۹ (بخش ۶)
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
+    UNIQUE (tenant_id, idempotency_key),   -- scope per-tenant، نه global
     FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id),
     CHECK (expires_at > created_at)
 );
@@ -245,8 +253,11 @@ CREATE TABLE sales_request_item (
     id                  UUID NOT NULL DEFAULT gen_random_uuid(),
     tenant_id           UUID NOT NULL REFERENCES tenant(id),
     request_id          UUID NOT NULL,
+    line_no             INT NOT NULL,   -- خط سفارش، نه variant: یک variant می‌تونه چند خط با شید متفاوت داشته باشه
     variant_id          UUID NOT NULL,
     requested_qty_boxes INT NOT NULL CHECK (requested_qty_boxes > 0),
+    requested_shade_code   TEXT,   -- بخش ۷.۲: یک سفارش می‌تونه چند شید داشته باشه (اتاق‌های جدا)
+    requested_caliber_code TEXT,
     unit_price_applied  BIGINT,          -- پول صحیح
     currency            TEXT,
     price_basis         TEXT CHECK (price_basis IN ('per_box','per_sqm','per_piece')),
@@ -255,7 +266,7 @@ CREATE TABLE sales_request_item (
     applied_price_source TEXT CHECK (applied_price_source IN ('base','list','override')),
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
-    UNIQUE (request_id, variant_id),
+    UNIQUE (tenant_id, request_id, line_no),   -- به‌جای (request_id, variant_id) که چندشید را ممنوع می‌کرد
     FOREIGN KEY (tenant_id, request_id) REFERENCES sales_request(tenant_id, id),
     FOREIGN KEY (tenant_id, variant_id) REFERENCES product_variant(tenant_id, id)
 );
@@ -301,13 +312,14 @@ CREATE TABLE sales_dispatch_item (
     quantity_boxes   INT NOT NULL CHECK (quantity_boxes > 0),
     warehouse_id     UUID,
     bin_location     TEXT,
-    -- in_stock باید lot داشته باشه؛ backorder نباید (بخش ۵.۶)
-    CHECK ((fulfillment_type = 'in_stock'  AND lot_id IS NOT NULL)
-        OR (fulfillment_type = 'backorder' AND lot_id IS NULL)),
+    -- in_stock: lot لازم، backorder_status ممنوع. backorder: lot ممنوع، backorder_status لازم (بخش ۵.۶)
+    CHECK ((fulfillment_type = 'in_stock'  AND lot_id IS NOT NULL AND backorder_status IS NULL)
+        OR (fulfillment_type = 'backorder' AND lot_id IS NULL     AND backorder_status IS NOT NULL)),
     FOREIGN KEY (tenant_id, dispatch_id)  REFERENCES sales_dispatch(tenant_id, id),
     FOREIGN KEY (tenant_id, variant_id)   REFERENCES product_variant(tenant_id, id),
+    -- composite (tenant_id, lot_id, variant_id): تضمین می‌کنه lotِ انتخاب‌شده واقعاً همین variant است.
     -- lot_id/warehouse_id nullable: MATCH SIMPLE یعنی وقتی NULL‌اند FK چک نمی‌شه (backorder)
-    FOREIGN KEY (tenant_id, lot_id)       REFERENCES inventory_lot(tenant_id, id),
+    FOREIGN KEY (tenant_id, lot_id, variant_id) REFERENCES inventory_lot(tenant_id, id, variant_id),
     FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id)
 );
 
@@ -366,13 +378,20 @@ CREATE TABLE import_batch (
     import_mode      TEXT NOT NULL DEFAULT 'snapshot'
         CHECK (import_mode IN ('snapshot','delta')),   -- بخش ۷.۳ پیش‌فرض snapshot
     checksum         TEXT,
-    idempotency_key  TEXT UNIQUE,
+    idempotency_key  TEXT,
+    scope_type       TEXT NOT NULL DEFAULT 'tenant'
+        CHECK (scope_type IN ('tenant','warehouse','brand')),   -- دامنه‌ی اسنپ‌شات (بخش ۷.۳): absent=صفر فقط داخل همین scope
+    scope_warehouse_id UUID,
+    scope_brand_id     UUID,
     effective_at     TIMESTAMPTZ,
     committed_at     TIMESTAMPTZ,
     status           TEXT NOT NULL DEFAULT 'pending',
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
-    UNIQUE (tenant_id, id)
+    UNIQUE (tenant_id, id),
+    UNIQUE (tenant_id, idempotency_key),   -- scope per-tenant
+    FOREIGN KEY (tenant_id, scope_warehouse_id) REFERENCES warehouse(tenant_id, id),
+    FOREIGN KEY (tenant_id, scope_brand_id)     REFERENCES brand(tenant_id, id)
 );
 
 CREATE TABLE import_row (
@@ -423,6 +442,8 @@ CREATE TABLE audit_log (
     action        TEXT NOT NULL,
     entity        TEXT NOT NULL,
     entity_id     UUID,
+    old_value     JSONB,   -- برای اختلاف مالی/موجودی: «قبل از این تراکنش چند بود؟»
+    new_value     JSONB,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

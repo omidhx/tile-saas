@@ -1,10 +1,11 @@
-import type postgres from "postgres";
+import { createHash } from "node:crypto";
 import { withTenant } from "./client";
 
 export type ReserveItem = { lotId: string; quantityBoxes: number };
 export type ReserveResult =
   | { ok: true; reservationId: string; deduped: boolean }
-  | { ok: false; conflict: { lotId: string; requested: number; available: number } };
+  | { ok: false; conflict: { lotId: string; requested: number; available: number } }
+  | { ok: false; idempotencyMismatch: true };
 
 /**
  * الگوریتم رزرو — پیاده‌سازی مرجعِ بخش ۶ spec. همه‌ی قوانین معماری اینجا هم‌گرا می‌شن:
@@ -34,13 +35,21 @@ export async function reserve(params: {
     byLot.set(it.lotId, (byLot.get(it.lotId) ?? 0) + it.quantityBoxes);
   }
   const lotIds = [...byLot.keys()].sort();
+  // هشِ payload نرمال‌شده: تشخیصِ «همون کلید، body متفاوت» (lotIds مرتب پس قطعیه)
+  const requestHash = createHash("sha256")
+    .update(agentAccountId + "|" + lotIds.map((l) => `${l}:${byLot.get(l)}`).join(","))
+    .digest("hex");
 
   return withTenant(tenantId, async (tx) => {
     // ۱. idempotency: کلید تکراری → رزرو موجود را برگردون (بخش ۶: ۲۰۰ نه ۴۰۹، نه رزرو دوباره)
-    const existing = await tx<{ id: string }[]>`
-      SELECT id FROM reservation WHERE idempotency_key = ${idempotencyKey}`;
+    const existing = await tx<{ id: string; idempotency_request_hash: string | null }[]>`
+      SELECT id, idempotency_request_hash FROM reservation
+      WHERE tenant_id = ${tenantId} AND idempotency_key = ${idempotencyKey}`;
     if (existing.length > 0)
-      return { ok: true, reservationId: existing[0].id, deduped: true };
+      // همون کلید + همون payload → همون رزرو (۲۰۰). کلید تکراری + payload متفاوت → ۴۰۹، نه رزرو بی‌سروصدا
+      return existing[0].idempotency_request_hash === requestHash
+        ? { ok: true, reservationId: existing[0].id, deduped: true }
+        : { ok: false, idempotencyMismatch: true };
 
     // ۲. قفل balanceها با ORDER BY lot_id FOR UPDATE — این ردیف‌ها تنها mutexِ lotها هستن (#۴)
     const balances = await tx<
@@ -70,8 +79,8 @@ export async function reserve(params: {
 
     // ۵. ثبت reservation + itemها
     const [resv] = await tx<{ id: string }[]>`
-      INSERT INTO reservation (tenant_id, agent_account_id, expires_at, idempotency_key)
-      VALUES (${tenantId}, ${agentAccountId}, now() + make_interval(hours => ${ttlHours}), ${idempotencyKey})
+      INSERT INTO reservation (tenant_id, agent_account_id, expires_at, idempotency_key, idempotency_request_hash)
+      VALUES (${tenantId}, ${agentAccountId}, now() + make_interval(hours => ${ttlHours}), ${idempotencyKey}, ${requestHash})
       RETURNING id`;
     for (const lotId of lotIds)
       await tx`

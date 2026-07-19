@@ -40,9 +40,13 @@ export async function POST(req: Request) {
     items: items as ReserveItem[],
   });
 
-  if (!result.ok)
+  if (!result.ok) {
+    if ("idempotencyMismatch" in result)
+      // همون کلید با payload متفاوت — کلاینت باید کلید تازه بفرسته
+      return NextResponse.json({ error: "idempotency_key_conflict" }, { status: 409 });
     // ۴۰۹ — کلاینت پیام «موجودی فعلی: X» می‌سازه (بخش ۱۱.۵ wireframe)
     return NextResponse.json({ error: "conflict", ...result.conflict }, { status: 409 });
+  }
 
   return NextResponse.json(
     { reservationId: result.reservationId },

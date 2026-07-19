@@ -44,11 +44,17 @@ test("idempotency: کلید تکراری همون رزرو را برمی‌گر�
   assert.equal(Number(count), 1, "باید فقط یک رزرو با این کلید باشه");
 });
 
+test("idempotency mismatch: کلید تکراری با payload متفاوت → رد (نه رزرو بی‌سروصدا)", async () => {
+  const r = await reserve({ ...base, idempotencyKey: "k1", items: [{ lotId: LOT1, quantityBoxes: 11 }] });
+  assert.equal(r.ok, false);
+  assert.equal(!r.ok && "idempotencyMismatch" in r && r.idempotencyMismatch, true);
+});
+
 test("۴۰۹: available کمتر از requested → رد با conflict", async () => {
   const r = await reserve({ ...base, idempotencyKey: "k2", items: [{ lotId: LOT1, quantityBoxes: 999 }] });
   assert.equal(r.ok, false);
   // held فعلی روی LOT1 = ۱۰ (از تست اول) → available = 100-10 = 90
-  assert.equal(!r.ok && r.conflict.available, 90);
+  assert.equal(!r.ok && "conflict" in r && r.conflict.available, 90);
 });
 
 test("all-or-nothing: اگه یک lot کم بیاد، هیچ‌کدوم رزرو نمی‌شن", async () => {
