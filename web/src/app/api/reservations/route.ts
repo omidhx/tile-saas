@@ -26,7 +26,11 @@ export async function GET(req: Request) {
   }
   const reservations = await withTenant(tenantId, (tx) =>
     tx`
-      SELECT r.id, r.status, r.expires_at AS "expiresAt", aa.legal_name AS "agentName",
+      -- هرگز فقط به status تکیه نکن: worker انقضا ممکنه هنوز نرسیده باشه، پس وضعیتِ
+      -- مؤثر همین‌جا مشتق می‌شه (هم‌راستا با تعریفِ held). spec ۱۴ / بخش ۵.۳.
+      SELECT r.id,
+        CASE WHEN r.status = 'active' AND r.expires_at <= now() THEN 'expired' ELSE r.status END AS status,
+        r.expires_at AS "expiresAt", aa.legal_name AS "agentName",
         COALESCE(json_agg(json_build_object(
           'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes
         )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items
@@ -37,7 +41,10 @@ export async function GET(req: Request) {
       LEFT JOIN product_variant pv ON pv.id = l.variant_id
       LEFT JOIN product p ON p.id = pv.product_id
       WHERE r.tenant_id = ${tenantId}
-        AND ${staffView ? tx`r.status = 'active'` : tx`r.agent_account_id = ${agentAccountId}`}
+        AND ${staffView
+            // صفِ تأیید: فقط رزروِ واقعاً زنده — منقضی نباید به‌عنوان «در انتظار تأیید» دیده شه
+            ? tx`r.status = 'active' AND r.expires_at > now()`
+            : tx`r.agent_account_id = ${agentAccountId}`}
       GROUP BY r.id, aa.legal_name
       ORDER BY r.created_at DESC
       LIMIT 50`,

@@ -525,6 +525,28 @@ REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;
 -- در دیپلوی: GRANT EXECUTE ON FUNCTION user_contexts(UUID) TO <نقشِ اپ>;
 
 -- ---------------------------------------------------------------------------
+-- worker بوک‌کیپینگِ انقضا (spec ۵.۳ / ۹)
+-- ---------------------------------------------------------------------------
+-- رزروهای منقضی را active→expired می‌کند. **درستیِ available به این وابسته نیست**
+-- (held همیشه `status='active' AND expires_at > now()` را می‌شمارد، پس رزروِ منقضی
+-- حتی قبل از اجرای worker هم از held خارج است). این فقط بوک‌کیپینگ است: لیست‌ها،
+-- گزارش‌ها و اعلان‌ها. تأخیر یا شکستش بی‌خطر است (runbook بخش ۶).
+-- SECURITY DEFINER چون نگهداریِ cross-tenant است؛ امن است چون فقط رزروهایی را که
+-- خودشان از مهلت گذشته‌اند علامت می‌زند و هیچ داده‌ای برنمی‌گرداند.
+CREATE FUNCTION expire_due_reservations()
+RETURNS INT
+LANGUAGE sql SECURITY DEFINER AS $$
+    WITH done AS (
+        UPDATE reservation SET status = 'expired'
+        WHERE status = 'active' AND expires_at <= now()
+        RETURNING 1
+    )
+    SELECT count(*)::int FROM done;
+$$;
+REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
+-- در دیپلوی: GRANT EXECUTE ... TO <نقشِ worker>; و cron هر ۱۰-۱۵ دقیقه.
+
+-- ---------------------------------------------------------------------------
 -- ۸. RLS — لایه‌ی دوم دفاعی، روی هر جدولِ دارای tenant_id
 -- ---------------------------------------------------------------------------
 -- app.tenant_id باید در ابتدای هر تراکنش SET شه. اپ با نقشِ non-superuser وصل شه

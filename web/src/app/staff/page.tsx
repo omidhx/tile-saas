@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import LogoutButton from "../LogoutButton";
 
 type Ctx = { tenantId: string; tenantName: string };
 type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
@@ -138,7 +139,7 @@ export default function StaffPage() {
 
   return (
     <main>
-      <div className="row"><h1>پنل پشتیبان</h1><a href="/staff/import" className="muted">ورود موجودی از اکسل ←</a></div>
+      <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی از اکسل ←</a><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName}</p>
 
       <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>

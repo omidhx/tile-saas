@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "node --import tsx --test --test-concurrency=1 src/auth/rateLimit.test.ts src/db/reserve.test.ts src/auth/authz.test.ts src/db/salesRequests.test.ts src/db/dispatches.test.ts src/db/backorders.test.ts src/db/imports.test.ts",
-    "db:pull": "drizzle-kit pull"
+    "db:pull": "drizzle-kit pull",
+    "worker:expire": "node --import tsx scripts/expire.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

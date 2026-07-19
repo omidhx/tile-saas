@@ -183,4 +183,27 @@ BEGIN
     RAISE NOTICE 'تست ۶ (context برای staffِ بدون نمایندگی) OK';
 END $$;
 
+-- =========================================================================
+-- تست ۷: worker انقضا — active منقضی‌شده → expired، و رزروِ زنده دست‌نخورده
+-- =========================================================================
+DO $$
+DECLARE v_n INT; v_expired TEXT; v_live TEXT;
+BEGIN
+    -- یک رزروِ منقضی (created_at عقب‌تر تا CHECK نشکند) و یک رزروِ زنده
+    INSERT INTO reservation (id, tenant_id, agent_account_id, status, created_at, expires_at)
+    VALUES ('e1e1e1e1-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111',
+            'a5555555-5555-5555-5555-555555555555', 'active', now() - interval '2 days', now() - interval '1 day'),
+           ('e2e2e2e2-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111',
+            'a5555555-5555-5555-5555-555555555555', 'active', now(), now() + interval '1 day');
+
+    SELECT expire_due_reservations() INTO v_n;
+    ASSERT v_n >= 1, format('حداقل ۱ رزرو باید expired شود، شد %s', v_n);
+
+    SELECT status INTO v_expired FROM reservation WHERE id = 'e1e1e1e1-1111-1111-1111-111111111111';
+    SELECT status INTO v_live    FROM reservation WHERE id = 'e2e2e2e2-2222-2222-2222-222222222222';
+    ASSERT v_expired = 'expired', format('منقضی باید expired شود، شد %s', v_expired);
+    ASSERT v_live = 'active', format('رزروِ زنده نباید دست بخورد، شد %s', v_live);
+    RAISE NOTICE 'تست ۷ (worker انقضا) OK';
+END $$;
+
 SELECT 'همه‌ی تست‌ها پاس شدن' AS result;

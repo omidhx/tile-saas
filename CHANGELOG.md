@@ -6,6 +6,12 @@
 ## [Unreleased]
 
 ### Added
+- **چرخه‌ی انقضای رزرو + خروج:** worker بوک‌کیپینگِ انقضا (`expire_due_reservations()` + `npm run worker:expire` برای cron هر ۱۰-۱۵ دقیقه، spec ۵.۳) که رزروهای از مهلت گذشته را `active→expired` می‌کند — **درستیِ `available` به آن وابسته نیست** (held همیشه `expires_at > now()` را شرط می‌کند)، پس تأخیر/شکستش بی‌خطر است. خروج (`POST /api/auth/logout`، POST نه GET تا با CSRF نشود کاربر را خارج کرد) + دکمه‌ی خروج در صفحات نماینده و staff.
+
+### Fixed
+- **صفِ تأیید، رزروهای منقضی را «در انتظار تأیید» نشان می‌داد** — کوئری فقط `status='active'` را فیلتر می‌کرد و چون worker انقضا وجود نداشت، رزروِ منقضی برای همیشه `active` می‌ماند. حالا (۱) صفِ staff شرطِ `expires_at > now()` دارد و (۲) وضعیتِ نمایشی در SQL مشتق می‌شود (`CASE ... THEN 'expired'`) تا حتی با تأخیرِ worker هم درست باشد. این دقیقاً همان چیزی است که spec هشدار داده بود: هرگز فقط به `status` تکیه نکن.
+
+### Added (قبلی)
 - **سخت‌سازیِ امنیت (spec ۸):** rate limiting روی لاگین (دولایه: per-IP ۲۰/۱۵دقیقه + per-phone ۵/۱۵دقیقه — جلوی brute-force از IPهای چرخان)، رزرو (۳۰/دقیقه per-user) و import (۱۰/ساعت). پاسخ ۴۲۹ با `Retry-After`. هدرهای امنیتی در `next.config.ts`: `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`، `nosniff`، `Referrer-Policy`، `Permissions-Policy`، و حذف `X-Powered-By`. ۳ تست واحد + تأیید زنده روی سرور (۵ تلاش → ۴۲۹ با Retry-After 899).
 
 ### Fixed

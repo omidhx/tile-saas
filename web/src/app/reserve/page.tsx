@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import LogoutButton from "../LogoutButton";
 
 type Ctx = { tenantId: string; agentAccountId: string; agentLegalName: string; tenantName: string };
 type Lot = {
@@ -81,7 +82,7 @@ export default function ReservePage() {
 
   return (
     <main>
-      <div className="row"><h1>موجودی قابل‌سفارش</h1><Link href="/reservations" className="muted">رزروهای من ←</Link></div>
+      <div className="row"><h1>موجودی قابل‌سفارش</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><Link href="/reservations" className="muted">رزروهای من ←</Link><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
 
       {lots.length === 0 && <p className="muted">فعلاً کالای قابل‌سفارشی نیست.</p>}
