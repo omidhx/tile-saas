@@ -5,7 +5,7 @@
 ## پیاده‌سازی (ساخته نشده)
 | مورد | وضعیت | مرجع |
 |---|---|---|
-| تأیید SalesRequest (`held→allocated`) | الگوریتم در spec ۱۴.۲، کد نه | — |
+| تأیید SalesRequest (`held→allocated`) | ✅ ساخته و تست‌شده (`salesRequests.ts`, `/api/reservations/:id/approve`)؛ فعلاً بدون role-gate (staff) | spec ۱۴.۲ |
 | SalesDispatch + state machine + `loaded` | spec ۱۴.۳، کد نه | — |
 | Import اکسل (snapshot) | schema هست، پردازش نه | spec ۱۴.۵ |
 | «رزروهای من» + سوییچرِ چند-نمایندگی | UI نه؛ `/api/me` چند context می‌دهد ولی صفحه اولین را می‌گیرد | — |

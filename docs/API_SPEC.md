@@ -62,14 +62,26 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 - `ttlHours` از خودِ tenant خوانده می‌شود، نه کلاینت.
 - الگوریتم: [reservations.ts](../web/src/db/reservations.ts) / spec ۶.
 
+## `POST /api/reservations/:id/approve`
+تأیید رزرو → SalesRequest تأییدشده. جابه‌جاییِ اتمیکِ `held → allocated` (spec ۱۴.۲) بدون گپ زمانی.
+```jsonc
+// Request
+{ "tenantId": "…", "agentAccountId": "…" }
+// 201
+{ "salesRequestId": "…" }
+// 404 رزرو یافت نشد/مالِ این agent نیست: { "error": "not_found" }
+// 409 منقضی یا قبلاً تبدیل‌شده:       { "error": "reservation_not_active" }
+// 400 · 401 · 403
+```
+- در یک تراکنش: قفل balanceها `ORDER BY lot_id` → guardِ `status='active' AND expires_at>now()` → SalesRequest(approved) + item(per variant, line_no) + allocation(per lot) + `allocated += qty` + لجر. الگوریتم: [salesRequests.ts](../web/src/db/salesRequests.ts).
+- **ponytail:** فعلاً role-gate ندارد (تأیید تجاری معمولاً staff است) — وقتی نقش staff/agent اضافه شد گیت شود.
+
 ---
 
 ## Planned (هنوز ساخته نشده — قرارداد پیشنهادی)
 | endpoint | کار | مرجع الگوریتم |
 |---|---|---|
 | `GET /api/reservations` (mine) | رزروهای نماینده + TTL | فیلترِ `agent_account_id` (spec ۱۴.۶) |
-| `POST /api/sales-requests` | تبدیل رزرو → درخواست | — |
-| `POST /api/sales-requests/:id/approve` | `held → allocated` (atomic) | spec ۱۴.۲ |
 | `POST /api/sales-dispatches` | ساخت حواله (staff) | spec ۵.۶ |
 | `POST /api/sales-dispatches/:id/status` | `loaded` (idempotent، on_hand↓) | spec ۱۴.۳ |
 | `POST /api/import/batches` | آپلود اکسل snapshot | spec ۱۴.۵ |

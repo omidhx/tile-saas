@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import tsx --test --test-concurrency=1 src/db/reserve.test.ts src/auth/authz.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 src/db/reserve.test.ts src/auth/authz.test.ts src/db/salesRequests.test.ts",
     "db:pull": "drizzle-kit pull"
   },
   "dependencies": {
