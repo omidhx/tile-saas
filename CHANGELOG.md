@@ -6,6 +6,9 @@
 ## [Unreleased]
 
 ### Added
+- **StockAlert + Outbox پیامک (آخرین فیچرِ v1، spec ۵.۹):** نماینده روی کالای ناموجود «خبرم کن» می‌زند؛ به‌محض اینکه import موجودی بیاورد، پیام **در همان تراکنشِ import** صف می‌شود (الگوی Outbox — اگر import رول‌بک شود پیامِ دروغینِ «موجود شد» هم نمی‌ماند) و `stock_alert` مصرف می‌شود (یک‌بارمصرف، پس اسپم ممکن نیست). worker `npm run worker:outbox` با الگوی claim-then-send: claim اتمیک با `FOR UPDATE SKIP LOCKED` (دو worker یک پیام را دوبار نمی‌فرستند)، ارسال بیرون از تراکنش، retry تا ۵ بار و بعد dead-letter (`failed`). فرستنده pluggable است (`SMS_PROVIDER`، پیش‌فرض `log`) چون اعتبارنامه‌ی پنل ایرانی نداریم — فقط همان یک تابع برای پروداکشن عوض می‌شود. ۴ تست جدید (۳۲/۳۲).
+
+### Added (قبلی)
 - **چرخه‌ی انقضای رزرو + خروج:** worker بوک‌کیپینگِ انقضا (`expire_due_reservations()` + `npm run worker:expire` برای cron هر ۱۰-۱۵ دقیقه، spec ۵.۳) که رزروهای از مهلت گذشته را `active→expired` می‌کند — **درستیِ `available` به آن وابسته نیست** (held همیشه `expires_at > now()` را شرط می‌کند)، پس تأخیر/شکستش بی‌خطر است. خروج (`POST /api/auth/logout`، POST نه GET تا با CSRF نشود کاربر را خارج کرد) + دکمه‌ی خروج در صفحات نماینده و staff.
 
 ### Fixed

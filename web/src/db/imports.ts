@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { enqueueRestockNotifications } from "./alerts";
 
 export type SnapshotRow = {
   sku: string; warehouseCode: string;
@@ -12,7 +13,8 @@ export type ImportScope =
 
 export type ImportError = { row: number | null; reason: string; detail?: string };
 export type ImportResult = {
-  ok: true; batchId: string; deduped: boolean; applied: number; zeroed: number; errors: ImportError[];
+  ok: true; batchId: string; deduped: boolean; applied: number; zeroed: number;
+  errors: ImportError[]; notified?: number;
 };
 
 /**
@@ -122,7 +124,10 @@ export async function applySnapshot(params: {
       zeroed++;
     }
 
+    // Outbox: پیامِ «موجود شد» در همین تراکنش صف می‌شه — اگه import رول‌بک شه، پیامی هم نمی‌مونه
+    const notified = await enqueueRestockNotifications(tx, tenantId, [...touched]);
+
     await tx`UPDATE import_batch SET status = 'committed', committed_at = now() WHERE id = ${batch.id}`;
-    return { ok: true, batchId: batch.id, deduped: false, applied, zeroed, errors };
+    return { ok: true, batchId: batch.id, deduped: false, applied, zeroed, errors, notified };
   });
 }

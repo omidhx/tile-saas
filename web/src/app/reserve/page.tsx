@@ -19,11 +19,35 @@ export default function ReservePage() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [subscribed, setSubscribed] = useState<string[]>([]);
+  const [outOfStock, setOutOfStock] = useState<{ variantId: string; name: string; code: string }[]>([]);
+  const [alertPending, setAlertPending] = useState<string | null>(null);
 
   const loadLots = useCallback(async (c: Ctx) => {
-    const res = await fetch(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`);
-    if (res.ok) setLots((await res.json()).lots);
+    const [lotsRes, alertsRes] = await Promise.all([
+      fetch(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
+      fetch(`/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
+    ]);
+    if (lotsRes.ok) setLots((await lotsRes.json()).lots);
+    if (alertsRes.ok) {
+      const a = await alertsRes.json();
+      setSubscribed(a.subscribed);
+      setOutOfStock(a.outOfStock);
+    }
   }, []);
+
+  async function toggleAlert(variantId: string, on: boolean) {
+    if (!ctx) return;
+    setAlertPending(variantId);
+    try {
+      await fetch("/api/alerts", {
+        method: on ? "POST" : "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }),
+      });
+      await loadLots(ctx);
+    } finally { setAlertPending(null); }
+  }
 
   useEffect(() => {
     (async () => {
@@ -123,6 +147,28 @@ export default function ReservePage() {
         </div>
       )}
       {msg && <p className={msg.kind === "ok" ? "muted" : "err"} style={msg.kind === "ok" ? { color: "var(--ok)" } : undefined}>{msg.text}</p>}
+
+      {outOfStock.length > 0 && (
+        <>
+          <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>ناموجودها</h2>
+          <p className="muted">با «خبرم کن» به‌محض موجود شدن پیامک می‌گیری (یک‌بار).</p>
+          {outOfStock.map((v) => {
+            const on = subscribed.includes(v.variantId);
+            return (
+              <div className="card" key={v.variantId}>
+                <div className="row">
+                  <span>{v.name} <span className="muted">({v.code})</span></span>
+                  <button className={on ? undefined : "ghost"} disabled={alertPending === v.variantId}
+                    onClick={() => toggleAlert(v.variantId, !on)}>
+                    {alertPending === v.variantId && <span className="spinner" />}
+                    {on ? "🔔 خبرم بده (فعال)" : "خبرم کن"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
     </main>
   );
 }

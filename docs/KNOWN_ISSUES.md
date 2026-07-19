@@ -13,7 +13,8 @@
 | «رزروهای من» + دکمه‌ی تأیید | ✅ صفحه `/reservations` | — |
 | پنل staff (حواله + بارگیری) | ✅ صفحه `/staff` (درخواست‌های تأییدشده → حواله → گذارِ وضعیت) | — |
 | سوییچرِ چند-نمایندگی | نه؛ صفحه‌ها اولین context را می‌گیرند | — |
-| worker انقضا/پیامک (Outbox) | جدول‌ها هست، worker نه | spec ۹ |
+| worker انقضا | ✅ `expire_due_reservations()` + `npm run worker:expire` (cron هر ۱۰-۱۵ دقیقه) | spec ۵.۳ |
+| StockAlert + پیامک (Outbox) | ✅ `alerts.ts`/`outbox.ts`، `/api/alerts`، `npm run worker:outbox`. صف‌کردن اتمیک با import، claim-then-send، retry×۵ و dead-letter. **باز:** ارائه‌دهنده‌ی واقعی پیامک (فعلاً `SMS_PROVIDER=log`) | spec ۵.۹ |
 | قیمت‌گذاری در UI | جدول‌ها هست، نمایش/تصمیم نه | spec ۵.۷ |
 
 ## تصمیم‌های آگاهانه (نه باگ)
