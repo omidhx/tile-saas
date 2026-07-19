@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
-import { createDispatchFromRequest } from "@/db/dispatches";
+import { createDispatchFromRequest, createBackorderDispatch } from "@/db/dispatches";
 
 /** GET /api/sales-dispatches?tenantId — لیست حواله‌ها برای پنل staff. */
 export async function GET(req: Request) {
@@ -30,16 +30,17 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST /api/sales-dispatches — ساخت حواله از یک SalesRequestِ تأییدشده (کارِ staff).
- * dispatch همیشه توسط staff ساخته می‌شه، هرگز نماینده (spec ۵.۶).
+ * POST /api/sales-dispatches — ساخت حواله (staff-only، spec ۵.۶). دو حالت بر اساس body:
+ *   • { salesRequestId }        → حواله از SalesRequestِ تأییدشده (اقلام in_stock)
+ *   • { agentAccountId, items } → حواله‌ی مستقلِ backorder (محصول ناموجود، بیرون از موجودی)
  */
 export async function POST(req: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { tenantId, salesRequestId, dispatchCode, customerName, destination } = body ?? {};
-  if (typeof tenantId !== "string" || typeof salesRequestId !== "string" || typeof dispatchCode !== "string")
+  const { tenantId, salesRequestId, agentAccountId, items, dispatchCode, customerName, destination } = body ?? {};
+  if (typeof tenantId !== "string" || typeof dispatchCode !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {
@@ -49,7 +50,12 @@ export async function POST(req: Request) {
     throw e;
   }
 
-  const result = await createDispatchFromRequest({ tenantId, salesRequestId, createdByUserId: userId, dispatchCode, customerName, destination });
+  const result = Array.isArray(items)
+    ? await createBackorderDispatch({ tenantId, agentAccountId, createdByUserId: userId, dispatchCode, customerName, destination, items })
+    : typeof salesRequestId === "string"
+      ? await createDispatchFromRequest({ tenantId, salesRequestId, createdByUserId: userId, dispatchCode, customerName, destination })
+      : null;
+  if (!result) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   if (!result.ok) {
     const status = result.reason === "request_not_found" ? 404 : 409;
     return NextResponse.json({ error: result.reason }, { status });

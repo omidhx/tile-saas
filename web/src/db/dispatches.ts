@@ -120,3 +120,57 @@ export async function setDispatchStatus(params: {
     return { ok: true, status: toStatus };
   });
 }
+
+// ---------------------------------------------------------------------------
+// مسیر Backorder (محصول ناموجود) — spec ۵.۶
+// ---------------------------------------------------------------------------
+// کاملاً بیرون از محاسبه‌ی موجودی: lot_id = NULL، هیچ held/allocated/on_hand و هیچ لجری.
+// یه تعهدِ «بعداً تولید/وارد می‌شه»؛ چرخه‌اش روی backorder_status هر item است.
+
+export type BackorderStatus = "pending_production" | "ready" | "fulfilled" | "cancelled";
+
+const BO_NEXT: Record<BackorderStatus, BackorderStatus[]> = {
+  pending_production: ["ready", "cancelled"],
+  ready: ["fulfilled", "cancelled"],
+  fulfilled: [], cancelled: [],
+};
+
+/** حواله‌ی مستقلِ backorder (بدون SalesRequest). هیچ ردیف موجودی‌ای را دست نمی‌زند. */
+export async function createBackorderDispatch(params: {
+  tenantId: string; agentAccountId: string; createdByUserId: string;
+  dispatchCode: string; customerName?: string; destination?: string;
+  items: { variantId: string; quantityBoxes: number }[];
+}): Promise<{ ok: true; dispatchId: string } | { ok: false; reason: "no_items" | "bad_qty" }> {
+  const { tenantId, agentAccountId, createdByUserId, dispatchCode, customerName, destination, items } = params;
+  if (items.length === 0) return { ok: false, reason: "no_items" };
+  if (items.some((i) => !Number.isInteger(i.quantityBoxes) || i.quantityBoxes <= 0)) return { ok: false, reason: "bad_qty" };
+  return withTenant(tenantId, async (tx) => {
+    const [d] = await tx<{ id: string }[]>`
+      INSERT INTO sales_dispatch
+        (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, destination, status, created_by_user_id)
+      VALUES (${tenantId}, NULL, ${agentAccountId}, ${dispatchCode}, ${customerName ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
+      RETURNING id`;
+    for (const it of items)
+      await tx`
+        INSERT INTO sales_dispatch_item
+          (tenant_id, dispatch_id, lot_id, fulfillment_type, backorder_status, variant_id, quantity_boxes)
+        VALUES (${tenantId}, ${d.id}, NULL, 'backorder', 'pending_production', ${it.variantId}, ${it.quantityBoxes})`;
+    return { ok: true, dispatchId: d.id };
+  });
+}
+
+/** گذارِ backorder_status یک item (pending_production → ready → fulfilled | cancelled). بدون اثر موجودی. */
+export async function setBackorderItemStatus(params: {
+  tenantId: string; dispatchItemId: string; toStatus: BackorderStatus;
+}): Promise<{ ok: true; status: BackorderStatus } | { ok: false; reason: "not_found" | "invalid_transition" }> {
+  const { tenantId, dispatchItemId, toStatus } = params;
+  return withTenant(tenantId, async (tx) => {
+    const [it] = await tx<{ backorder_status: BackorderStatus; fulfillment_type: string }[]>`
+      SELECT backorder_status, fulfillment_type FROM sales_dispatch_item
+      WHERE id = ${dispatchItemId} AND tenant_id = ${tenantId} FOR UPDATE`;
+    if (!it || it.fulfillment_type !== "backorder") return { ok: false, reason: "not_found" };
+    if (!BO_NEXT[it.backorder_status].includes(toStatus)) return { ok: false, reason: "invalid_transition" };
+    await tx`UPDATE sales_dispatch_item SET backorder_status = ${toStatus} WHERE id = ${dispatchItemId} AND tenant_id = ${tenantId}`;
+    return { ok: true, status: toStatus };
+  });
+}

@@ -6,7 +6,8 @@
 | مورد | وضعیت | مرجع |
 |---|---|---|
 | تأیید SalesRequest (`held→allocated`) | ✅ ساخته و تست‌شده؛ **staff-only** (`authorizeStaff`) | spec ۱۴.۲ |
-| SalesDispatch + state machine + `loaded` | ✅ ساخته و تست‌شده؛ create-از-request + loaded + cancel-release، **staff-only**. **باز:** backorderِ مستقل (بدون request) | spec ۱۴.۳ |
+| SalesDispatch + state machine + `loaded` | ✅ ساخته و تست‌شده؛ create-از-request + loaded + cancel-release، **staff-only** | spec ۱۴.۳ |
+| مسیر backorder (محصول ناموجود) | ✅ ساخته و تست‌شده (`createBackorderDispatch`/`setBackorderItemStatus`, `/api/backorders`, پنل staff)؛ کاملاً بیرون از موجودی (تست: on_hand دست‌نخورده، لجر صفر). **باز:** تبدیلِ backorder به in_stock وقتی تولید شد | spec ۵.۶ |
 | نقش staff/agent | ✅ `tenant_membership.role` (admin/staff/agent) با CHECK؛ تأیید+حواله staff-only، نماینده ۴۰۳ (unit + e2e). **باز:** تفکیک agent_admin/operator | spec ۱۴.۶ |
 | Import اکسل (snapshot) | schema هست، پردازش نه | spec ۱۴.۵ |
 | «رزروهای من» + دکمه‌ی تأیید | ✅ صفحه `/reservations` | — |

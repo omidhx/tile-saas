@@ -6,6 +6,9 @@ type Ctx = { tenantId: string; tenantName: string };
 type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
 type Req = { id: string; status: string; agentName: string; items: { name: string; code: string; qty: number }[] };
 type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number };
+type Agent = { id: string; legalName: string };
+type Variant = { id: string; name: string; code: string; sku: string };
+type Backorder = { id: string; status: string; qty: number; name: string; code: string; dispatchCode: string; agentName: string };
 
 const NEXT: Record<string, string[]> = {
   registered: ["ready_for_loading", "cancelled"],
@@ -17,6 +20,12 @@ const FA: Record<string, string> = {
   registered: "ثبت‌شده", ready_for_loading: "آماده بارگیری", loaded: "بارگیری‌شده",
   delivered: "تحویل‌شده", cancelled: "لغوشده",
 };
+const BO_NEXT: Record<string, string[]> = {
+  pending_production: ["ready", "cancelled"], ready: ["fulfilled", "cancelled"], fulfilled: [], cancelled: [],
+};
+const BO_FA: Record<string, string> = {
+  pending_production: "در انتظار تولید", ready: "آماده", fulfilled: "تحویل‌شده", cancelled: "لغوشده",
+};
 
 export default function StaffPage() {
   const router = useRouter();
@@ -24,18 +33,58 @@ export default function StaffPage() {
   const [pendingResvs, setPendingResvs] = useState<Resv[]>([]);
   const [reqs, setReqs] = useState<Req[]>([]);
   const [disps, setDisps] = useState<Disp[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [backorders, setBackorders] = useState<Backorder[]>([]);
+  const [boAgent, setBoAgent] = useState("");
+  const [boVariant, setBoVariant] = useState("");
+  const [boQty, setBoQty] = useState("");
   const [pending, setPending] = useState<string | null>(null);
 
   const load = useCallback(async (c: Ctx) => {
-    const [rv, r, d] = await Promise.all([
+    const [rv, r, d, ag, cat, bo] = await Promise.all([
       fetch(`/api/reservations?tenantId=${c.tenantId}`),                 // staff view: رزروهای active همه
       fetch(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
       fetch(`/api/sales-dispatches?tenantId=${c.tenantId}`),
+      fetch(`/api/agents?tenantId=${c.tenantId}`),
+      fetch(`/api/catalog?tenantId=${c.tenantId}`),
+      fetch(`/api/backorders?tenantId=${c.tenantId}`),
     ]);
     if (rv.ok) setPendingResvs((await rv.json()).reservations);
     if (r.ok) setReqs((await r.json()).requests);
     if (d.ok) setDisps((await d.json()).dispatches);
+    if (ag.ok) setAgents((await ag.json()).agents);
+    if (cat.ok) setVariants((await cat.json()).variants);
+    if (bo.ok) setBackorders((await bo.json()).items);
   }, []);
+
+  async function createBackorder() {
+    if (!ctx || !boAgent || !boVariant || Number(boQty) <= 0) return;
+    setPending("bo-create");
+    try {
+      await fetch("/api/sales-dispatches", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tenantId: ctx.tenantId, agentAccountId: boAgent, dispatchCode: `BO-${Date.now()}`,
+          items: [{ variantId: boVariant, quantityBoxes: Number(boQty) }],
+        }),
+      });
+      setBoQty("");
+      await load(ctx);
+    } finally { setPending(null); }
+  }
+
+  async function advanceBackorder(itemId: string, toStatus: string) {
+    if (!ctx) return;
+    setPending("bo" + itemId + toStatus);
+    try {
+      await fetch(`/api/backorders/${itemId}/status`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId, toStatus }),
+      });
+      await load(ctx);
+    } finally { setPending(null); }
+  }
 
   async function approve(reservationId: string) {
     if (!ctx) return;
@@ -130,6 +179,46 @@ export default function StaffPage() {
               <button key={s} className={s === "cancelled" ? "ghost" : undefined}
                 onClick={() => advance(d.id, s)} disabled={pending === d.id + s}>
                 {pending === d.id + s && <span className="spinner" />}{FA[s]}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>Backorder (محصول ناموجود)</h2>
+      <div className="card">
+        <label>ثبت backorder جدید</label>
+        <div className="row" style={{ gap: ".5rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
+          <select value={boAgent} onChange={(e) => setBoAgent(e.target.value)}
+            style={{ padding: ".5rem", borderRadius: 8, border: "1px solid var(--line)" }}>
+            <option value="">نمایندگی…</option>
+            {agents.map((a) => <option key={a.id} value={a.id}>{a.legalName}</option>)}
+          </select>
+          <select value={boVariant} onChange={(e) => setBoVariant(e.target.value)}
+            style={{ padding: ".5rem", borderRadius: 8, border: "1px solid var(--line)" }}>
+            <option value="">کالا…</option>
+            {variants.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
+          </select>
+          <input type="number" min={1} placeholder="کارتن" value={boQty}
+            onChange={(e) => setBoQty(e.target.value)} style={{ maxWidth: 100 }} />
+          <button onClick={createBackorder} disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
+            {pending === "bo-create" && <span className="spinner" />}ثبت
+          </button>
+        </div>
+      </div>
+      {backorders.length === 0 && <p className="muted">backorderی نیست.</p>}
+      {backorders.map((b) => (
+        <div className="card" key={b.id}>
+          <div className="row">
+            <strong>{b.name} ({b.code}) ×{b.qty}</strong>
+            <span className="muted">{BO_FA[b.status] ?? b.status}</span>
+          </div>
+          <div className="muted">{b.agentName} · {b.dispatchCode}</div>
+          <div className="row" style={{ marginTop: ".5rem", justifyContent: "flex-start", gap: ".5rem" }}>
+            {(BO_NEXT[b.status] ?? []).map((s) => (
+              <button key={s} className={s === "cancelled" ? "ghost" : undefined}
+                onClick={() => advanceBackorder(b.id, s)} disabled={pending === "bo" + b.id + s}>
+                {pending === "bo" + b.id + s && <span className="spinner" />}{BO_FA[s]}
               </button>
             ))}
           </div>
