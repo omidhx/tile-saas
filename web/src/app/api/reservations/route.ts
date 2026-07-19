@@ -1,7 +1,40 @@
 import { NextResponse } from "next/server";
+import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeAgent, AuthzError } from "@/auth/authz";
 import { reserve, type ReserveItem } from "@/db/reservations";
+
+/** GET /api/reservations?tenantId&agentAccountId — رزروهای همین نماینده (برای صفحه‌ی «رزروهای من»). */
+export async function GET(req: Request) {
+  const userId = await currentUserId();
+  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const url = new URL(req.url);
+  const tenantId = url.searchParams.get("tenantId") ?? "";
+  const agentAccountId = url.searchParams.get("agentAccountId") ?? "";
+  try {
+    await authorizeAgent(userId, tenantId, agentAccountId);
+  } catch (e) {
+    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    throw e;
+  }
+  const reservations = await withTenant(tenantId, (tx) =>
+    tx`
+      SELECT r.id, r.status, r.expires_at AS "expiresAt",
+        COALESCE(json_agg(json_build_object(
+          'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes
+        )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items
+      FROM reservation r
+      LEFT JOIN reservation_item ri ON ri.reservation_id = r.id
+      LEFT JOIN inventory_lot l ON l.id = ri.lot_id
+      LEFT JOIN product_variant pv ON pv.id = l.variant_id
+      LEFT JOIN product p ON p.id = pv.product_id
+      WHERE r.tenant_id = ${tenantId} AND r.agent_account_id = ${agentAccountId}
+      GROUP BY r.id
+      ORDER BY r.created_at DESC
+      LIMIT 50`,
+  );
+  return NextResponse.json({ reservations });
+}
 
 /**
  * POST /api/reservations

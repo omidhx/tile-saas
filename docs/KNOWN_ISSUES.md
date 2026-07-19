@@ -8,8 +8,9 @@
 | تأیید SalesRequest (`held→allocated`) | ✅ ساخته و تست‌شده (`salesRequests.ts`, `/api/reservations/:id/approve`)؛ فعلاً بدون role-gate (staff) | spec ۱۴.۲ |
 | SalesDispatch + state machine + `loaded` | ✅ ساخته و تست‌شده (`dispatches.ts`, `/api/sales-dispatches[/:id/status]`)؛ create-از-request + loaded + cancel-release. **باز:** backorderِ مستقل (بدون request)، role-gate staff | spec ۱۴.۳ |
 | Import اکسل (snapshot) | schema هست، پردازش نه | spec ۱۴.۵ |
-| «رزروهای من» + سوییچرِ چند-نمایندگی | UI نه؛ `/api/me` چند context می‌دهد ولی صفحه اولین را می‌گیرد | — |
-| صفحه‌های staff/انباردار | نه | — |
+| «رزروهای من» + دکمه‌ی تأیید | ✅ صفحه `/reservations` | — |
+| پنل staff (حواله + بارگیری) | ✅ صفحه `/staff` (درخواست‌های تأییدشده → حواله → گذارِ وضعیت) | — |
+| سوییچرِ چند-نمایندگی | نه؛ صفحه‌ها اولین context را می‌گیرند | — |
 | worker انقضا/پیامک (Outbox) | جدول‌ها هست، worker نه | spec ۹ |
 | قیمت‌گذاری در UI | جدول‌ها هست، نمایش/تصمیم نه | spec ۵.۷ |
 
