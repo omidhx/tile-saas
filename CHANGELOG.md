@@ -6,6 +6,7 @@
 ## [Unreleased]
 
 ### Added
+- **SalesDispatch + گذارِ `loaded`** (`dispatches.ts` + `/api/sales-dispatches` و `/:id/status`): ساخت حواله از SalesRequestِ تأییدشده، و بارگیریِ فیزیکی که `on_hand` و `allocated` را اتمیک کم می‌کند (spec ۱۴.۳). idempotent و state-guarded (بارگیریِ دوباره double-decrement نمی‌کند)؛ لغوِ قبل از بارگیری `allocated` را آزاد و request را cancelled می‌کند. حلقه‌ی آخرِ زنجیره‌ی موجودی. ۳ تست جدید (۱۴/۱۴ سبز).
 - **الگوریتم Approval** (`salesRequests.ts` + `POST /api/reservations/:id/approve`): تبدیل رزرو → SalesRequest تأییدشده، جابه‌جاییِ اتمیکِ `held → allocated` بدون گپ زمانی (spec ۱۴.۲). قفل `ORDER BY lot_id`، guardِ `active`+منقضی‌نشده، ضدِ double-allocate. ۳ تست جدید (۱۱/۱۱ سبز).
 - اسناد کنترلی MVP در `docs/`: PRD، ARCHITECTURE، API_SPEC، DATABASE_SCHEMA، CODING_STANDARDS، AI_CONTEXT، KNOWN_ISSUES + README ریشه و این CHANGELOG.
 - اولین UI نماینده: `/login` و `/reserve` (RTL فارسی، pending-state، خطای ۴۰۹ «موجودی فعلی: X»، هشدار نرم مخلوط شید). — `83d908f`

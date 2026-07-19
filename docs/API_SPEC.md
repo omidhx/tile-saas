@@ -78,11 +78,32 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 
 ---
 
+## `POST /api/sales-dispatches` (staff)
+ساخت حواله از یک SalesRequestِ تأییدشده. اقلام in_stock از allocationها. auth: عضو tenant.
+```jsonc
+// Request
+{ "tenantId": "…", "salesRequestId": "…", "dispatchCode": "D-001", "customerName": "…", "destination": "…" }
+// 201 → { "dispatchId": "…" }
+// 404 request_not_found · 409 request_not_approved | no_allocations · 400 · 401 · 403
+```
+
+## `POST /api/sales-dispatches/:id/status` (staff)
+گذارِ وضعیت. `loaded` → کم‌شدنِ اتمیکِ `on_hand`/`allocated` (spec ۱۴.۳)، idempotent و state-guarded.
+```jsonc
+// Request
+{ "tenantId": "…", "toStatus": "loaded" }   // registered|ready_for_loading|loaded|delivered|cancelled
+// 200 → { "status": "loaded" }
+// 404 not_found · 409 invalid_transition · 400 · 401 · 403
+```
+- گذارها: registered→ready_for_loading→loaded→delivered؛ لغو فقط قبل از loaded (allocated آزاد می‌شه + request مرتبط cancelled). `loaded→cancelled` ممنوع. الگوریتم: [dispatches.ts](../web/src/db/dispatches.ts).
+
+---
+
 ## Planned (هنوز ساخته نشده — قرارداد پیشنهادی)
 | endpoint | کار | مرجع الگوریتم |
 |---|---|---|
 | `GET /api/reservations` (mine) | رزروهای نماینده + TTL | فیلترِ `agent_account_id` (spec ۱۴.۶) |
-| `POST /api/sales-dispatches` | ساخت حواله (staff) | spec ۵.۶ |
+| `POST /api/sales-dispatches` (backorder مستقل) | حواله بدون request (backorder) | spec ۵.۶ |
 | `POST /api/sales-dispatches/:id/status` | `loaded` (idempotent، on_hand↓) | spec ۱۴.۳ |
 | `POST /api/import/batches` | آپلود اکسل snapshot | spec ۱۴.۵ |
 

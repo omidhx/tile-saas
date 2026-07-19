@@ -46,3 +46,19 @@ export async function authorizeAgent(
     return { userId, tenantId, agentAccountId, ttlHours: t.ttl };
   });
 }
+
+/**
+ * دسترسیِ سطحِ tenant — برای کارهای staff (ساخت/بارگیری حواله) که به یک agent_account
+ * خاص وصل نیستن. فقط عضویتِ فعال در tenant را چک می‌کند.
+ * ponytail: نقشِ staff/admin هنوز تفکیک نشده — هر عضو فعال مجاز است؛ وقتی role اضافه شد گیت کن.
+ */
+export async function authorizeTenantMember(userId: string, tenantId: string): Promise<{ userId: string; tenantId: string }> {
+  return withTenant(tenantId, async (tx) => {
+    const member = await tx`
+      SELECT 1 FROM tenant_membership
+      WHERE user_id = ${userId} AND tenant_id = ${tenantId} AND is_active
+      LIMIT 1`;
+    if (member.length === 0) throw new AuthzError("کاربر عضو این tenant نیست");
+    return { userId, tenantId };
+  });
+}
