@@ -137,7 +137,7 @@ export default function StaffPage() {
 
   return (
     <main>
-      <h1>پنل پشتیبان</h1>
+      <div className="row"><h1>پنل پشتیبان</h1><a href="/staff/import" className="muted">ورود موجودی از اکسل ←</a></div>
       <p className="muted">{ctx.tenantName}</p>
 
       <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>

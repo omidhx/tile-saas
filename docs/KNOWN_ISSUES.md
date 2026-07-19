@@ -9,7 +9,7 @@
 | SalesDispatch + state machine + `loaded` | ✅ ساخته و تست‌شده؛ create-از-request + loaded + cancel-release، **staff-only** | spec ۱۴.۳ |
 | مسیر backorder (محصول ناموجود) | ✅ ساخته و تست‌شده (`createBackorderDispatch`/`setBackorderItemStatus`, `/api/backorders`, پنل staff)؛ کاملاً بیرون از موجودی (تست: on_hand دست‌نخورده، لجر صفر). **باز:** تبدیلِ backorder به in_stock وقتی تولید شد | spec ۵.۶ |
 | نقش staff/agent | ✅ `tenant_membership.role` (admin/staff/agent) با CHECK؛ تأیید+حواله staff-only، نماینده ۴۰۳ (unit + e2e). **باز:** تفکیک agent_admin/operator | spec ۱۴.۶ |
-| Import اکسل (snapshot) | schema هست، پردازش نه | spec ۱۴.۵ |
+| Import اکسل (snapshot) | ✅ ساخته و تست‌شده (`imports.ts`, `/api/imports`, `/staff/import` با پارسِ مرورگریِ SheetJS — فایل به سرور نمی‌رسه). scope-aware zeroing، guardِ below_committed/absent_but_committed، اتمیک، idempotent. **باز:** import_mode=delta (فقط snapshot)، natural-key نهایی وابسته به مصاحبه | spec ۱۴.۵ |
 | «رزروهای من» + دکمه‌ی تأیید | ✅ صفحه `/reservations` | — |
 | پنل staff (حواله + بارگیری) | ✅ صفحه `/staff` (درخواست‌های تأییدشده → حواله → گذارِ وضعیت) | — |
 | سوییچرِ چند-نمایندگی | نه؛ صفحه‌ها اولین context را می‌گیرند | — |
