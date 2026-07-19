@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { checkRate, tooMany } from "@/auth/rateLimit";
 import { applySnapshot, type SnapshotRow, type ImportScope } from "@/db/imports";
 
 const MAX_ROWS = 5000; // spec بخش ۸: محدودیت ردیف روی import
@@ -19,6 +20,10 @@ export async function POST(req: Request) {
   if (typeof tenantId !== "string" || typeof idempotencyKey !== "string" || !Array.isArray(rows) || !scope?.type)
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   if (rows.length > MAX_ROWS) return NextResponse.json({ error: "too_many_rows" }, { status: 413 });
+
+  // import سنگین است (تراکنش بلند روی کل scope) — سقفِ سخت‌گیرانه‌تر
+  const rl = checkRate(`import:${userId}`, 10, 60 * 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfterSec);
 
   try {
     await authorizeStaff(userId, tenantId);

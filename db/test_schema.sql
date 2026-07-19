@@ -163,4 +163,24 @@ BEGIN
     RAISE NOTICE 'تست ۵ (user_contexts از RLS عبور می‌کنه) OK';
 END $$;
 
+-- =========================================================================
+-- تست ۶: کاربرِ staff (بدون هیچ agent_account) هم باید context بگیره
+-- رگرسیون: با INNER JOIN، پنل staff هیچ tenantId نمی‌گرفت و UI قفل می‌شد.
+-- =========================================================================
+INSERT INTO app_user (id, phone, password_hash)
+  VALUES ('a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7', '09999999999', 'x');
+INSERT INTO tenant_membership (tenant_id, user_id, role, is_active)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7', 'staff', true);
+DO $$
+DECLARE v_n INT; v_agent UUID; v_role TEXT;
+BEGIN
+    SELECT count(*) INTO v_n FROM user_contexts('a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7');
+    ASSERT v_n = 1, format('staff باید ۱ context بگیره، شد %s', v_n);
+    SELECT agent_account_id, role INTO v_agent, v_role
+      FROM user_contexts('a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7') LIMIT 1;
+    ASSERT v_agent IS NULL, 'staff نباید agent_account داشته باشه';
+    ASSERT v_role = 'staff', format('role باید staff باشه، شد %s', v_role);
+    RAISE NOTICE 'تست ۶ (context برای staffِ بدون نمایندگی) OK';
+END $$;
+
 SELECT 'همه‌ی تست‌ها پاس شدن' AS result;

@@ -9,15 +9,17 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const rows = await sql<
-    { tenant_id: string; tenant_name: string; agent_account_id: string; agent_legal_name: string }[]
+    { tenant_id: string; tenant_name: string; agent_account_id: string | null; agent_legal_name: string | null; role: string }[]
   >`SELECT * FROM user_contexts(${userId})`;
 
+  // agentAccountId برای کاربر staff نال است — UI باید هندلش کنه، نه اینکه قفل شه.
   return NextResponse.json({
     contexts: rows.map((r) => ({
       tenantId: r.tenant_id,
       tenantName: r.tenant_name,
       agentAccountId: r.agent_account_id,
       agentLegalName: r.agent_legal_name,
+      role: r.role,
     })),
   });
 }

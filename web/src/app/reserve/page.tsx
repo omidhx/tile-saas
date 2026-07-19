@@ -29,9 +29,11 @@ export default function ReservePage() {
       const res = await fetch("/api/me");
       if (res.status === 401) { router.push("/login"); return; }
       const { contexts } = await res.json();
-      if (!contexts?.length) { setMsg({ kind: "err", text: "هیچ نمایندگی‌ای به این کاربر وصل نیست" }); return; }
-      setCtx(contexts[0]); // انتخاب context ساده؛ سوییچر چند-نمایندگی: بعداً
-      loadLots(contexts[0]);
+      // کاربرِ staff agentAccountId نداره — این صفحه مالِ نماینده‌ست
+      const agentCtx = contexts?.find((c: Ctx) => c.agentAccountId);
+      if (!agentCtx) { setMsg({ kind: "err", text: "این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو." }); return; }
+      setCtx(agentCtx); // انتخاب context ساده؛ سوییچر چند-نمایندگی: بعداً
+      loadLots(agentCtx);
     })();
   }, [router, loadLots]);
 

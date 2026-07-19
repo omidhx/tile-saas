@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeAgent, authorizeStaff, AuthzError } from "@/auth/authz";
+import { checkRate, tooMany } from "@/auth/rateLimit";
 import { reserve, type ReserveItem } from "@/db/reservations";
 
 /**
@@ -64,6 +65,10 @@ export async function POST(req: Request) {
     items.length === 0
   )
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
+
+  // rate limit روی رزرو (spec ۸): جلوی hammer کردنِ مسیر پول/موجودی توسط یک کاربر
+  const rl = checkRate(`reserve:${userId}`, 30, 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfterSec);
 
   let ctx;
   try {

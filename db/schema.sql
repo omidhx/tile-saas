@@ -508,14 +508,17 @@ FROM inventory_balance b;
 -- تک‌تننتی گیر می‌کنه. SECURITY DEFINER از RLS عبور می‌کنه ولی امنه چون فقط برای
 -- p_user_id داده‌شده ردیف می‌ده — اپ همیشه userIdِ احرازشده (از JWT) رو پاس می‌ده،
 -- هرگز ورودی کلاینت. این تنها راهِ درستِ عبور از RLS برای این نوع bootstrap است.
+-- LEFT JOIN عمدی: کاربرِ staff به هیچ agent_account وصل نیست، ولی بازم باید context
+-- (tenant + نقش) بگیره — وگرنه پنل staff هیچ tenantId نداره و UI قفل می‌شه.
+-- role برگردونده می‌شه تا UI بدونه کاربر نماینده‌ست یا پشتیبان.
 CREATE FUNCTION user_contexts(p_user_id UUID)
-RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT)
+RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT)
 LANGUAGE sql SECURITY DEFINER STABLE AS $$
-    SELECT t.id, t.name, aa.id, aa.legal_name
+    SELECT t.id, t.name, aa.id, aa.legal_name, tm.role
     FROM tenant_membership tm
-    JOIN tenant t         ON t.id = tm.tenant_id AND t.is_active
-    JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id
-    JOIN agent_account aa  ON aa.id = aau.agent_account_id AND aa.is_active
+    JOIN tenant t              ON t.id = tm.tenant_id AND t.is_active
+    LEFT JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id
+    LEFT JOIN agent_account aa ON aa.id = aau.agent_account_id AND aa.is_active
     WHERE tm.user_id = p_user_id AND tm.is_active
 $$;
 REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;

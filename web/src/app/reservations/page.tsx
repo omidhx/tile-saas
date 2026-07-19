@@ -15,6 +15,7 @@ export default function MyReservationsPage() {
   const router = useRouter();
   const [ctx, setCtx] = useState<Ctx | null>(null);
   const [rows, setRows] = useState<Resv[]>([]);
+  const [notAgent, setNotAgent] = useState(false);
 
   const load = useCallback(async (c: Ctx) => {
     const res = await fetch(`/api/reservations?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`);
@@ -26,9 +27,10 @@ export default function MyReservationsPage() {
       const res = await fetch("/api/me");
       if (res.status === 401) { router.push("/login"); return; }
       const { contexts } = await res.json();
-      if (!contexts?.length) return;
-      setCtx(contexts[0]);
-      load(contexts[0]);
+      const agentCtx = contexts?.find((c: Ctx) => c.agentAccountId); // staff نماینده نیست
+      if (!agentCtx) { setNotAgent(true); return; }
+      setCtx(agentCtx);
+      load(agentCtx);
     })();
   }, [router, load]);
 
@@ -37,6 +39,7 @@ export default function MyReservationsPage() {
     return min <= 0 ? "منقضی" : min < 60 ? `${min} دقیقه` : `${Math.floor(min / 60)} ساعت`;
   };
 
+  if (notAgent) return <main><p className="err">این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو.</p></main>;
   if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
 
   return (

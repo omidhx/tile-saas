@@ -103,9 +103,10 @@ export default function StaffPage() {
       const res = await fetch("/api/me");
       if (res.status === 401) { router.push("/login"); return; }
       const { contexts } = await res.json();
-      if (!contexts?.length) return;
-      setCtx(contexts[0]);
-      load(contexts[0]);
+      const staffCtx = contexts?.find((c: { role?: string }) => c.role === "staff" || c.role === "admin") ?? contexts?.[0];
+      if (!staffCtx) return;
+      setCtx(staffCtx);
+      load(staffCtx);
     })();
   }, [router, load]);
 
