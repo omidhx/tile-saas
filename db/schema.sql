@@ -56,7 +56,7 @@ CREATE TABLE tenant_membership (
     id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenant(id),
     user_id   UUID NOT NULL REFERENCES app_user(id),
-    role      TEXT NOT NULL,
+    role      TEXT NOT NULL CHECK (role IN ('admin','staff','agent')),  -- staff/admin: تأیید+حواله؛ agent: رزرو
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (tenant_id, user_id)
 );

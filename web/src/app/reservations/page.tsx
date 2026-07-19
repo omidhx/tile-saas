@@ -8,15 +8,13 @@ type Item = { name: string; code: string; quantityBoxes: number };
 type Resv = { id: string; status: string; expiresAt: string; items: Item[] };
 
 const STATUS_FA: Record<string, string> = {
-  active: "فعال", converted: "تأییدشده", expired: "منقضی", cancelled: "لغوشده",
+  active: "فعال (در انتظار تأیید پشتیبان)", converted: "تأییدشده", expired: "منقضی", cancelled: "لغوشده",
 };
 
 export default function MyReservationsPage() {
   const router = useRouter();
   const [ctx, setCtx] = useState<Ctx | null>(null);
   const [rows, setRows] = useState<Resv[]>([]);
-  const [pending, setPending] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
   const load = useCallback(async (c: Ctx) => {
     const res = await fetch(`/api/reservations?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`);
@@ -33,22 +31,6 @@ export default function MyReservationsPage() {
       load(contexts[0]);
     })();
   }, [router, load]);
-
-  async function approve(id: string) {
-    if (!ctx) return;
-    setMsg(null);
-    setPending(id);
-    try {
-      const res = await fetch(`/api/reservations/${id}/approve`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId }),
-      });
-      if (res.ok) { setMsg("رزرو تأیید و به درخواست فروش تبدیل شد."); await load(ctx); }
-      else if (res.status === 409) setMsg("این رزرو دیگر قابل تأیید نیست (منقضی یا قبلاً تبدیل‌شده).");
-      else setMsg("خطا در تأیید.");
-    } finally { setPending(null); }
-  }
 
   const remaining = (iso: string) => {
     const min = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
@@ -69,17 +51,8 @@ export default function MyReservationsPage() {
             {r.status === "active" && <span className="muted">⏳ {remaining(r.expiresAt)}</span>}
           </div>
           <div className="muted">{r.items.map((i) => `${i.name} (${i.code}) ×${i.quantityBoxes}`).join("، ")}</div>
-          {r.status === "active" && (
-            <div style={{ marginTop: ".5rem" }}>
-              <button onClick={() => approve(r.id)} disabled={pending === r.id}>
-                {pending === r.id && <span className="spinner" />}
-                {pending === r.id ? "در حال تأیید…" : "تأیید و تبدیل به درخواست فروش"}
-              </button>
-            </div>
-          )}
         </div>
       ))}
-      {msg && <p className="muted" style={{ color: "var(--ok)" }}>{msg}</p>}
     </main>
   );
 }

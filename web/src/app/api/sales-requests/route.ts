@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
-import { authorizeTenantMember, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
 
 /** GET /api/sales-requests?tenantId&status=approved — برای پنل staff (حواله‌سازی). */
 export async function GET(req: Request) {
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const tenantId = url.searchParams.get("tenantId") ?? "";
   const status = url.searchParams.get("status") ?? "approved";
   try {
-    await authorizeTenantMember(userId, tenantId);
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

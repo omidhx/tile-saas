@@ -6,6 +6,7 @@
 ## [Unreleased]
 
 ### Added
+- **نقش‌محوری (role-based authz):** `tenant_membership.role` با CHECK (`admin`/`staff`/`agent`). تأیید تجاری و ساخت/بارگیریِ حواله حالا **staff-only** (`authorizeStaff`)؛ نماینده ۴۰۳ می‌گیرد. تأیید از صفحه‌ی نماینده به پنل staff منتقل شد (staff رزروهای active همه‌ی نماینده‌ها را می‌بیند و تأیید می‌کند). ۳ تست نقش (unit) + e2e گسترش‌یافته با دو نشست (نماینده/staff) که ۴۰۳/۲۰۱ را اثبات می‌کند.
 - **UI کامل زنجیره:** صفحه‌ی `/reservations` (رزروهای من + دکمه‌ی تأیید) و `/staff` (درخواست‌های تأییدشده → ساخت حواله → گذارِ وضعیت تا loaded/delivered/cancel). read endpointها: `GET /api/reservations`, `GET /api/sales-requests`, `GET /api/sales-dispatches`. کل زنجیره از طریق HTTP روی سرور زنده تست شد (۱۴ چک، شامل تأییدِ کم‌شدنِ فیزیکیِ on_hand ۵۰→۴۰).
 - **SalesDispatch + گذارِ `loaded`** (`dispatches.ts` + `/api/sales-dispatches` و `/:id/status`): ساخت حواله از SalesRequestِ تأییدشده، و بارگیریِ فیزیکی که `on_hand` و `allocated` را اتمیک کم می‌کند (spec ۱۴.۳). idempotent و state-guarded (بارگیریِ دوباره double-decrement نمی‌کند)؛ لغوِ قبل از بارگیری `allocated` را آزاد و request را cancelled می‌کند. حلقه‌ی آخرِ زنجیره‌ی موجودی. ۳ تست جدید (۱۴/۱۴ سبز).
 - **الگوریتم Approval** (`salesRequests.ts` + `POST /api/reservations/:id/approve`): تبدیل رزرو → SalesRequest تأییدشده، جابه‌جاییِ اتمیکِ `held → allocated` بدون گپ زمانی (spec ۱۴.۲). قفل `ORDER BY lot_id`، guardِ `active`+منقضی‌نشده، ضدِ double-allocate. ۳ تست جدید (۱۱/۱۱ سبز).

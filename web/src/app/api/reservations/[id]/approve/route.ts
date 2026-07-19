@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeAgent, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { approveReservation } from "@/db/salesRequests";
 
 /**
  * POST /api/reservations/:id/approve
- * تأیید رزرو → SalesRequest (held → allocated، اتمیک). ترتیب: authn → authz → approve.
- * ponytail: MVP بدون role-gate؛ «تأیید تجاری معمولاً staff است» — وقتی role اضافه شد گیت کن.
+ * تأیید تجاریِ رزرو → SalesRequest (held → allocated، اتمیک). **staff-only** (spec ۵.۶).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await currentUserId();
@@ -14,18 +13,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { id: reservationId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { tenantId, agentAccountId } = body ?? {};
-  if (typeof tenantId !== "string" || typeof agentAccountId !== "string")
+  const { tenantId } = body ?? {};
+  if (typeof tenantId !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {
-    await authorizeAgent(userId, tenantId, agentAccountId);
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
   }
 
-  const result = await approveReservation({ tenantId, agentAccountId, reservationId, actorUserId: userId });
+  const result = await approveReservation({ tenantId, reservationId, actorUserId: userId });
   if (!result.ok) {
     if (result.reason === "not_found") return NextResponse.json({ error: "not_found" }, { status: 404 });
     // not_active: منقضی یا قبلاً تبدیل‌شده — رزرو دیگه قابل تأیید نیست

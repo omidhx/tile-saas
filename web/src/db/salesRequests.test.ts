@@ -39,7 +39,7 @@ test("approve: held → allocated بدون گپ، و SalesRequest تأییدشد
   assert.equal(before.allocated, 0);
   assert.equal(before.available, 90);
 
-  const res = await approveReservation({ tenantId: T, agentAccountId: AG, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const res = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
   assert.equal(res.ok, true);
 
   const after = await avail();
@@ -55,18 +55,18 @@ test("approve: held → allocated بدون گپ، و SalesRequest تأییدشد
 
 test("guard: تأیید دوباره‌ی همان رزرو → not_active (بدون double-allocate)", async () => {
   const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "a2", items: [{ lotId: LOT, quantityBoxes: 5 }] });
-  const first = await approveReservation({ tenantId: T, agentAccountId: AG, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const first = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
   assert.equal(first.ok, true);
   const allocatedAfterFirst = (await avail()).allocated; // 10 + 5 = 15
 
-  const second = await approveReservation({ tenantId: T, agentAccountId: AG, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const second = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
   assert.equal(second.ok, false);
   assert.equal(!second.ok && second.reason, "not_active");
   assert.equal((await avail()).allocated, allocatedAfterFirst, "allocated نباید دوباره بالا بره");
 });
 
-test("رزرو ناموجود/غیرمالِ این agent → not_found", async () => {
-  const res = await approveReservation({ tenantId: T, agentAccountId: AG, reservationId: "00000000-0000-0000-0000-000000000000", actorUserId: U });
+test("رزرو ناموجود → not_found", async () => {
+  const res = await approveReservation({ tenantId: T, reservationId: "00000000-0000-0000-0000-000000000000", actorUserId: U });
   assert.equal(res.ok, false);
   assert.equal(!res.ok && res.reason, "not_found");
 });

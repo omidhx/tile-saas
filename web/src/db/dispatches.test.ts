@@ -34,7 +34,7 @@ const bal = async () =>
 // reserve → approve → createDispatch؛ dispatchId را برمی‌گرداند
 async function chainToDispatch(key: string, qty: number, code: string): Promise<string> {
   const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: key, items: [{ lotId: LOT, quantityBoxes: qty }] });
-  const a = await approveReservation({ tenantId: T, agentAccountId: AG, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
   const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: code });
   assert.equal(d.ok, true, "createDispatch باید موفق شه");
   return d.ok ? d.dispatchId : "";

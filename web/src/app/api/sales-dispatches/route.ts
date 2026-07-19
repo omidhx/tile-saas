@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
-import { authorizeTenantMember, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { createDispatchFromRequest } from "@/db/dispatches";
 
 /** GET /api/sales-dispatches?tenantId — لیست حواله‌ها برای پنل staff. */
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
   try {
-    await authorizeTenantMember(userId, tenantId);
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {
-    await authorizeTenantMember(userId, tenantId);
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

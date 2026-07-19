@@ -5,8 +5,9 @@
 ## پیاده‌سازی (ساخته نشده)
 | مورد | وضعیت | مرجع |
 |---|---|---|
-| تأیید SalesRequest (`held→allocated`) | ✅ ساخته و تست‌شده (`salesRequests.ts`, `/api/reservations/:id/approve`)؛ فعلاً بدون role-gate (staff) | spec ۱۴.۲ |
-| SalesDispatch + state machine + `loaded` | ✅ ساخته و تست‌شده (`dispatches.ts`, `/api/sales-dispatches[/:id/status]`)؛ create-از-request + loaded + cancel-release. **باز:** backorderِ مستقل (بدون request)، role-gate staff | spec ۱۴.۳ |
+| تأیید SalesRequest (`held→allocated`) | ✅ ساخته و تست‌شده؛ **staff-only** (`authorizeStaff`) | spec ۱۴.۲ |
+| SalesDispatch + state machine + `loaded` | ✅ ساخته و تست‌شده؛ create-از-request + loaded + cancel-release، **staff-only**. **باز:** backorderِ مستقل (بدون request) | spec ۱۴.۳ |
+| نقش staff/agent | ✅ `tenant_membership.role` (admin/staff/agent) با CHECK؛ تأیید+حواله staff-only، نماینده ۴۰۳ (unit + e2e). **باز:** تفکیک agent_admin/operator | spec ۱۴.۶ |
 | Import اکسل (snapshot) | schema هست، پردازش نه | spec ۱۴.۵ |
 | «رزروهای من» + دکمه‌ی تأیید | ✅ صفحه `/reservations` | — |
 | پنل staff (حواله + بارگیری) | ✅ صفحه `/staff` (درخواست‌های تأییدشده → حواله → گذارِ وضعیت) | — |

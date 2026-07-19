@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Ctx = { tenantId: string; tenantName: string };
+type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
 type Req = { id: string; status: string; agentName: string; items: { name: string; code: string; qty: number }[] };
 type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number };
 
@@ -20,18 +21,33 @@ const FA: Record<string, string> = {
 export default function StaffPage() {
   const router = useRouter();
   const [ctx, setCtx] = useState<Ctx | null>(null);
+  const [pendingResvs, setPendingResvs] = useState<Resv[]>([]);
   const [reqs, setReqs] = useState<Req[]>([]);
   const [disps, setDisps] = useState<Disp[]>([]);
   const [pending, setPending] = useState<string | null>(null);
 
   const load = useCallback(async (c: Ctx) => {
-    const [r, d] = await Promise.all([
+    const [rv, r, d] = await Promise.all([
+      fetch(`/api/reservations?tenantId=${c.tenantId}`),                 // staff view: رزروهای active همه
       fetch(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
       fetch(`/api/sales-dispatches?tenantId=${c.tenantId}`),
     ]);
+    if (rv.ok) setPendingResvs((await rv.json()).reservations);
     if (r.ok) setReqs((await r.json()).requests);
     if (d.ok) setDisps((await d.json()).dispatches);
   }, []);
+
+  async function approve(reservationId: string) {
+    if (!ctx) return;
+    setPending("approve" + reservationId);
+    try {
+      await fetch(`/api/reservations/${reservationId}/approve`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId }),
+      });
+      await load(ctx);
+    } finally { setPending(null); }
+  }
 
   useEffect(() => {
     (async () => {
@@ -75,7 +91,21 @@ export default function StaffPage() {
       <h1>پنل پشتیبان</h1>
       <p className="muted">{ctx.tenantName}</p>
 
-      <h2 style={{ fontSize: "1.05rem" }}>درخواست‌های تأییدشده</h2>
+      <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>
+      {pendingResvs.length === 0 && <p className="muted">رزروِ فعالی برای تأیید نیست.</p>}
+      {pendingResvs.map((r) => (
+        <div className="card" key={r.id}>
+          <div className="row"><strong>{r.agentName}</strong></div>
+          <div className="muted">{r.items.map((i) => `${i.name} ×${i.quantityBoxes}`).join("، ")}</div>
+          <div style={{ marginTop: ".5rem" }}>
+            <button onClick={() => approve(r.id)} disabled={pending === "approve" + r.id}>
+              {pending === "approve" + r.id && <span className="spinner" />}تأیید (held→allocated)
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>درخواست‌های تأییدشده</h2>
       {reqs.length === 0 && <p className="muted">درخواست تأییدشده‌ای برای حواله نیست.</p>}
       {reqs.map((r) => (
         <div className="card" key={r.id}>

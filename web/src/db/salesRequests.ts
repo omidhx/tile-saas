@@ -10,22 +10,21 @@ export type ApproveResult =
  * زمانی می‌سازه که موجودی دوباره available دیده می‌شه (باگی که بازبین‌ها flag کردن).
  *
  * ترتیب: قفل balanceها (ORDER BY lot_id) → guardِ تبدیل رزرو → allocation → COMMIT.
- * ponytail: نقش‌گیت (فقط staff تأیید کنه) هنوز نیست — هرکه به این agent مجازه می‌تونه.
- *   ponytail: MVP بدون role-gate؛ وقتی staff/agent role اضافه شد اینجا چک کن.
+ * تأیید «تجاری» است و کارِ staff (route با authorizeStaff گیت می‌کنه)؛ staff هر رزروِ
+ * این tenant را تأیید می‌کند، پس agent از خودِ رزرو خوانده می‌شود نه از caller.
  */
 export async function approveReservation(params: {
   tenantId: string;
-  agentAccountId: string;
   reservationId: string;
   actorUserId: string;
 }): Promise<ApproveResult> {
-  const { tenantId, agentAccountId, reservationId, actorUserId } = params;
+  const { tenantId, reservationId, actorUserId } = params;
 
   return withTenant(tenantId, async (tx) => {
-    // ۱. رزرو باید مالِ همین tenant+agent باشه (وگرنه not_found — نشتِ وجود لو نده)
+    // ۱. رزرو باید مالِ همین tenant باشه (وگرنه not_found). agent از خودِ رزرو.
     const [resv] = await tx<{ agent_account_id: string }[]>`
       SELECT agent_account_id FROM reservation
-      WHERE id = ${reservationId} AND tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}`;
+      WHERE id = ${reservationId} AND tenant_id = ${tenantId}`;
     if (!resv) return { ok: false, reason: "not_found" };
 
     // اقلام رزرو + variant هر lot (برای ساخت SalesRequestItem). مرتب بر lot_id برای قفل.
@@ -52,7 +51,7 @@ export async function approveReservation(params: {
     // ۴. SalesRequest تأییدشده
     const [sr] = await tx<{ id: string }[]>`
       INSERT INTO sales_request (tenant_id, agent_account_id, status)
-      VALUES (${tenantId}, ${agentAccountId}, 'approved')
+      VALUES (${tenantId}, ${resv.agent_account_id}, 'approved')
       RETURNING id`;
 
     // ۵. یک SalesRequestItem به‌ازای هر variant (جمعِ کارتن)، با line_no

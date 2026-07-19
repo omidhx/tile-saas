@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeTenantMember, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { setDispatchStatus, type DispatchStatus } from "@/db/dispatches";
 
 const VALID: DispatchStatus[] = ["registered", "ready_for_loading", "loaded", "delivered", "cancelled"];
@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {
-    await authorizeTenantMember(userId, tenantId);
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
