@@ -21,10 +21,14 @@ export type ResolvedPrice = {
   variantId: string;
   unitPrice: number;        // قیمت واحد (هر کارتن)، کوچیک‌ترین واحد پولی
   source: PriceSource;
+  priceListId: string | null; // برای snapshot: از کدام لیست آمد (override → null)
   percentOff: number;       // ۰ اگر تخفیف حجمی نخورده
   lineTotal: number;        // unitPrice*qty منهای تخفیف — صحیح
   discountAmount: number;   // مبلغ تخفیف، صحیح
 };
+
+/** واحد پولِ canonical (spec ۱۴.۸): ریال، عددِ صحیح. UI می‌تواند تومان نشان دهد. */
+export const CURRENCY = "IRR";
 
 /** تخفیفِ کل خط: floor روی مبلغ، نه روی قیمت واحد (تا گِرد کردن به ضرر/نفع انباشته نشود). */
 export function applyVolumeDiscount(unitPrice: number, qty: number, percentOff: number) {
@@ -61,16 +65,16 @@ export async function resolvePricesIn(
   const asOf = at ?? new Date();
 
   // قیمتِ پایه: override بر لیست ارجح است. یک کوئری، نه یکی به‌ازای هر قلم.
-  const rows = await tx<{ variant_id: string; price: string; source: PriceSource }[]>`
-    SELECT DISTINCT ON (variant_id) variant_id, price, source FROM (
-      SELECT o.variant_id, o.price, 'override'::text AS source, 1 AS rank
+  const rows = await tx<{ variant_id: string; price: string; source: PriceSource; price_list_id: string | null }[]>`
+    SELECT DISTINCT ON (variant_id) variant_id, price, source, price_list_id FROM (
+      SELECT o.variant_id, o.price, 'override'::text AS source, NULL::uuid AS price_list_id, 1 AS rank
       FROM agent_price_override o
       WHERE o.tenant_id = ${tenantId} AND o.agent_account_id = ${agentAccountId}
         AND o.variant_id IN ${tx(variantIds)}
         AND (o.valid_from IS NULL OR o.valid_from <= ${asOf})
         AND (o.valid_to   IS NULL OR o.valid_to   >= ${asOf})
       UNION ALL
-      SELECT pli.variant_id, pli.price, 'list'::text AS source, 2 AS rank
+      SELECT pli.variant_id, pli.price, 'list'::text AS source, pli.price_list_id, 2 AS rank
       FROM price_list_item pli
       JOIN agent_account aa ON aa.price_list_id = pli.price_list_id AND aa.tenant_id = pli.tenant_id
       WHERE pli.tenant_id = ${tenantId} AND aa.id = ${agentAccountId}
@@ -96,7 +100,10 @@ export async function resolvePricesIn(
       .filter((t) => (t.variant_id === null || t.variant_id === r.variant_id) && qty >= t.min_qty_boxes)
       .reduce((best, t) => Math.max(best, t.percent_off), 0);
     const { discountAmount, lineTotal } = applyVolumeDiscount(unitPrice, qty, percentOff);
-    out.set(r.variant_id, { variantId: r.variant_id, unitPrice, source: r.source, percentOff, discountAmount, lineTotal });
+    out.set(r.variant_id, {
+      variantId: r.variant_id, unitPrice, source: r.source, priceListId: r.price_list_id,
+      percentOff, discountAmount, lineTotal,
+    });
   }
   return out;
 }

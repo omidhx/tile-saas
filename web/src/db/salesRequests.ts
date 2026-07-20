@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { resolvePricesIn, CURRENCY } from "./pricing";
 
 export type ApproveResult =
   | { ok: true; salesRequestId: string; deduped?: false }
@@ -58,12 +59,28 @@ export async function approveReservation(params: {
     // ۵. یک SalesRequestItem به‌ازای هر variant (جمعِ کارتن)، با line_no
     const byVariant = new Map<string, number>();
     for (const it of items) byVariant.set(it.variant_id, (byVariant.get(it.variant_id) ?? 0) + it.quantity_boxes);
+
+    // snapshot قیمت (v2): قیمتِ **لحظه‌ی تأیید** ثبت می‌شود، نه قیمتِ روز.
+    // اگر بعداً لیست قیمت عوض شود، سفارشِ ثبت‌شده نباید تغییر کند — وگرنه فاکتور و
+    // تاریخچه بازنویسی می‌شود. qty کل هر variant پاس می‌شود تا پله‌ی تخفیف حجمی درست بخورد.
+    // نبودِ قیمت → NULL می‌ماند (نه صفر): «قیمت ثبت نشده» با «رایگان» یکی نیست.
+    const prices = await resolvePricesIn(tx, {
+      tenantId, agentAccountId: resv.agent_account_id,
+      variantIds: [...byVariant.keys()],
+      qtyByVariant: Object.fromEntries(byVariant),
+    });
+
     const itemIdOf = new Map<string, string>();
     let lineNo = 1;
     for (const [variantId, qty] of byVariant) {
+      const p = prices.get(variantId);
       const [sri] = await tx<{ id: string }[]>`
-        INSERT INTO sales_request_item (tenant_id, request_id, line_no, variant_id, requested_qty_boxes)
-        VALUES (${tenantId}, ${sr.id}, ${lineNo}, ${variantId}, ${qty})
+        INSERT INTO sales_request_item
+          (tenant_id, request_id, line_no, variant_id, requested_qty_boxes,
+           unit_price_applied, currency, price_basis, price_list_id, discount_amount, applied_price_source)
+        VALUES (${tenantId}, ${sr.id}, ${lineNo}, ${variantId}, ${qty},
+                ${p?.unitPrice ?? null}, ${p ? CURRENCY : null}, ${p ? "per_box" : null},
+                ${p?.priceListId ?? null}, ${p?.discountAmount ?? 0}, ${p?.source ?? null})
         RETURNING id`;
       itemIdOf.set(variantId, sri.id);
       lineNo++;

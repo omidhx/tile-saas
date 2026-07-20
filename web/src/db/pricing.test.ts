@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { resolvePrices, applyVolumeDiscount } from "./pricing";
+import { reserve } from "./reservations";
+import { approveReservation } from "./salesRequests";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const AG = "a5555555-5555-5555-5555-555555555555";   // لیست قیمت دارد
@@ -78,6 +80,41 @@ test("تخفیف حجمی: بهترین پله‌ی واجدشرایط، با ر
   const big = await resolvePrices({ tenantId: T, agentAccountId: AG, variantIds: [V2], qtyByVariant: { [V2]: 100 } });
   assert.equal(big.get(V2)!.percentOff, 12);
   assert.equal(big.get(V2)!.lineTotal, 176000000);
+});
+
+test("snapshot: قیمتِ لحظه‌ی تأیید ثبت می‌شود و تغییرِ بعدیِ قیمت آن را بازنویسی نمی‌کند", async () => {
+  // موجودی و رزرو برای V1 (قیمت لیست ۱٬۰۰۰٬۰۰۰، override فعال ۹۰۰٬۰۰۰ از تست قبل)
+  await sql.unsafe(`
+    INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('a3333333-3333-3333-3333-333333333333','${T}','W','W1','main');
+    INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('a4444444-4444-4444-4444-444444444444','${T}','${V1}','a3333333-3333-3333-3333-333333333333');
+    INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','a4444444-4444-4444-4444-444444444444',100);
+    INSERT INTO app_user (id,phone,password_hash) VALUES ('a8888888-8888-8888-8888-888888888888','0910','x');
+  `);
+  const r = await reserve({
+    tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "snap-1",
+    items: [{ lotId: "a4444444-4444-4444-4444-444444444444", quantityBoxes: 4 }],
+  });
+  const a = await approveReservation({
+    tenantId: T, reservationId: r.ok ? r.reservationId : "",
+    actorUserId: "a8888888-8888-8888-8888-888888888888",
+  });
+  assert.equal(a.ok, true);
+
+  const [line] = await sql<{ unit: string; cur: string; basis: string; src: string; disc: string }[]>`
+    SELECT unit_price_applied AS unit, currency AS cur, price_basis AS basis,
+           applied_price_source AS src, discount_amount AS disc
+    FROM sales_request_item WHERE request_id = ${a.ok ? a.salesRequestId : ""}`;
+  assert.equal(Number(line.unit), 900000, "قیمتِ override لحظه‌ی تأیید");
+  assert.equal(line.src, "override");
+  assert.equal(line.cur, "IRR");
+  assert.equal(line.basis, "per_box");
+
+  // حالا قیمت را عوض می‌کنیم — سفارشِ ثبت‌شده نباید تکان بخورد
+  await sql`UPDATE agent_price_override SET price = 111111 WHERE tenant_id = ${T} AND variant_id = ${V1}`;
+  const [again] = await sql<{ unit: string }[]>`
+    SELECT unit_price_applied AS unit FROM sales_request_item WHERE request_id = ${a.ok ? a.salesRequestId : ""}`;
+  assert.equal(Number(again.unit), 900000, "تغییرِ قیمت نباید سفارشِ قبلی را بازنویسی کند");
+  await sql`UPDATE agent_price_override SET price = 900000 WHERE tenant_id = ${T} AND variant_id = ${V1}`;
 });
 
 test("پول هیچ‌جا float نمی‌شود — تخفیف با floor حساب می‌شود", () => {
