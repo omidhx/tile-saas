@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { formatJalaliDateTime } from "@/lib/date";
 
 type Ctx = { tenantId: string; tenantName: string };
 type Movement = {
@@ -91,7 +92,7 @@ export default function LedgerPage() {
         <div className="card" key={m.id}>
           <div className="row">
             <strong>{m.name} <span className="muted">({m.code}{m.batch ? ` · بچ ${m.batch}` : ""})</span></strong>
-            <span className="muted">{new Date(m.createdAt).toLocaleString("fa-IR")}</span>
+            <span className="muted">{formatJalaliDateTime(m.createdAt)}</span>
           </div>
           <div className="muted">
             {TYPE_FA[m.type] ?? m.type}

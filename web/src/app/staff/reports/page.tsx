@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
+import { JalaliDateInput } from "@/lib/JalaliDateInput";
+import { toJalali, jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
 
 type AgentPerf = { agentId: string; agentName: string; requests: number; boxes: number; value: number; unpricedLines: number };
 type TopProduct = { name: string; code: string; boxes: number };
@@ -10,27 +12,32 @@ type DeadStock = { name: string; code: string; onHand: number };
 type Reports = { from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[] };
 
 const n = (v: number) => v.toLocaleString("fa-IR");
-const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export default function ReportsPage() {
   const { ctx, state } = useContexts("staff");
   const [rep, setRep] = useState<Reports | null>(null);
-  const [from, setFrom] = useState(iso(new Date(Date.now() - 30 * 86400000)));
-  const [to, setTo] = useState(iso(new Date()));
+  const [from, setFrom] = useState<Jalali>(() => toJalali(new Date(Date.now() - 30 * 86400000)));
+  const [to, setTo] = useState<Jalali>(todayJalali);
   const [loadErr, setLoadErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async (tenantId: string, f: string, t: string) => {
+  const load = useCallback(async (tenantId: string, f: Jalali, t: Jalali) => {
     setLoading(true);
+    // مرزها به UTC می‌روند چون DB با UTC کار می‌کند؛ فقط نمایش شمسی است.
     // to را شاملِ خودِ روز می‌کنیم (کاربر «تا امروز» را یعنی «شاملِ امروز» می‌فهمد)
-    const toExclusive = iso(new Date(new Date(t).getTime() + 86400000));
-    const res = await getJson<Reports>(`/api/reports?tenantId=${tenantId}&from=${f}&to=${toExclusive}`);
+    const fromIso = jalaliToDate(f).toISOString();
+    const toExclusive = new Date(jalaliToDate(t).getTime() + 86400000).toISOString();
+    const res = await getJson<Reports>(`/api/reports?tenantId=${tenantId}&from=${fromIso}&to=${toExclusive}`);
     if (res.ok) { setRep(res.data); setLoadErr(""); }
     else setLoadErr(loadError(res.status));
     setLoading(false);
   }, []);
 
-  useEffect(() => { if (ctx) load(ctx.tenantId, from, to); }, [ctx, from, to, load]);
+  // با selectها دیگر min/max نداریم، پس بازه‌ی وارونه ممکن است — و بی‌راهنما
+  // فقط یک گزارشِ خالی نشان می‌داد.
+  const inverted = jalaliToDate(from) > jalaliToDate(to);
+
+  useEffect(() => { if (ctx && !inverted) load(ctx.tenantId, from, to); }, [ctx, from, to, load, inverted]);
 
   if (state === "none") return <main><p className="err" role="alert">این بخش فقط برای پشتیبان است.</p></main>;
   if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
@@ -45,21 +52,16 @@ export default function ReportsPage() {
 
       <div className="card">
         <div className="row" style={{ gap: ".5rem", justifyContent: "flex-start", flexWrap: "wrap" }}>
-          <label style={{ margin: 0 }}>از
-            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)}
-              aria-label="از تاریخ" style={{ maxWidth: 170, marginInlineStart: ".4rem" }} />
-          </label>
-          <label style={{ margin: 0 }}>تا
-            <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)}
-              aria-label="تا تاریخ" style={{ maxWidth: 170, marginInlineStart: ".4rem" }} />
-          </label>
+          <JalaliDateInput label="از" value={from} onChange={setFrom} currentYear={to.jy} />
+          <JalaliDateInput label="تا" value={to} onChange={setTo} currentYear={todayJalali().jy} />
           {loading && <span className="muted"><span className="spinner" aria-hidden="true" />در حال محاسبه…</span>}
         </div>
       </div>
 
+      {inverted && <div className="card" role="alert"><span className="err">⚠️ تاریخِ «از» بعد از «تا» است — بازه را اصلاح کنید.</span></div>}
       {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
 
-      {rep && !loadErr && (
+      {rep && !loadErr && !inverted && (
         <>
           {/* screen-reader-summary: خلاصه‌ی متنیِ نکته‌ی اصلی، نه فقط جدولِ خام */}
           <div className="card">
