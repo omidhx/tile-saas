@@ -547,6 +547,46 @@ REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
 -- در دیپلوی: GRANT EXECUTE ... TO <نقشِ worker>; و cron هر ۱۰-۱۵ دقیقه.
 
 -- ---------------------------------------------------------------------------
+-- worker پیامک (Outbox) — cross-tenant، پس مثل بالا SECURITY DEFINER
+-- ---------------------------------------------------------------------------
+-- چرا تابع و نه کوئری ساده: notification_outbox ستون tenant_id دارد، پس RLS رویش
+-- فعال است. worker به یک tenant خاص تعلق ندارد و app.tenant_id ست نمی‌کند، بنابراین
+-- با نقشِ اپ (non-superuser) هیچ ردیفی نمی‌دید و **بی‌صدا هیچ پیامی نمی‌فرستاد**.
+-- این فقط در production ظاهر می‌شد چون dev با superuser وصل می‌شود و RLS دور می‌خورد.
+-- امن است: نه ورودیِ tenant می‌گیرد و نه داده‌ای فراتر از صفِ پیام برمی‌گرداند.
+
+-- برداشتِ اتمیکِ پیام‌های آماده (claim): attempt_count++ و SKIP LOCKED تا دو worker
+-- هم‌زمان یک پیام را دوبار نفرستند.
+CREATE FUNCTION claim_pending_notifications(p_limit INT, p_max_attempts INT)
+RETURNS TABLE (id UUID, recipient TEXT, payload JSONB, attempt_count INT)
+LANGUAGE sql SECURITY DEFINER AS $$
+    UPDATE notification_outbox SET attempt_count = notification_outbox.attempt_count + 1
+    WHERE notification_outbox.id IN (
+        SELECT o.id FROM notification_outbox o
+        WHERE o.status = 'pending' AND o.attempt_count < p_max_attempts
+        ORDER BY o.created_at
+        LIMIT p_limit
+        FOR UPDATE SKIP LOCKED
+    )
+    RETURNING notification_outbox.id, notification_outbox.recipient,
+              notification_outbox.payload, notification_outbox.attempt_count;
+$$;
+REVOKE EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) FROM PUBLIC;
+
+-- ثبتِ نتیجه: موفق → sent، ناموفقِ رسیده به سقف → failed (dead-letter)، وگرنه pending می‌ماند.
+CREATE FUNCTION finish_notification(p_id UUID, p_sent BOOLEAN, p_max_attempts INT)
+RETURNS VOID
+LANGUAGE sql SECURITY DEFINER AS $$
+    UPDATE notification_outbox
+    SET status = CASE WHEN p_sent THEN 'sent'
+                      WHEN attempt_count >= p_max_attempts THEN 'failed'
+                      ELSE 'pending' END,
+        sent_at = CASE WHEN p_sent THEN now() ELSE sent_at END
+    WHERE id = p_id;
+$$;
+REVOKE EXECUTE ON FUNCTION finish_notification(UUID, BOOLEAN, INT) FROM PUBLIC;
+
+-- ---------------------------------------------------------------------------
 -- ۸. RLS — لایه‌ی دوم دفاعی، روی هر جدولِ دارای tenant_id
 -- ---------------------------------------------------------------------------
 -- app.tenant_id باید در ابتدای هر تراکنش SET شه. اپ با نقشِ non-superuser وصل شه

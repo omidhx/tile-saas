@@ -6,43 +6,26 @@ const MAX_ATTEMPTS = 5;
 /**
  * ارسالِ پیام‌های صف‌شده (spec ۵.۹ + runbook: retry/dead-letter).
  *
- * الگوی claim-then-send:
- *  ۱) یک دستورِ اتمیک ردیف‌ها را «برمی‌دارد» (attempt_count++). `FOR UPDATE SKIP LOCKED`
- *     داخل همین دستور یعنی دو workerِ هم‌زمان یک ردیف را برنمی‌دارند.
- *  ۲) ارسال (I/O شبکه) **بیرون از تراکنش** انجام می‌شود — تراکنشِ باز روی کالِ شبکه‌ی
- *     کند، اتصال‌ها را حبس می‌کند.
- *  ۳) نتیجه ثبت می‌شود.
- * اگر worker بین ۱ و ۳ کرش کند، attempt_count بالا رفته و ردیف pending مانده →
- * اجرای بعدی دوباره تلاش می‌کند (at-least-once). بعد از MAX_ATTEMPTS → failed (dead-letter).
- * cross-tenant است (نگهداری)، پس withTenant ندارد.
+ * از توابعِ SECURITY DEFINER استفاده می‌کند، نه کوئریِ مستقیم: `notification_outbox`
+ * ستون tenant_id دارد پس RLS رویش فعال است، و این worker به هیچ tenantی تعلق ندارد
+ * (app.tenant_id ست نمی‌کند). با کوئریِ مستقیم، در production با نقشِ non-superuser
+ * صفر ردیف می‌دید و **بی‌صدا هیچ پیامی نمی‌فرستاد** — باگی که فقط زیر RLS واقعی
+ * ظاهر می‌شود، نه در dev که با superuser وصل می‌شویم.
+ *
+ * الگوی claim-then-send: برداشتِ اتمیک (SKIP LOCKED، ضدِ ارسال دوباره توسط دو worker)،
+ * سپس ارسال **بیرون از تراکنش** (تا اتصال روی کالِ کندِ شبکه حبس نشود)، سپس ثبتِ نتیجه.
+ * کرش بین برداشت و ثبت → ردیف pending می‌ماند و اجرای بعدی دوباره تلاش می‌کند (at-least-once).
  */
 export async function sendPendingNotifications(limit = 50): Promise<{ sent: number; failed: number }> {
   let sent = 0, failed = 0;
 
-  // ۱) claim اتمیک
-  const claimed = await sql<{ id: string; recipient: string; payload: Record<string, unknown>; attempt_count: number }[]>`
-    UPDATE notification_outbox SET attempt_count = attempt_count + 1
-    WHERE id IN (
-      SELECT id FROM notification_outbox
-      WHERE status = 'pending' AND attempt_count < ${MAX_ATTEMPTS}
-      ORDER BY created_at
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id, recipient, payload, attempt_count`;
+  const claimed = await sql<{ id: string; recipient: string; payload: Record<string, unknown> }[]>`
+    SELECT * FROM claim_pending_notifications(${limit}, ${MAX_ATTEMPTS})`;
 
   for (const row of claimed) {
-    // ۲) ارسال بیرون از تراکنش
     const result = await sendSms({ to: row.recipient, text: renderMessage(row.payload) });
-    // ۳) ثبت نتیجه
-    if (result.ok) {
-      await sql`UPDATE notification_outbox SET status = 'sent', sent_at = now() WHERE id = ${row.id}`;
-      sent++;
-    } else {
-      if (row.attempt_count >= MAX_ATTEMPTS)
-        await sql`UPDATE notification_outbox SET status = 'failed' WHERE id = ${row.id}`;
-      failed++; // وگرنه pending می‌ماند و اجرای بعدی دوباره تلاش می‌کند
-    }
+    await sql`SELECT finish_notification(${row.id}, ${result.ok}, ${MAX_ATTEMPTS})`;
+    if (result.ok) sent++; else failed++;
   }
   return { sent, failed };
 }

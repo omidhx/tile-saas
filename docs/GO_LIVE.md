@@ -18,7 +18,11 @@
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
   GRANT EXECUTE ON FUNCTION user_contexts(UUID) TO app_user;
   GRANT EXECUTE ON FUNCTION expire_due_reservations() TO app_user;
+  GRANT EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) TO app_user;
+  GRANT EXECUTE ON FUNCTION finish_notification(UUID, BOOLEAN, INT) TO app_user;
   ```
+  > این چهار تابع `SECURITY DEFINER` هستند چون کارشان ذاتاً cross-tenant است
+  > (bootstrap هویت و دو worker). بدون این GRANTها، ورود و workerها کار نمی‌کنند.
   بعد از ساخت: با `app_user` تست کن که بدون `app.tenant_id` هیچ ردیفی برنمی‌گردد.
 - [ ] **`web/.env`** (gitignored):
   ```
@@ -110,6 +114,10 @@ INSERT INTO agent_account_user (tenant_id,agent_account_id,user_id,role) VALUES 
 - تصاویر محصول: روی Object Storage **داخل ایران** (آروان/چابکان) — `next/image` را به هاست خارجی وصل نکن (spec ۱۴.۱۰).
 
 ## ۱۰. تست دود بعد از هر دیپلوی
+
+> **خودکارش هست:** `bash scripts/prodlike-smoke.sh` کلِ این سناریو را روی یک Postgres
+> یک‌بارمصرف با **نقشِ non-superuser و RLS واقعاً فعال** اجرا می‌کند (نه superuserِ dev).
+> همین اسکریپت بود که باگِ «worker پیامک زیر RLS هیچ پیامی نمی‌فرستد» را پیدا کرد.
 
 ```
 ۱. لاگین staff و نماینده (HTTPS)
