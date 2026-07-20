@@ -3,7 +3,9 @@
 -- چرا این فایل وجود دارد: داده‌ی دمو قبلاً دستی ساخته شده بود و با یک بار اجرای
 -- تست روی DBِ اشتباه از بین رفت. حالا بازسازی‌اش یک فرمان است.
 --
--- اجرا:  docker exec -i tile_dev_pg psql -U postgres -d postgres < db/seed-dev.sql
+-- اجرا:  npm --prefix web run seed:dev
+--        (این فایل فقط داده‌ی پایه است؛ چرخه‌ی سفارش را scripts/seed-dev.ts
+--         با صدازدنِ خودِ توابعِ سرویس می‌سازد تا لجر تراز بماند.)
 -- پیش‌نیاز: schema.sql از قبل روی همان DB اجرا شده باشد.
 --
 -- ورود:  09120000001 / pass1234  → پشتیبان (staff)
@@ -15,15 +17,13 @@ BEGIN;
 TRUNCATE tenant CASCADE;
 DELETE FROM app_user WHERE phone IN ('09120000000', '09120000001');
 
--- bcrypt("pass1234")
-\set hash '''$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq'''
-
 INSERT INTO tenant(id, name, slug) VALUES
   ('11111111-1111-1111-1111-111111111111', 'کارخانه کاشی نمونه', 'nemoone');
 
+-- هر دو رمز: pass1234  (bcrypt، فقط برای محیط توسعه)
 INSERT INTO app_user(id, phone, password_hash) VALUES
-  ('44444444-4444-4444-4444-444444444444', '09120000000', :hash),
-  ('55555555-5555-5555-5555-555555555556', '09120000001', :hash);
+  ('44444444-4444-4444-4444-444444444444', '09120000000', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq'),
+  ('55555555-5555-5555-5555-555555555556', '09120000001', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq');
 
 INSERT INTO tenant_membership(tenant_id, user_id, role, is_active) VALUES
   ('11111111-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444', 'agent', true),
@@ -60,6 +60,13 @@ INSERT INTO price_list_item(tenant_id, price_list_id, variant_id, price) VALUES
   ('11111111-1111-1111-1111-111111111111', 'aaaa1111-1111-1111-1111-111111111111',
    'a2222222-2222-2222-2222-222222222223', 4200000);
 
+-- پله‌های تخفیف حجمی روی لیستِ پایه (برای دیدنِ اثرِ تخفیف در سفارشِ دمو)
+INSERT INTO volume_discount(tenant_id, price_list_id, variant_id, min_qty_boxes, percent_off) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'aaaa1111-1111-1111-1111-111111111111',
+   'a2222222-2222-2222-2222-222222222222', 50, 5),
+  ('11111111-1111-1111-1111-111111111111', 'aaaa1111-1111-1111-1111-111111111111',
+   'a2222222-2222-2222-2222-222222222222', 100, 8);
+
 INSERT INTO inventory_lot(id, tenant_id, variant_id, warehouse_id, batch_number) VALUES
   ('a4444444-4444-4444-4444-444444444444', '11111111-1111-1111-1111-111111111111',
    'a2222222-2222-2222-2222-222222222222', 'a3333333-3333-3333-3333-333333333333', 'B-1404-01'),
@@ -69,5 +76,12 @@ INSERT INTO inventory_lot(id, tenant_id, variant_id, warehouse_id, batch_number)
 INSERT INTO inventory_balance(tenant_id, lot_id, on_hand_qty_boxes) VALUES
   ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444444', 396),
   ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444445', 160);
+
+-- موجودیِ اولیه باید لجرِ متناظر داشته باشد، وگرنه گزارشِ تطبیق از همان اولین
+-- اجرا ناترازی نشان می‌دهد — یعنی داده‌ی دمو همان صفحه‌ای را می‌شکست که برای
+-- گرفتنِ همین اختلاف ساخته شده.
+INSERT INTO inventory_transaction(tenant_id, lot_id, transaction_type, on_hand_delta_boxes, note) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444444', 'import_snapshot', 396, 'موجودی اولیه‌ی دمو'),
+  ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444445', 'import_snapshot', 160, 'موجودی اولیه‌ی دمو');
 
 COMMIT;
