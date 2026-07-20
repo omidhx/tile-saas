@@ -10,7 +10,11 @@ type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
   shade_code: string | null; caliber_code: string | null;
   available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
+  unitPrice: number | null;
 };
+
+// پول در دیتابیس عددِ صحیح است؛ اعشار/جداکننده فقط همین‌جا در لایه‌ی UI (قانون #۷)
+const money = (v: number) => v.toLocaleString("fa-IR");
 
 export default function ReservePage() {
   const { contexts, ctx, state, select } = useContexts("agent");
@@ -123,6 +127,9 @@ export default function ReservePage() {
             <div className="muted">
               قابل‌سفارش: {l.available} کارتن{meters ? ` (معادل ${meters} متر)` : ""}{pallets ? ` — ${pallets}` : ""}
               {l.shade_code ? ` — شید ${l.shade_code}` : ""}{l.caliber_code ? ` کالیبر ${l.caliber_code}` : ""}
+            </div>
+            <div className="muted">
+              {l.unitPrice !== null ? `قیمت من: ${money(l.unitPrice)} ریال / کارتن` : "قیمتی برای شما ثبت نشده"}
             </div>
             <div className="row" style={{ marginTop: ".5rem" }}>
               <input type="number" min={0} max={l.available} placeholder="تعداد کارتن"

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeAgent, AuthzError } from "@/auth/authz";
+import { resolvePrices } from "@/db/pricing";
 
 // Lotهای قابل‌سفارش برای یک context. پشت chokepoint دسترسی + فیلترِ صریحِ tenant_id
 // (belt & suspenders با RLS). فقط available>0 — نماینده available می‌بینه نه on_hand.
@@ -22,11 +23,11 @@ export async function GET(req: Request) {
 
   const lots = await withTenant(tenantId, (tx) =>
     tx<{
-      lot_id: string; name: string; code: string; grade: string | null;
+      lot_id: string; variant_id: string; name: string; code: string; grade: string | null;
       shade_code: string | null; caliber_code: string | null;
       available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
     }[]>`
-      SELECT a.lot_id, p.name, p.code, pv.grade, l.shade_code, l.caliber_code,
+      SELECT a.lot_id, l.variant_id, p.name, p.code, pv.grade, l.shade_code, l.caliber_code,
              a.available_qty_boxes AS available,
              COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet) AS boxes_per_pallet,
              pv.sqcm_per_box
@@ -38,5 +39,14 @@ export async function GET(req: Request) {
       ORDER BY p.name`,
   );
 
-  return NextResponse.json({ lots });
+  // «قیمت من» — قیمتِ همین نماینده (spec ۵.۷: نماینده‌ها نباید قیمت هم را ببینند).
+  // یک کوئریِ بالک برای همه‌ی variantها، نه یکی به‌ازای هر قلم.
+  const prices = await resolvePrices({
+    tenantId, agentAccountId,
+    variantIds: [...new Set(lots.map((l) => l.variant_id))],
+  });
+
+  return NextResponse.json({
+    lots: lots.map((l) => ({ ...l, unitPrice: prices.get(l.variant_id)?.unitPrice ?? null })),
+  });
 }

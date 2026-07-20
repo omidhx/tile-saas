@@ -67,6 +67,7 @@ CREATE TABLE agent_account (
     legal_name   TEXT NOT NULL,
     code         TEXT NOT NULL,
     credit_limit BIGINT,                     -- پول: کوچیک‌ترین واحد صحیح (قانون #۷)
+    price_list_id UUID,                      -- v2: لیست قیمتِ این نماینده (FK پایین‌تر، بعد از price_list)
     is_active    BOOLEAN NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
@@ -345,6 +346,28 @@ CREATE TABLE price_list_item (
     FOREIGN KEY (tenant_id, price_list_id) REFERENCES price_list(tenant_id, id),
     FOREIGN KEY (tenant_id, variant_id)    REFERENCES product_variant(tenant_id, id)
 );
+
+-- FK اینجا (نه بالا) چون price_list بعد از agent_account تعریف می‌شود
+ALTER TABLE agent_account
+  ADD CONSTRAINT agent_account_price_list_fk
+  FOREIGN KEY (tenant_id, price_list_id) REFERENCES price_list(tenant_id, id);
+
+-- v2: تخفیف حجمی. پله‌ای بر اساس تعداد کارتن.
+-- درصدِ صحیح (نه اعشار) تا محاسبه‌ی پول هیچ‌جا float نشود (قانون معماری #۷).
+-- NULL یعنی «همه»: price_list_id NULL → روی همه‌ی لیست‌ها، variant_id NULL → روی همه‌ی کالاها.
+CREATE TABLE volume_discount (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     UUID NOT NULL REFERENCES tenant(id),
+    price_list_id UUID,
+    variant_id    UUID,
+    min_qty_boxes INT NOT NULL CHECK (min_qty_boxes > 0),
+    percent_off   INT NOT NULL CHECK (percent_off > 0 AND percent_off <= 100),
+    FOREIGN KEY (tenant_id, price_list_id) REFERENCES price_list(tenant_id, id),
+    FOREIGN KEY (tenant_id, variant_id)    REFERENCES product_variant(tenant_id, id),
+    -- NULLS NOT DISTINCT: دو پله‌ی «همه‌ی کالاها با همین حداقل» نباید تکراری ثبت شوند
+    UNIQUE NULLS NOT DISTINCT (tenant_id, price_list_id, variant_id, min_qty_boxes)
+);
+CREATE INDEX idx_volume_discount_lookup ON volume_discount (tenant_id, variant_id, min_qty_boxes DESC);
 
 CREATE TABLE agent_price_override (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
