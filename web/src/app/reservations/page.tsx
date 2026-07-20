@@ -19,6 +19,19 @@ export default function MyReservationsPage() {
   const [notAgent, setNotAgent] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+
+  async function cancel(reservationId: string) {
+    if (!ctx) return;
+    setCancelling(reservationId);
+    try {
+      await fetch(`/api/reservations/${reservationId}/cancel`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId }),
+      });
+      await load(ctx);
+    } finally { setCancelling(null); }
+  }
 
   const load = useCallback(async (c: Ctx) => {
     const res = await getJson<{ reservations: Resv[] }>(
@@ -61,6 +74,13 @@ export default function MyReservationsPage() {
             {r.status === "active" && <span className="muted">⏳ {remaining(r.expiresAt)}</span>}
           </div>
           <div className="muted">{r.items.map((i) => `${i.name} (${i.code}) ×${i.quantityBoxes}`).join("، ")}</div>
+          {r.status === "active" && (
+            <div style={{ marginTop: ".5rem" }}>
+              <button className="ghost" disabled={cancelling === r.id} onClick={() => cancel(r.id)}>
+                {cancelling === r.id && <span className="spinner" />}لغو رزرو
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </main>

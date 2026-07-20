@@ -1,6 +1,51 @@
 import { createHash } from "node:crypto";
 import { withTenant } from "./client";
 
+export type CancelResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "not_active" };
+
+/**
+ * لغو رزرو توسط نماینده یا پشتیبان (spec بخش ۶، state machine: active → cancelled).
+ * بدون این، نماینده‌ای که اشتباهی ۳۰۰ کارتن رزرو کرده تا پایان TTL موجودی را قفل می‌کند.
+ *
+ * نیازی به دست‌زدن به موجودی نیست: `held` فقط رزروهای `active` را می‌شمارد، پس با
+ * همین یک UPDATE، موجودی **بلافاصله** آزاد می‌شود — همان دلیلی که held را محاسباتی نگه داشتیم.
+ * `agentAccountId` وقتی داده شود یعنی نماینده دارد لغو می‌کند → فقط رزروِ خودش.
+ */
+export async function cancelReservation(params: {
+  tenantId: string; reservationId: string; actorUserId: string; agentAccountId?: string;
+}): Promise<CancelResult> {
+  const { tenantId, reservationId, actorUserId, agentAccountId } = params;
+  return withTenant(tenantId, async (tx) => {
+    // guard اتمیک: فقط active. دو لغوِ هم‌زمان → فقط یکی ردیف می‌گیرد.
+    const done = await tx<{ id: string }[]>`
+      UPDATE reservation SET status = 'cancelled'
+      WHERE id = ${reservationId} AND tenant_id = ${tenantId} AND status = 'active'
+        AND ${agentAccountId ? tx`agent_account_id = ${agentAccountId}` : tx`TRUE`}
+      RETURNING id`;
+    if (done.length === 0) {
+      // تفکیک «وجود ندارد/مالِ تو نیست» از «دیگر active نیست»
+      const [exists] = await tx<{ status: string }[]>`
+        SELECT status FROM reservation
+        WHERE id = ${reservationId} AND tenant_id = ${tenantId}
+          AND ${agentAccountId ? tx`agent_account_id = ${agentAccountId}` : tx`TRUE`}`;
+      return { ok: false, reason: exists ? "not_active" : "not_found" };
+    }
+
+    // لجرِ audit: موجودی عددی تغییر نکرد (held محاسباتی است)، ولی رد پا لازم است
+    const items = await tx<{ lot_id: string; quantity_boxes: number }[]>`
+      SELECT lot_id, quantity_boxes FROM reservation_item WHERE reservation_id = ${reservationId}`;
+    for (const it of items)
+      await tx`
+        INSERT INTO inventory_transaction
+          (tenant_id, lot_id, transaction_type, reference_type, reference_id, actor_user_id, note)
+        VALUES (${tenantId}, ${it.lot_id}, 'reservation_cancel', 'reservation', ${reservationId},
+                ${actorUserId}, ${"آزادسازی " + it.quantity_boxes})`;
+    return { ok: true };
+  });
+}
+
 export type ReserveItem = { lotId: string; quantityBoxes: number };
 export type ReserveResult =
   | { ok: true; reservationId: string; deduped: boolean }

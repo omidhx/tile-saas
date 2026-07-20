@@ -94,6 +94,19 @@ export default function StaffPage() {
     } finally { setPending(null); }
   }
 
+  async function cancelResv(reservationId: string) {
+    if (!ctx) return;
+    setPending("cancel" + reservationId);
+    try {
+      // بدون agentAccountId → مسیرِ staff (هر رزروِ این tenant)
+      await fetch(`/api/reservations/${reservationId}/cancel`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId }),
+      });
+      await load(ctx);
+    } finally { setPending(null); }
+  }
+
   async function approve(reservationId: string) {
     if (!ctx) return;
     setPending("approve" + reservationId);
@@ -162,6 +175,9 @@ export default function StaffPage() {
           <div style={{ marginTop: ".5rem" }}>
             <button onClick={() => approve(r.id)} disabled={pending === "approve" + r.id}>
               {pending === "approve" + r.id && <span className="spinner" />}تأیید (held→allocated)
+            </button>{" "}
+            <button className="ghost" onClick={() => cancelResv(r.id)} disabled={pending === "cancel" + r.id}>
+              {pending === "cancel" + r.id && <span className="spinner" />}لغو
             </button>
           </div>
         </div>
