@@ -1,11 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getJson, loadError } from "@/lib/api";
+import { useContexts, type Ctx } from "@/lib/useContexts";
+import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 
-type Ctx = { tenantId: string; agentAccountId: string; agentLegalName: string; tenantName: string };
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
   shade_code: string | null; caliber_code: string | null;
@@ -13,8 +13,7 @@ type Lot = {
 };
 
 export default function ReservePage() {
-  const router = useRouter();
-  const [ctx, setCtx] = useState<Ctx | null>(null);
+  const { contexts, ctx, state, select } = useContexts("agent");
   const [lots, setLots] = useState<Lot[]>([]);
   // ponytail: سبد state محلیه، نه Zustand — یک صفحه‌ست. وقتی سبد چند-route شد، Zustand (spec ۱۱.۴).
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -53,18 +52,8 @@ export default function ReservePage() {
     } finally { setAlertPending(null); }
   }
 
-  useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/me");
-      if (res.status === 401) { router.push("/login"); return; }
-      const { contexts } = await res.json();
-      // کاربرِ staff agentAccountId نداره — این صفحه مالِ نماینده‌ست
-      const agentCtx = contexts?.find((c: Ctx) => c.agentAccountId);
-      if (!agentCtx) { setMsg({ kind: "err", text: "این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو." }); return; }
-      setCtx(agentCtx); // انتخاب context ساده؛ سوییچر چند-نمایندگی: بعداً
-      loadLots(agentCtx);
-    })();
-  }, [router, loadLots]);
+  // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
+  useEffect(() => { if (ctx) { setCart({}); loadLots(ctx); } }, [ctx, loadLots]);
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));
@@ -106,12 +95,17 @@ export default function ReservePage() {
     }
   }
 
-  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p>{msg && <p className="err">{msg.text}</p>}</main>;
+  if (state === "none")
+    return <main><p className="err" role="alert">این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو.</p></main>;
+  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
 
   return (
     <main>
       <div className="row"><h1>موجودی قابل‌سفارش</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><Link href="/reservations" className="muted">رزروهای من ←</Link><LogoutButton /></span></div>
-      <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
+      <div className="row" style={{ justifyContent: "flex-start", gap: ".75rem", flexWrap: "wrap" }}>
+        <p className="muted" style={{ margin: 0 }}>{ctx.tenantName} — {ctx.agentLegalName}</p>
+        <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
+      </div>
 
       {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr} فهرست ناقص است.</span></div>}
       {loaded && !loadErr && lots.length === 0 && <p className="muted">فعلاً کالای قابل‌سفارشی نیست.</p>}

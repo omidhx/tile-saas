@@ -12,7 +12,7 @@
 | Import اکسل (snapshot) | ✅ ساخته و تست‌شده (`imports.ts`, `/api/imports`, `/staff/import` با پارسِ مرورگریِ SheetJS — فایل به سرور نمی‌رسه). scope-aware zeroing، guardِ below_committed/absent_but_committed، اتمیک، idempotent. **باز:** import_mode=delta (فقط snapshot)، natural-key نهایی وابسته به مصاحبه | spec ۱۴.۵ |
 | «رزروهای من» + دکمه‌ی تأیید | ✅ صفحه `/reservations` | — |
 | پنل staff (حواله + بارگیری) | ✅ صفحه `/staff` (درخواست‌های تأییدشده → حواله → گذارِ وضعیت) | — |
-| سوییچرِ چند-نمایندگی | نه؛ صفحه‌ها اولین context را می‌گیرند | — |
+| سوییچرِ چند-نمایندگی | ✅ `useContexts` + `ContextSwitcher`؛ انتخاب در localStorage می‌ماند (سرور هر درخواست را دوباره authorize می‌کند، پس دست‌کاری‌اش فقط ۴۰۳ می‌دهد). وقتی فقط یک context باشد چیزی نشان داده نمی‌شود | — |
 | worker انقضا | ✅ `expire_due_reservations()` + `npm run worker:expire` (cron هر ۱۰-۱۵ دقیقه) | spec ۵.۳ |
 | StockAlert + پیامک (Outbox) | ✅ `alerts.ts`/`outbox.ts`، `/api/alerts`، `npm run worker:outbox`. صف‌کردن اتمیک با import، claim-then-send، retry×۵ و dead-letter. **باز:** ارائه‌دهنده‌ی واقعی پیامک (فعلاً `SMS_PROVIDER=log`) | spec ۵.۹ |
 | قیمت‌گذاری در UI | جدول‌ها هست، نمایش/تصمیم نه | spec ۵.۷ |

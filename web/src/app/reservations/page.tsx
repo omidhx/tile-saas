@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getJson, loadError } from "@/lib/api";
+import { useContexts, type Ctx } from "@/lib/useContexts";
+import ContextSwitcher from "../ContextSwitcher";
 
-type Ctx = { tenantId: string; agentAccountId: string; tenantName: string; agentLegalName: string };
 type Item = { name: string; code: string; quantityBoxes: number };
 type Resv = { id: string; status: string; expiresAt: string; items: Item[] };
 
@@ -13,10 +13,8 @@ const STATUS_FA: Record<string, string> = {
 };
 
 export default function MyReservationsPage() {
-  const router = useRouter();
-  const [ctx, setCtx] = useState<Ctx | null>(null);
+  const { contexts, ctx, state, select } = useContexts("agent");
   const [rows, setRows] = useState<Resv[]>([]);
-  const [notAgent, setNotAgent] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
@@ -41,30 +39,24 @@ export default function MyReservationsPage() {
     setLoaded(true);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/me");
-      if (res.status === 401) { router.push("/login"); return; }
-      const { contexts } = await res.json();
-      const agentCtx = contexts?.find((c: Ctx) => c.agentAccountId); // staff نماینده نیست
-      if (!agentCtx) { setNotAgent(true); return; }
-      setCtx(agentCtx);
-      load(agentCtx);
-    })();
-  }, [router, load]);
+  useEffect(() => { if (ctx) { setLoadErr(""); load(ctx); } }, [ctx, load]);
 
   const remaining = (iso: string) => {
     const min = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
     return min <= 0 ? "منقضی" : min < 60 ? `${min} دقیقه` : `${Math.floor(min / 60)} ساعت`;
   };
 
-  if (notAgent) return <main><p className="err">این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو.</p></main>;
+  if (state === "none")
+    return <main><p className="err" role="alert">این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو.</p></main>;
   if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
 
   return (
     <main>
       <div className="row"><h1>رزروهای من</h1><Link href="/reserve" className="muted">+ رزرو جدید</Link></div>
-      <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
+      <div className="row" style={{ justifyContent: "flex-start", gap: ".75rem", flexWrap: "wrap" }}>
+        <p className="muted" style={{ margin: 0 }}>{ctx.tenantName} — {ctx.agentLegalName}</p>
+        <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
+      </div>
       {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
       {loaded && !loadErr && rows.length === 0 && <p className="muted">رزروی نداری.</p>}
       {rows.map((r) => (
