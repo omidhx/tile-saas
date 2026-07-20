@@ -43,7 +43,7 @@ test("کلِ زنجیره (import→رزرو→تأیید→بارگیری) لج
   const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "led-r1", items: [{ lotId: lot.id, quantityBoxes: 30 }] });
   const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
   const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-L1" });
-  const did = d.ok ? d.dispatchId : "";
+  const did = d.ok ? d.dispatchIds[0] : "";
   await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "ready_for_loading", actorUserId: U });
   await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "loaded", actorUserId: U });
 

@@ -37,7 +37,7 @@ async function chainToDispatch(key: string, qty: number, code: string): Promise<
   const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
   const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: code });
   assert.equal(d.ok, true, "createDispatch باید موفق شه");
-  return d.ok ? d.dispatchId : "";
+  return d.ok ? d.dispatchIds[0] : "";
 }
 
 test("loaded: on_hand و allocated هر دو اتمیک کم می‌شن", async () => {

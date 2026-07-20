@@ -7,7 +7,7 @@ import LogoutButton from "../LogoutButton";
 type Ctx = { tenantId: string; tenantName: string };
 type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
 type Req = { id: string; status: string; agentName: string; approvalMode: "manual" | "auto"; items: { name: string; code: string; qty: number }[] };
-type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number };
+type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number; warehouseName: string | null };
 type Agent = { id: string; legalName: string };
 type Variant = { id: string; name: string; code: string; sku: string };
 type Backorder = { id: string; status: string; qty: number; name: string; code: string; dispatchCode: string; agentName: string };
@@ -43,6 +43,7 @@ export default function StaffPage() {
   const [boQty, setBoQty] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
+  const [note, setNote] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async (c: Ctx) => {
@@ -135,10 +136,17 @@ export default function StaffPage() {
     if (!ctx) return;
     setPending(requestId);
     try {
-      await fetch("/api/sales-dispatches", {
+      const res = await fetch("/api/sales-dispatches", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ tenantId: ctx.tenantId, salesRequestId: requestId, dispatchCode: `D-${Date.now()}` }),
       });
+      // سفارشِ دوانباره دو حواله می‌سازد — پشتیبان باید بداند، وگرنه دنبالِ حواله‌ی
+      // دومی می‌گردد که فکر می‌کند ساخته نشده.
+      if (res.ok) {
+        const { dispatchIds } = await res.json().catch(() => ({ dispatchIds: [] }));
+        if (dispatchIds?.length > 1)
+          setNote(`این سفارش از ${dispatchIds.length} انبار تأمین می‌شود، پس ${dispatchIds.length} حواله‌ی جدا ساخته شد.`);
+      }
       await load(ctx);
     } finally { setPending(null); }
   }
@@ -165,6 +173,7 @@ export default function StaffPage() {
       {loadErr && (
         <div className="card" role="alert"><span className="err">⚠️ {loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span></div>
       )}
+      {note && <div className="card" role="status">{note}</div>}
 
       <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>
       {loaded && !loadErr && pendingResvs.length === 0 && <p className="muted">رزروِ فعالی برای تأیید نیست.</p>}
@@ -205,7 +214,12 @@ export default function StaffPage() {
       {loaded && !loadErr && disps.length === 0 && <p className="muted">حواله‌ای نیست.</p>}
       {disps.map((d) => (
         <div className="card" key={d.id}>
-          <div className="row"><strong>{d.dispatchCode}</strong><span className="muted">{FA[d.status] ?? d.status} · {d.items} قلم</span></div>
+          <div className="row">
+            <strong>{d.dispatchCode}</strong>
+            <span className="muted">
+              {d.warehouseName ? `${d.warehouseName} · ` : ""}{FA[d.status] ?? d.status} · {d.items} قلم
+            </span>
+          </div>
           {d.customerName && <div className="muted">{d.customerName}</div>}
           <div className="row" style={{ marginTop: ".5rem", justifyContent: "flex-start", gap: ".5rem" }}>
             {(NEXT[d.status] ?? []).map((s) => (

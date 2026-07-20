@@ -1,7 +1,11 @@
 import { withTenant } from "./client";
 
 export type CreateDispatchResult =
-  | { ok: true; dispatchId: string }
+  /**
+   * v2 چندانباره: **آرایه** است، چون سفارشی که از دو انبار تأمین شود به دو حواله
+   * تقسیم می‌شود. تک‌انباره همان آرایه‌ی تک‌عضوی است.
+   */
+  | { ok: true; dispatchIds: string[] }
   | { ok: false; reason: "request_not_found" | "request_not_approved" | "no_allocations" };
 
 export type DispatchStatus = "registered" | "ready_for_loading" | "loaded" | "delivered" | "cancelled";
@@ -36,26 +40,47 @@ export async function createDispatchFromRequest(params: {
     if (!req) return { ok: false, reason: "request_not_found" };
     if (req.status !== "approved") return { ok: false, reason: "request_not_approved" };
 
-    const allocs = await tx<{ lot_id: string; variant_id: string; qty: number; warehouse_id: string }[]>`
-      SELECT sra.lot_id, sri.variant_id, sra.allocated_qty_boxes AS qty, l.warehouse_id
+    type Alloc = { lot_id: string; variant_id: string; qty: number; warehouse_id: string; warehouse_code: string };
+    const allocs = await tx<Alloc[]>`
+      SELECT sra.lot_id, sri.variant_id, sra.allocated_qty_boxes AS qty,
+             l.warehouse_id, w.code AS warehouse_code
       FROM sales_request_allocation sra
       JOIN sales_request_item sri ON sri.id = sra.sales_request_item_id
       JOIN inventory_lot l ON l.id = sra.lot_id
-      WHERE sri.request_id = ${salesRequestId} AND sra.tenant_id = ${tenantId}`;
+      JOIN warehouse w ON w.id = l.warehouse_id
+      WHERE sri.request_id = ${salesRequestId} AND sra.tenant_id = ${tenantId}
+      ORDER BY w.code, sra.lot_id`;
     if (allocs.length === 0) return { ok: false, reason: "no_allocations" };
 
-    const [d] = await tx<{ id: string }[]>`
-      INSERT INTO sales_dispatch
-        (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, destination, status, created_by_user_id)
-      VALUES (${tenantId}, ${salesRequestId}, ${req.agent_account_id}, ${dispatchCode},
-              ${customerName ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
-      RETURNING id`;
-    for (const a of allocs)
-      await tx`
-        INSERT INTO sales_dispatch_item
-          (tenant_id, dispatch_id, lot_id, fulfillment_type, variant_id, quantity_boxes, warehouse_id)
-        VALUES (${tenantId}, ${d.id}, ${a.lot_id}, 'in_stock', ${a.variant_id}, ${a.qty}, ${a.warehouse_id})`;
-    return { ok: true, dispatchId: d.id };
+    // v2 چندانباره: یک حواله به‌ازای هر انبار. حواله یعنی یک کامیون که در یک نقطه
+    // بار می‌زند؛ حواله‌ی دوانباره لیستِ برداشتی می‌داد که نصفش آنجا نیست.
+    const byWarehouse = new Map<string, Alloc[]>();
+    for (const a of allocs) {
+      const list = byWarehouse.get(a.warehouse_id) ?? [];
+      list.push(a);
+      byWarehouse.set(a.warehouse_id, list);
+    }
+
+    const dispatchIds: string[] = [];
+    for (const [warehouseId, group] of byWarehouse) {
+      // کدِ حواله وقتی تقسیم شد باید یکتا **و** برای انباردار معنادار بماند، پس با
+      // کدِ انبار پسوند می‌گیرد (D-1404-001-W2) نه یک شماره‌ی بی‌معنا.
+      const code = byWarehouse.size === 1 ? dispatchCode : `${dispatchCode}-${group[0].warehouse_code}`;
+      const [d] = await tx<{ id: string }[]>`
+        INSERT INTO sales_dispatch
+          (tenant_id, sales_request_id, agent_account_id, dispatch_code, warehouse_id,
+           customer_name, destination, status, created_by_user_id)
+        VALUES (${tenantId}, ${salesRequestId}, ${req.agent_account_id}, ${code}, ${warehouseId},
+                ${customerName ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
+        RETURNING id`;
+      for (const a of group)
+        await tx`
+          INSERT INTO sales_dispatch_item
+            (tenant_id, dispatch_id, lot_id, fulfillment_type, variant_id, quantity_boxes, warehouse_id)
+          VALUES (${tenantId}, ${d.id}, ${a.lot_id}, 'in_stock', ${a.variant_id}, ${a.qty}, ${a.warehouse_id})`;
+      dispatchIds.push(d.id);
+    }
+    return { ok: true, dispatchIds };
   });
 }
 

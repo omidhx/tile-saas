@@ -20,6 +20,7 @@ const U_STAFF = "55555555-5555-5555-5555-555555555556";
 const AG = "a5555555-5555-5555-5555-555555555555";
 const LOT_GRANITE = "a4444444-4444-4444-4444-444444444444";
 const LOT_WHITE = "a4444444-4444-4444-4444-444444444445";
+const LOT_GRANITE_YAZD = "a4444444-4444-4444-4444-444444444446"; // همان گرانیت، انبار دوم
 
 /** اگر هر مرحله شکست بخورد باید بلند فریاد بزند، نه اینکه دموی نصفه بسازد. */
 function must<T extends { ok: boolean }>(r: T, step: string): T & { ok: true } {
@@ -59,8 +60,8 @@ async function main() {
   const d1 = must(await createDispatchFromRequest({
     tenantId: T, salesRequestId: a1.salesRequestId, createdByUserId: U_STAFF, dispatchCode: "D-1404-001",
   }), "حواله‌ی ۱");
-  await setDispatchStatus({ tenantId: T, dispatchId: d1.dispatchId, toStatus: "ready_for_loading", actorUserId: U_STAFF });
-  await setDispatchStatus({ tenantId: T, dispatchId: d1.dispatchId, toStatus: "loaded", actorUserId: U_STAFF });
+  await setDispatchStatus({ tenantId: T, dispatchId: d1.dispatchIds[0], toStatus: "ready_for_loading", actorUserId: U_STAFF });
+  await setDispatchStatus({ tenantId: T, dispatchId: d1.dispatchIds[0], toStatus: "loaded", actorUserId: U_STAFF });
   console.log("✓ سفارش ۱: ۱۲۰ کارتن گرانیت — تأیید و بارگیری شد (با تخفیفِ پله‌ی ۸٪)");
 
   // سفارش ۲ — تأییدشده ولی بارگیری‌نشده: عمداً، تا در گزارش «ارزشِ تعهد» و
@@ -91,6 +92,22 @@ async function main() {
   }), "رزروِ ۴");
   if (r4.autoApproved) throw new Error("سفارش ۴ نباید خودکار تأیید می‌شد — بالای سقف است.");
   console.log("✓ سفارش ۴: ۳۰ کارتن گرانیت — بالای سقف، در انتظارِ تأییدِ پشتیبان");
+
+  // سفارش ۵ — از **دو انبار**: باید خودکار به دو حواله تقسیم شود، چون یک کامیون
+  // نمی‌تواند از دو انبار بار بزند.
+  const r5 = must(await reserve({
+    tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "seed-dev-5",
+    items: [{ lotId: LOT_GRANITE, quantityBoxes: 20 }, { lotId: LOT_GRANITE_YAZD, quantityBoxes: 14 }],
+  }), "رزروِ ۵");
+  const a5 = must(await approveReservation({
+    tenantId: T, reservationId: r5.reservationId, actorUserId: U_STAFF,
+  }), "تأییدِ ۵");
+  const d5 = must(await createDispatchFromRequest({
+    tenantId: T, salesRequestId: a5.salesRequestId, createdByUserId: U_STAFF, dispatchCode: "D-1404-002",
+  }), "حواله‌ی ۵");
+  if (d5.dispatchIds.length !== 2)
+    throw new Error(`سفارشِ دوانباره باید دو حواله می‌ساخت، ${d5.dispatchIds.length} ساخت.`);
+  console.log("✓ سفارش ۵: ۲۰ کارتن مرکزی + ۱۴ کارتن یزد — به دو حواله تقسیم شد");
 
   // اگر این تراز نباشد، دمو همان باگی را دارد که /staff/ledger برای گرفتنش هست
   const [drift] = await sql<{ bad: number }[]>`

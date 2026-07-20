@@ -11,6 +11,7 @@ type Lot = {
   shade_code: string | null; caliber_code: string | null;
   available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
   unitPrice: number | null;
+  warehouse_id: string; warehouse_name: string;
 };
 
 type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
@@ -31,6 +32,7 @@ export default function ReservePage() {
   const [queue, setQueue] = useState<WaitlistEntry[]>([]);
   const [queueQty, setQueueQty] = useState<Record<string, string>>({});
   const [queuePending, setQueuePending] = useState<string | null>(null);
+  const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -100,6 +102,16 @@ export default function ReservePage() {
   const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));
   const mixedShade = shades.size > 1; // spec ۷.۲: هشدار نرم، نه منع
 
+  // فهرستِ انبارها از خودِ اقلام ساخته می‌شود، نه یک کوئریِ جدا: انباری که چیزی
+  // برای سفارش ندارد، فیلترِ بی‌نتیجه می‌سازد.
+  const warehouses = [...new Map(lots.map((l) => [l.warehouse_id, l.warehouse_name])).entries()];
+  const visibleLots = whFilter ? lots.filter((l) => l.warehouse_id === whFilter) : lots;
+
+  // سفارشِ دوانباره ممنوع نیست — فقط دو حواله می‌شود. هشدارِ نرم، مثل شیدِ مخلوط،
+  // چون یک کامیون نمی‌تواند از دو انبار بار بزند و نماینده باید از قبل بداند.
+  const cartWarehouses = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.warehouse_name).filter(Boolean));
+  const mixedWarehouse = cartWarehouses.size > 1;
+
   async function submit() {
     if (!ctx || items.length === 0) return;
     setMsg(null);
@@ -156,7 +168,21 @@ export default function ReservePage() {
       {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr} فهرست ناقص است.</span></div>}
       {loaded && !loadErr && lots.length === 0 && <p className="muted">فعلاً کالای قابل‌سفارشی نیست.</p>}
 
-      {lots.map((l) => {
+      {/* فیلترِ انبار فقط وقتی بیش از یک انبار هست — دراپ‌داونِ تک‌گزینه‌ای فقط نویز است */}
+      {warehouses.length > 1 && (
+        <div className="row" style={{ justifyContent: "flex-start", gap: ".5rem", margin: ".75rem 0" }}>
+          <label htmlFor="wh-filter" style={{ margin: 0 }}>انبار</label>
+          <select id="wh-filter" value={whFilter} onChange={(e) => setWhFilter(e.target.value)} style={{ maxWidth: 220 }}>
+            <option value="">همه‌ی انبارها</option>
+            {warehouses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
+      )}
+      {loaded && !loadErr && lots.length > 0 && visibleLots.length === 0 && (
+        <p className="muted">در این انبار کالای قابل‌سفارشی نیست.</p>
+      )}
+
+      {visibleLots.map((l) => {
         const bpp = l.boxes_per_pallet ?? 0;
         const pallets = bpp > 0 ? `${Math.floor(l.available / bpp)} پالت + ${l.available % bpp} کارتن` : null;
         // شفافیت رند (wireframe/spec ۱۰): عدد واقعی متراژ، فقط اگه sqcm_per_box داشته باشیم
@@ -170,6 +196,9 @@ export default function ReservePage() {
               قابل‌سفارش: {l.available} کارتن{meters ? ` (معادل ${meters} متر)` : ""}{pallets ? ` — ${pallets}` : ""}
               {l.shade_code ? ` — شید ${l.shade_code}` : ""}{l.caliber_code ? ` کالیبر ${l.caliber_code}` : ""}
             </div>
+            {/* انبار همیشه نشان داده می‌شود، حتی وقتی یکی است: نماینده باید بداند بار
+                از کجا برداشته می‌شود، و اگر سفارشش دو انباره شد دو حواله می‌گیرد. */}
+            <div className="muted">انبار: {l.warehouse_name}</div>
             <div className="muted">
               {l.unitPrice !== null ? `قیمت من: ${money(l.unitPrice)} ریال / کارتن` : "قیمتی برای شما ثبت نشده"}
             </div>
@@ -186,6 +215,12 @@ export default function ReservePage() {
         <div className="card" style={{ position: "sticky", bottom: 0 }}>
           <strong>سبد رزرو ({items.length} قلم)</strong>
           {mixedShade && <div className="err">⚠️ شیدهای متفاوت در سبد — برای یک سطح پیوسته توصیه نمی‌شه.</div>}
+          {mixedWarehouse && (
+            <div className="err">
+              ⚠️ سبد از {cartWarehouses.size} انبار است ({[...cartWarehouses].join("، ")}) — این سفارش به {cartWarehouses.size} حواله‌ی جدا تقسیم می‌شود،
+              چون هر کامیون از یک انبار بار می‌زند.
+            </div>
+          )}
           <div style={{ marginTop: ".75rem" }}>
             <button onClick={submit} disabled={pending}>
               {pending && <span className="spinner" aria-hidden="true" />}

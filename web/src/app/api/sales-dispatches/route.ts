@@ -18,11 +18,14 @@ export async function GET(req: Request) {
   const dispatches = await withTenant(tenantId, (tx) =>
     tx`
       SELECT sd.id, sd.dispatch_code AS "dispatchCode", sd.status,
-             sd.customer_name AS "customerName", count(sdi.id)::int AS items
+             sd.customer_name AS "customerName", count(sdi.id)::int AS items,
+             -- انباردار باید بداند این حواله در کدام انبار بار می‌زند (backorder: NULL)
+             w.name AS "warehouseName"
       FROM sales_dispatch sd
       LEFT JOIN sales_dispatch_item sdi ON sdi.dispatch_id = sd.id
+      LEFT JOIN warehouse w ON w.id = sd.warehouse_id
       WHERE sd.tenant_id = ${tenantId}
-      GROUP BY sd.id
+      GROUP BY sd.id, w.name
       ORDER BY sd.created_at DESC
       LIMIT 50`,
   );
@@ -60,5 +63,8 @@ export async function POST(req: Request) {
     const status = result.reason === "request_not_found" ? 404 : 409;
     return NextResponse.json({ error: result.reason }, { status });
   }
-  return NextResponse.json({ dispatchId: result.dispatchId }, { status: 201 });
+  // v2 چندانباره: سفارشِ دوانباره دو حواله می‌شود، پس همیشه آرایه برمی‌گردد.
+  // backorder هنوز تک‌حواله است (lot ندارد، پس انبارش هم معلوم نیست).
+  const dispatchIds = "dispatchIds" in result ? result.dispatchIds : [result.dispatchId];
+  return NextResponse.json({ dispatchIds }, { status: 201 });
 }

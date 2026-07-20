@@ -304,6 +304,11 @@ CREATE TABLE sales_dispatch (
     sales_request_id  UUID,            -- NULLABLE — مسیر backorder (بخش ۵.۶)
     agent_account_id  UUID NOT NULL,
     dispatch_code     TEXT NOT NULL,   -- auto-generated سمت اپ، UNIQUE per tenant
+    -- v2 چندانباره: هر حواله در **یک** انبار بار می‌زند (یک کامیون، یک اسکله).
+    -- سفارشی که از دو انبار تأمین شود به دو حواله تقسیم می‌شود، نه یک حواله‌ی
+    -- دوانباره که انباردار نتواند کاملش کند.
+    -- NULLABLE چون حواله‌ی backorder هنوز lot ندارد، پس انبارش هم معلوم نیست.
+    warehouse_id      UUID,
     reference_number  TEXT,            -- «دفتر ۱» — فقط اطلاعاتی، در uniqueness نیست
     customer_name     TEXT,            -- بخش ۷.۷: متن آزاد در MVP (نه Entity)
     destination       TEXT,
@@ -315,7 +320,8 @@ CREATE TABLE sales_dispatch (
     UNIQUE (tenant_id, id),
     UNIQUE (tenant_id, dispatch_code),
     FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id),
-    FOREIGN KEY (tenant_id, sales_request_id) REFERENCES sales_request(tenant_id, id)
+    FOREIGN KEY (tenant_id, sales_request_id) REFERENCES sales_request(tenant_id, id),
+    FOREIGN KEY (tenant_id, warehouse_id)     REFERENCES warehouse(tenant_id, id)
 );
 
 CREATE TABLE sales_dispatch_item (
