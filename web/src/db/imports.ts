@@ -51,6 +51,24 @@ export async function applySnapshot(params: {
     const touched = new Set<string>();
     let applied = 0, zeroed = 0;
 
+    // قفلِ همه‌ی balanceهای داخل scope، **یک‌جا و مرتب بر lot_id**، قبل از هر تغییری.
+    // چرا: قانون معماری #۴ می‌گه قفل‌ها همیشه ORDER BY lot_id گرفته شن. نسخه‌ی قبلی هر
+    // ردیف را جدا و به ترتیبِ فایل قفل می‌کرد؛ یک import و یک رزروِ هم‌زمان روی دو lot
+    // مشترک با ترتیب معکوس → deadlock. با قفلِ مرتبِ اولیه، هم آن ریسک می‌رود و هم یک
+    // کوئری به‌ازای هر ردیف کم می‌شود (lotهای تازه‌ساخته انحصاریِ همین تراکنش‌اند).
+    const scopeLots = await tx<{ id: string; on_hand: number; committed: number }[]>`
+      SELECT l.id, b.on_hand_qty_boxes AS on_hand, b.allocated_qty_boxes + b.blocked_qty_boxes AS committed
+      FROM inventory_lot l JOIN inventory_balance b ON b.lot_id = l.id
+      JOIN product_variant pv ON pv.id = l.variant_id
+      JOIN product p ON p.id = pv.product_id
+      WHERE l.tenant_id = ${tenantId}
+        AND ${scope.type === "warehouse" ? tx`l.warehouse_id = ${scope.warehouseId}`
+            : scope.type === "brand" ? tx`p.brand_id = ${scope.brandId}`
+            : tx`TRUE`}
+      ORDER BY l.id
+      FOR UPDATE OF b`;
+    const balOf = new Map(scopeLots.map((l) => [l.id, { on_hand: l.on_hand, committed: l.committed }]));
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const err = (reason: string, detail?: string) => {
@@ -84,9 +102,8 @@ export async function applySnapshot(params: {
         await tx`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${tenantId}, ${lot.id}, 0)`;
       }
 
-      const [bal] = await tx<{ on_hand: number; committed: number }[]>`
-        SELECT on_hand_qty_boxes AS on_hand, allocated_qty_boxes + blocked_qty_boxes AS committed
-        FROM inventory_balance WHERE lot_id = ${lot.id} FOR UPDATE`;
+      // قفل از قبل گرفته شده؛ lotِ تازه‌ساخته در نقشه نیست و balanceش صفر است
+      const bal = balOf.get(lot.id) ?? { on_hand: 0, committed: 0 };
       if (row.onHand < bal.committed) { err("below_committed", `on_hand ${row.onHand} < allocated+blocked ${bal.committed}`); continue; }
 
       const delta = row.onHand - bal.on_hand;
@@ -99,21 +116,16 @@ export async function applySnapshot(params: {
       await tx`
         INSERT INTO import_row (tenant_id, batch_id, row_number, raw_data, processing_status, matched_variant_id, matched_lot_id)
         VALUES (${tenantId}, ${batch.id}, ${i + 1}, ${JSON.stringify(row)}::jsonb, 'applied', ${variant.id}, ${lot.id})`;
+      // نقشه را به‌روز کن: اگر همین lot دوباره در فایل بیاید، delta باید از مقدارِ اعمال‌شده
+      // حساب شود نه از مقدارِ اولیه — وگرنه جمعِ لجر با on_hand نهایی نمی‌خواند (drift).
+      balOf.set(lot.id, { on_hand: row.onHand, committed: bal.committed });
       touched.add(lot.id);
       applied++;
     }
 
-    // ردیف‌های غایب در scope → صفر (با همون guardِ committed)
-    const scopeLots = await tx<{ id: string; on_hand: number; committed: number }[]>`
-      SELECT l.id, b.on_hand_qty_boxes AS on_hand, b.allocated_qty_boxes + b.blocked_qty_boxes AS committed
-      FROM inventory_lot l JOIN inventory_balance b ON b.lot_id = l.id
-      JOIN product_variant pv ON pv.id = l.variant_id
-      JOIN product p ON p.id = pv.product_id
-      WHERE l.tenant_id = ${tenantId}
-        AND ${scope.type === "warehouse" ? tx`l.warehouse_id = ${scope.warehouseId}`
-            : scope.type === "brand" ? tx`p.brand_id = ${scope.brandId}`
-            : tx`TRUE`}
-      FOR UPDATE OF b`;
+    // ردیف‌های غایب در scope → صفر (با همون guardِ committed).
+    // scopeLots از بالا می‌آید (همان‌جا قفل شد)؛ lotهای دست‌نخورده مقدارشان عوض نشده،
+    // پس on_hand/committedِ خوانده‌شده هنوز معتبر است.
     for (const l of scopeLots) {
       if (touched.has(l.id) || l.on_hand === 0) continue;
       if (l.committed > 0) { errors.push({ row: null, reason: "absent_but_committed", detail: l.id }); continue; }

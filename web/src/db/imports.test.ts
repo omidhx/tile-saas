@@ -85,6 +85,26 @@ test("absent_but_committed: lotِ دارای تعهد که در فایل نیس�
   assert.equal(await onHand(LC1), 10, "نباید صفر شه — تعهد زنده دارد");
 });
 
+test("ردیف تکراری برای یک Lot: آخرین مقدار می‌ماند و جمعِ لجر با on_hand می‌خواند", async () => {
+  const res = await applySnapshot({
+    tenantId: T, uploaderUserId: U, idempotencyKey: "imp-dup", scope: { type: "warehouse", warehouseId: WD },
+    rows: [
+      { sku: "S1", warehouseCode: "D", batchNumber: "B1", onHand: 70 },
+      { sku: "S1", warehouseCode: "D", batchNumber: "B1", onHand: 55 }, // همان Lot، دوباره
+    ],
+  });
+  assert.equal(res.errors.length, 0);
+  assert.equal(await onHand(LD1), 55, "آخرین مقدار باید بماند");
+
+  // LD1 در seed مستقیماً روی ۴۰ گذاشته شده (بدون لجر)، پس جمعِ لجر = ۵۵−۴۰ = ۱۵.
+  // نکته‌ی اصلی: deltaها باید [+۳۰, −۱۵] باشند — یعنی ردیف دوم از مقدارِ اعمال‌شده (۷۰)
+  // حساب شده نه از مقدارِ اولیه (۴۰). اگر base کهنه می‌ماند، delta دوم +۱۵ می‌شد.
+  const deltas = (await sql<{ d: number }[]>`
+    SELECT on_hand_delta_boxes AS d FROM inventory_transaction
+    WHERE lot_id = ${LD1} ORDER BY created_at, d DESC`).map((r) => Number(r.d));
+  assert.deepEqual(deltas, [30, -15], "delta دوم باید از مقدارِ اعمال‌شده حساب شود");
+});
+
 test("idempotency: کلید تکراری → deduped، بدون اعمال دوباره", async () => {
   const res = await applySnapshot({
     tenantId: T, uploaderUserId: U, idempotencyKey: "imp-A", scope: { type: "warehouse", warehouseId: WA },

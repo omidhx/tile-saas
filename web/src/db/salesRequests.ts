@@ -37,7 +37,8 @@ export async function approveReservation(params: {
 
     // ۲. قفل balanceها ORDER BY lot_id FOR UPDATE (همون mutexِ رزرو — سریالایز با رزرو/تبدیلِ هم‌زمان)
     const lotIds = items.map((i) => i.lot_id);
-    await tx`SELECT lot_id FROM inventory_balance WHERE lot_id IN ${tx(lotIds)} ORDER BY lot_id FOR UPDATE`;
+    // فیلترِ صریحِ tenant_id در کنار RLS (قانون معماری #۶: با هم، نه یکی به‌جای اون یکی)
+    await tx`SELECT lot_id FROM inventory_balance WHERE tenant_id = ${tenantId} AND lot_id IN ${tx(lotIds)} ORDER BY lot_id FOR UPDATE`;
 
     // ۳. guardِ تبدیل: فقط active و منقضی‌نشده. اگه چیزی برنگشت یعنی قبلاً تبدیل/منقضی شده.
     //    این UPDATE هم قفل منطقی رزروه: دو تأییدِ هم‌زمانِ یک رزرو، فقط یکی ردیف می‌گیره.

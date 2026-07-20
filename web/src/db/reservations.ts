@@ -102,7 +102,7 @@ export async function reserve(params: {
     >`
       SELECT lot_id, on_hand_qty_boxes, allocated_qty_boxes, blocked_qty_boxes
       FROM inventory_balance
-      WHERE lot_id IN ${tx(lotIds)}
+      WHERE tenant_id = ${tenantId} AND lot_id IN ${tx(lotIds)}
       ORDER BY lot_id
       FOR UPDATE`;
     if (balances.length !== lotIds.length)

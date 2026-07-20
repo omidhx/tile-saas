@@ -85,7 +85,8 @@ export async function setDispatchStatus(params: {
         ORDER BY lot_id`;
       const lotIds = items.map((i) => i.lot_id);
       if (lotIds.length > 0)
-        await tx`SELECT lot_id FROM inventory_balance WHERE lot_id IN ${tx(lotIds)} ORDER BY lot_id FOR UPDATE`;
+        // فیلترِ صریحِ tenant_id در کنار RLS (قانون معماری #۶: با هم، نه یکی به‌جای اون یکی)
+        await tx`SELECT lot_id FROM inventory_balance WHERE tenant_id = ${tenantId} AND lot_id IN ${tx(lotIds)} ORDER BY lot_id FOR UPDATE`;
 
       for (const it of items) {
         if (toStatus === "loaded") {
