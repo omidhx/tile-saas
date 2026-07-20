@@ -62,7 +62,7 @@ export default function LedgerPage() {
 
       <h2 style={{ fontSize: "1.05rem" }}>تطبیق لجر با موجودی</h2>
       {loadErr ? (
-        <div className="card"><span className="err">⚠️ {loadErr} — وضعیت ترازی نامشخص است.</span></div>
+        <div className="card" role="alert"><span className="err">⚠️ {loadErr} — وضعیت ترازی نامشخص است.</span></div>
       ) : !loaded ? (
         <div className="card"><span className="muted">در حال بررسی…</span></div>
       ) : drift.length === 0 ? (

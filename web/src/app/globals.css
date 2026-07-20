@@ -23,7 +23,7 @@ h1 { font-size: 1.3rem; }
   border-radius: 12px; padding: 1rem; margin-bottom: .75rem;
 }
 label { display: block; font-size: .9rem; color: var(--muted); margin: .5rem 0 .2rem; }
-input, button { font: inherit; }
+input, button, select { font: inherit; }
 input {
   width: 100%; padding: .6rem .7rem; border: 1px solid var(--line);
   border-radius: 8px; background: #fff;
@@ -31,6 +31,20 @@ input {
 button {
   padding: .6rem 1rem; border: 0; border-radius: 8px;
   background: var(--accent); color: #fff; cursor: pointer;
+}
+
+/* --- دسترسی‌پذیری (قواعد CRITICALِ ui-ux-pro-max) --------------------------- */
+/* touch-target-size: حداقل ۴۴×۴۴ (Apple HIG) / ۴۸dp (Material).
+   این اپ موبایل-فرست است و انباردار/نماینده با گوشی کار می‌کنند، پس هدفِ کوچک
+   یعنی خطای لمسی روی دکمه‌هایی مثل «ثبت رزرو» و «بارگیری». */
+button, input, select { min-height: 44px; }
+
+/* focus-states: حلقه‌ی فوکوسِ دیده‌شدنی ۲–۴px. قبلاً هیچ استایلی نداشتیم و فقط به
+   پیش‌فرضِ مرورگر تکیه می‌کردیم — برای کاربرِ کیبورد/صفحه‌خوان ناکافی. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 button:disabled { opacity: .6; cursor: progress; }
 button.ghost { background: #fff; color: var(--accent); border: 1px solid var(--accent); }

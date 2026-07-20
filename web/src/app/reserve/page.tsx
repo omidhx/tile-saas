@@ -113,7 +113,7 @@ export default function ReservePage() {
       <div className="row"><h1>موجودی قابل‌سفارش</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><Link href="/reservations" className="muted">رزروهای من ←</Link><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
 
-      {loadErr && <div className="card"><span className="err">⚠️ {loadErr} فهرست ناقص است.</span></div>}
+      {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr} فهرست ناقص است.</span></div>}
       {loaded && !loadErr && lots.length === 0 && <p className="muted">فعلاً کالای قابل‌سفارشی نیست.</p>}
 
       {lots.map((l) => {
@@ -145,7 +145,7 @@ export default function ReservePage() {
           {mixedShade && <div className="err">⚠️ شیدهای متفاوت در سبد — برای یک سطح پیوسته توصیه نمی‌شه.</div>}
           <div style={{ marginTop: ".75rem" }}>
             <button onClick={submit} disabled={pending}>
-              {pending && <span className="spinner" />}
+              {pending && <span className="spinner" aria-hidden="true" />}
               {pending ? "در حال ثبت…" : "ثبت رزرو (همه یا هیچ)"}
             </button>
           </div>
@@ -165,7 +165,7 @@ export default function ReservePage() {
                   <span>{v.name} <span className="muted">({v.code})</span></span>
                   <button className={on ? undefined : "ghost"} disabled={alertPending === v.variantId}
                     onClick={() => toggleAlert(v.variantId, !on)}>
-                    {alertPending === v.variantId && <span className="spinner" />}
+                    {alertPending === v.variantId && <span className="spinner" aria-hidden="true" />}
                     {on ? "🔔 خبرم بده (فعال)" : "خبرم کن"}
                   </button>
                 </div>

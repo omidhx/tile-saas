@@ -43,11 +43,11 @@ export default function LoginPage() {
                autoComplete="current-password" required />
         <div style={{ marginTop: "1rem" }}>
           <button type="submit" disabled={pending}>
-            {pending && <span className="spinner" />}
+            {pending && <span className="spinner" aria-hidden="true" />}
             {pending ? "در حال ورود…" : "ورود"}
           </button>
         </div>
-        {err && <div className="err">{err}</div>}
+        {err && <div className="err" role="alert">{err}</div>}
       </form>
     </main>
   );

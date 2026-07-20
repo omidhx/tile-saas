@@ -115,10 +115,10 @@ export default function ImportPage() {
 
         <div style={{ marginTop: "1rem" }}>
           <button onClick={submit} disabled={pending || rows.length === 0}>
-            {pending && <span className="spinner" />}{pending ? "در حال اعمال…" : "اعمال Snapshot"}
+            {pending && <span className="spinner" aria-hidden="true" />}{pending ? "در حال اعمال…" : "اعمال Snapshot"}
           </button>
         </div>
-        {err && <div className="err">{err}</div>}
+        {err && <div className="err" role="alert">{err}</div>}
       </div>
 
       {result && (

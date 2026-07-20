@@ -163,7 +163,7 @@ export default function StaffPage() {
       <p className="muted">{ctx.tenantName}</p>
 
       {loadErr && (
-        <div className="card"><span className="err">⚠️ {loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span></div>
+        <div className="card" role="alert"><span className="err">⚠️ {loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span></div>
       )}
 
       <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>
@@ -174,10 +174,10 @@ export default function StaffPage() {
           <div className="muted">{r.items.map((i) => `${i.name} ×${i.quantityBoxes}`).join("، ")}</div>
           <div style={{ marginTop: ".5rem" }}>
             <button onClick={() => approve(r.id)} disabled={pending === "approve" + r.id}>
-              {pending === "approve" + r.id && <span className="spinner" />}تأیید (held→allocated)
+              {pending === "approve" + r.id && <span className="spinner" aria-hidden="true" />}تأیید (held→allocated)
             </button>{" "}
             <button className="ghost" onClick={() => cancelResv(r.id)} disabled={pending === "cancel" + r.id}>
-              {pending === "cancel" + r.id && <span className="spinner" />}لغو
+              {pending === "cancel" + r.id && <span className="spinner" aria-hidden="true" />}لغو
             </button>
           </div>
         </div>
@@ -191,7 +191,7 @@ export default function StaffPage() {
           <div className="muted">{r.items.map((i) => `${i.name} ×${i.qty}`).join("، ")}</div>
           <div style={{ marginTop: ".5rem" }}>
             <button onClick={() => makeDispatch(r.id)} disabled={pending === r.id}>
-              {pending === r.id && <span className="spinner" />}ساخت حواله
+              {pending === r.id && <span className="spinner" aria-hidden="true" />}ساخت حواله
             </button>
           </div>
         </div>
@@ -207,7 +207,7 @@ export default function StaffPage() {
             {(NEXT[d.status] ?? []).map((s) => (
               <button key={s} className={s === "cancelled" ? "ghost" : undefined}
                 onClick={() => advance(d.id, s)} disabled={pending === d.id + s}>
-                {pending === d.id + s && <span className="spinner" />}{FA[s]}
+                {pending === d.id + s && <span className="spinner" aria-hidden="true" />}{FA[s]}
               </button>
             ))}
           </div>
@@ -231,7 +231,7 @@ export default function StaffPage() {
           <input type="number" min={1} placeholder="کارتن" value={boQty}
             onChange={(e) => setBoQty(e.target.value)} style={{ maxWidth: 100 }} />
           <button onClick={createBackorder} disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
-            {pending === "bo-create" && <span className="spinner" />}ثبت
+            {pending === "bo-create" && <span className="spinner" aria-hidden="true" />}ثبت
           </button>
         </div>
       </div>
@@ -247,7 +247,7 @@ export default function StaffPage() {
             {(BO_NEXT[b.status] ?? []).map((s) => (
               <button key={s} className={s === "cancelled" ? "ghost" : undefined}
                 onClick={() => advanceBackorder(b.id, s)} disabled={pending === "bo" + b.id + s}>
-                {pending === "bo" + b.id + s && <span className="spinner" />}{BO_FA[s]}
+                {pending === "bo" + b.id + s && <span className="spinner" aria-hidden="true" />}{BO_FA[s]}
               </button>
             ))}
           </div>

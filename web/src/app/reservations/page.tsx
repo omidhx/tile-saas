@@ -65,7 +65,7 @@ export default function MyReservationsPage() {
     <main>
       <div className="row"><h1>رزروهای من</h1><Link href="/reserve" className="muted">+ رزرو جدید</Link></div>
       <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
-      {loadErr && <div className="card"><span className="err">⚠️ {loadErr}</span></div>}
+      {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
       {loaded && !loadErr && rows.length === 0 && <p className="muted">رزروی نداری.</p>}
       {rows.map((r) => (
         <div className="card" key={r.id}>
@@ -77,7 +77,7 @@ export default function MyReservationsPage() {
           {r.status === "active" && (
             <div style={{ marginTop: ".5rem" }}>
               <button className="ghost" disabled={cancelling === r.id} onClick={() => cancel(r.id)}>
-                {cancelling === r.id && <span className="spinner" />}لغو رزرو
+                {cancelling === r.id && <span className="spinner" aria-hidden="true" />}لغو رزرو
               </button>
             </div>
           )}
