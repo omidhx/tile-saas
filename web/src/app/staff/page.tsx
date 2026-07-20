@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getJson, loadError } from "@/lib/api";
 import LogoutButton from "../LogoutButton";
 
 type Ctx = { tenantId: string; tenantName: string };
@@ -41,22 +42,28 @@ export default function StaffPage() {
   const [boVariant, setBoVariant] = useState("");
   const [boQty, setBoQty] = useState("");
   const [pending, setPending] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async (c: Ctx) => {
     const [rv, r, d, ag, cat, bo] = await Promise.all([
-      fetch(`/api/reservations?tenantId=${c.tenantId}`),                 // staff view: رزروهای active همه
-      fetch(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
-      fetch(`/api/sales-dispatches?tenantId=${c.tenantId}`),
-      fetch(`/api/agents?tenantId=${c.tenantId}`),
-      fetch(`/api/catalog?tenantId=${c.tenantId}`),
-      fetch(`/api/backorders?tenantId=${c.tenantId}`),
+      getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`), // staff view: active همه
+      getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
+      getJson<{ dispatches: Disp[] }>(`/api/sales-dispatches?tenantId=${c.tenantId}`),
+      getJson<{ agents: Agent[] }>(`/api/agents?tenantId=${c.tenantId}`),
+      getJson<{ variants: Variant[] }>(`/api/catalog?tenantId=${c.tenantId}`),
+      getJson<{ items: Backorder[] }>(`/api/backorders?tenantId=${c.tenantId}`),
     ]);
-    if (rv.ok) setPendingResvs((await rv.json()).reservations);
-    if (r.ok) setReqs((await r.json()).requests);
-    if (d.ok) setDisps((await d.json()).dispatches);
-    if (ag.ok) setAgents((await ag.json()).agents);
-    if (cat.ok) setVariants((await cat.json()).variants);
-    if (bo.ok) setBackorders((await bo.json()).items);
+    if (rv.ok) setPendingResvs(rv.data.reservations);
+    if (r.ok) setReqs(r.data.requests);
+    if (d.ok) setDisps(d.data.dispatches);
+    if (ag.ok) setAgents(ag.data.agents);
+    if (cat.ok) setVariants(cat.data.variants);
+    if (bo.ok) setBackorders(bo.data.items);
+    // هر شکستی را صریح نشان بده — وگرنه صفحه «چیزی برای تأیید نیست» می‌گوید در حالی که نگرفته
+    const failed = [rv, r, d, ag, cat, bo].find((x) => !x.ok);
+    setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
+    setLoaded(true);
   }, []);
 
   async function createBackorder() {
@@ -142,8 +149,12 @@ export default function StaffPage() {
       <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی از اکسل ←</a><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName}</p>
 
+      {loadErr && (
+        <div className="card"><span className="err">⚠️ {loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span></div>
+      )}
+
       <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>
-      {pendingResvs.length === 0 && <p className="muted">رزروِ فعالی برای تأیید نیست.</p>}
+      {loaded && !loadErr && pendingResvs.length === 0 && <p className="muted">رزروِ فعالی برای تأیید نیست.</p>}
       {pendingResvs.map((r) => (
         <div className="card" key={r.id}>
           <div className="row"><strong>{r.agentName}</strong></div>
@@ -157,7 +168,7 @@ export default function StaffPage() {
       ))}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>درخواست‌های تأییدشده</h2>
-      {reqs.length === 0 && <p className="muted">درخواست تأییدشده‌ای برای حواله نیست.</p>}
+      {loaded && !loadErr && reqs.length === 0 && <p className="muted">درخواست تأییدشده‌ای برای حواله نیست.</p>}
       {reqs.map((r) => (
         <div className="card" key={r.id}>
           <div className="row"><strong>{r.agentName}</strong></div>
@@ -171,7 +182,7 @@ export default function StaffPage() {
       ))}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>حواله‌ها</h2>
-      {disps.length === 0 && <p className="muted">حواله‌ای نیست.</p>}
+      {loaded && !loadErr && disps.length === 0 && <p className="muted">حواله‌ای نیست.</p>}
       {disps.map((d) => (
         <div className="card" key={d.id}>
           <div className="row"><strong>{d.dispatchCode}</strong><span className="muted">{FA[d.status] ?? d.status} · {d.items} قلم</span></div>
@@ -208,7 +219,7 @@ export default function StaffPage() {
           </button>
         </div>
       </div>
-      {backorders.length === 0 && <p className="muted">backorderی نیست.</p>}
+      {loaded && !loadErr && backorders.length === 0 && <p className="muted">backorderی نیست.</p>}
       {backorders.map((b) => (
         <div className="card" key={b.id}>
           <div className="row">

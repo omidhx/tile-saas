@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getJson, loadError } from "@/lib/api";
 
 type Ctx = { tenantId: string; agentAccountId: string; tenantName: string; agentLegalName: string };
 type Item = { name: string; code: string; quantityBoxes: number };
@@ -16,10 +17,15 @@ export default function MyReservationsPage() {
   const [ctx, setCtx] = useState<Ctx | null>(null);
   const [rows, setRows] = useState<Resv[]>([]);
   const [notAgent, setNotAgent] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async (c: Ctx) => {
-    const res = await fetch(`/api/reservations?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`);
-    if (res.ok) setRows((await res.json()).reservations);
+    const res = await getJson<{ reservations: Resv[] }>(
+      `/api/reservations?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`);
+    if (res.ok) setRows(res.data.reservations);
+    else setLoadErr(loadError(res.status)); // «رزروی نداری» نباید روی خطا نشان داده شود
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -46,7 +52,8 @@ export default function MyReservationsPage() {
     <main>
       <div className="row"><h1>رزروهای من</h1><Link href="/reserve" className="muted">+ رزرو جدید</Link></div>
       <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
-      {rows.length === 0 && <p className="muted">رزروی نداری.</p>}
+      {loadErr && <div className="card"><span className="err">⚠️ {loadErr}</span></div>}
+      {loaded && !loadErr && rows.length === 0 && <p className="muted">رزروی نداری.</p>}
       {rows.map((r) => (
         <div className="card" key={r.id}>
           <div className="row">

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getJson, loadError } from "@/lib/api";
 import LogoutButton from "../LogoutButton";
 
 type Ctx = { tenantId: string; agentAccountId: string; agentLegalName: string; tenantName: string };
@@ -22,18 +23,21 @@ export default function ReservePage() {
   const [subscribed, setSubscribed] = useState<string[]>([]);
   const [outOfStock, setOutOfStock] = useState<{ variantId: string; name: string; code: string }[]>([]);
   const [alertPending, setAlertPending] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const loadLots = useCallback(async (c: Ctx) => {
     const [lotsRes, alertsRes] = await Promise.all([
-      fetch(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
-      fetch(`/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
+      getJson<{ lots: Lot[] }>(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
+      getJson<{ subscribed: string[]; outOfStock: { variantId: string; name: string; code: string }[] }>(
+        `/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
     ]);
-    if (lotsRes.ok) setLots((await lotsRes.json()).lots);
-    if (alertsRes.ok) {
-      const a = await alertsRes.json();
-      setSubscribed(a.subscribed);
-      setOutOfStock(a.outOfStock);
-    }
+    if (lotsRes.ok) setLots(lotsRes.data.lots);
+    if (alertsRes.ok) { setSubscribed(alertsRes.data.subscribed); setOutOfStock(alertsRes.data.outOfStock); }
+    // «کالایی نیست» نباید وقتی نگرفتیم نشان داده شود
+    const failed = [lotsRes, alertsRes].find((x) => !x.ok);
+    setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
+    setLoaded(true);
   }, []);
 
   async function toggleAlert(variantId: string, on: boolean) {
@@ -109,7 +113,8 @@ export default function ReservePage() {
       <div className="row"><h1>موجودی قابل‌سفارش</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><Link href="/reservations" className="muted">رزروهای من ←</Link><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName} — {ctx.agentLegalName}</p>
 
-      {lots.length === 0 && <p className="muted">فعلاً کالای قابل‌سفارشی نیست.</p>}
+      {loadErr && <div className="card"><span className="err">⚠️ {loadErr} فهرست ناقص است.</span></div>}
+      {loaded && !loadErr && lots.length === 0 && <p className="muted">فعلاً کالای قابل‌سفارشی نیست.</p>}
 
       {lots.map((l) => {
         const bpp = l.boxes_per_pallet ?? 0;
