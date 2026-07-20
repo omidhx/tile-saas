@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { withTenant } from "./client";
+import { decideAutoApproval } from "./autoApprove";
+import { approveReservationIn } from "./salesRequests";
 
 export type CancelResult =
   | { ok: true }
@@ -48,7 +50,11 @@ export async function cancelReservation(params: {
 
 export type ReserveItem = { lotId: string; quantityBoxes: number };
 export type ReserveResult =
-  | { ok: true; reservationId: string; deduped: boolean }
+  | {
+      ok: true; reservationId: string; deduped: boolean;
+      /** v2 تأیید هیبریدی: اگر زیرِ سقف بود، همین‌جا تأیید شد و سفارش ساخته شد. */
+      autoApproved?: { salesRequestId: string; orderValue: number; limitApplied: number };
+    }
   | { ok: false; conflict: { lotId: string; requested: number; available: number } }
   | { ok: false; idempotencyMismatch: true };
 
@@ -140,7 +146,30 @@ export async function reserve(params: {
         VALUES (${tenantId}, ${lotId}, 'reservation_hold', 'reservation', ${resv.id},
                 ${"held " + byLot.get(lotId)!})`;
 
-    // ۷. COMMIT خودکار در پایان begin()
+    // ۷. تأیید هیبریدی (v2): اگر ارزشِ سفارش زیرِ سقف بود، همین‌جا و در **همین تراکنش**
+    //    تأیید می‌شود. جدا کردنش به تراکنشِ دوم یعنی پنجره‌ای که رزرو هست ولی تأیید نیست،
+    //    و شکستِ نیمه‌راه یک رزروِ سرگردان می‌گذاشت. سقفِ تعریف‌نشده یا خطِ بی‌قیمت →
+    //    تصمیم «نه» است، پس رفتارِ پیش‌فرض همان تأییدِ دستیِ قبلی می‌ماند.
+    const decision = await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resv.id });
+    if (decision.approve) {
+      const approved = await approveReservationIn(tx, {
+        tenantId, reservationId: resv.id, actorUserId: null,
+        mode: "auto", limitApplied: decision.limitApplied,
+      });
+      // تأییدِ همین رزروِ تازه‌ساخته نباید شکست بخورد؛ اگر خورد، چیزی که فرض کردیم
+      // درست نیست و بهتر است کلِ تراکنش برگردد تا رزروِ نیمه‌تأیید بماند.
+      if (!approved.ok) throw new Error(`تأیید خودکار شکست خورد: ${approved.reason}`);
+      return {
+        ok: true, reservationId: resv.id, deduped: false,
+        autoApproved: {
+          salesRequestId: approved.salesRequestId,
+          orderValue: decision.orderValue,
+          limitApplied: decision.limitApplied,
+        },
+      };
+    }
+
+    // ۸. COMMIT خودکار در پایان begin()
     return { ok: true, reservationId: resv.id, deduped: false };
   });
 }

@@ -19,6 +19,7 @@ export async function GET(req: Request) {
   const requests = await withTenant(tenantId, (tx) =>
     tx`
       SELECT sr.id, sr.status, sr.created_at AS "createdAt", aa.legal_name AS "agentName",
+        sr.approval_mode AS "approvalMode",
         COALESCE(json_agg(json_build_object(
           'name', p.name, 'code', p.code, 'qty', sri.requested_qty_boxes
         )) FILTER (WHERE sri.id IS NOT NULL), '[]') AS items
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
       LEFT JOIN product_variant pv ON pv.id = sri.variant_id
       LEFT JOIN product p ON p.id = pv.product_id
       WHERE sr.tenant_id = ${tenantId} AND sr.status = ${status}
-      GROUP BY sr.id, aa.legal_name
+      GROUP BY sr.id, aa.legal_name, sr.approval_mode
       ORDER BY sr.created_at DESC
       LIMIT 50`,
   );

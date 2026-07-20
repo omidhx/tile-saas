@@ -6,7 +6,7 @@ import LogoutButton from "../LogoutButton";
 
 type Ctx = { tenantId: string; tenantName: string };
 type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
-type Req = { id: string; status: string; agentName: string; items: { name: string; code: string; qty: number }[] };
+type Req = { id: string; status: string; agentName: string; approvalMode: "manual" | "auto"; items: { name: string; code: string; qty: number }[] };
 type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number };
 type Agent = { id: string; legalName: string };
 type Variant = { id: string; name: string; code: string; sku: string };
@@ -159,7 +159,7 @@ export default function StaffPage() {
 
   return (
     <main>
-      <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی ←</a><a href="/staff/prices" className="muted">قیمت‌گذاری ←</a><a href="/staff/reports" className="muted">گزارش‌ها ←</a><a href="/staff/ledger" className="muted">دفتر لجر ←</a><LogoutButton /></span></div>
+      <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی ←</a><a href="/staff/prices" className="muted">قیمت‌گذاری ←</a><a href="/staff/auto-approve" className="muted">تأیید خودکار ←</a><a href="/staff/reports" className="muted">گزارش‌ها ←</a><a href="/staff/ledger" className="muted">دفتر لجر ←</a><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName}</p>
 
       {loadErr && (
@@ -187,7 +187,11 @@ export default function StaffPage() {
       {loaded && !loadErr && reqs.length === 0 && <p className="muted">درخواست تأییدشده‌ای برای حواله نیست.</p>}
       {reqs.map((r) => (
         <div className="card" key={r.id}>
-          <div className="row"><strong>{r.agentName}</strong></div>
+          <div className="row">
+            <strong>{r.agentName}</strong>
+            {/* پشتیبان باید ببیند کدام سفارش بدونِ او تأیید شده — وگرنه فیچر بی‌سروصدا کار می‌کند */}
+            {r.approvalMode === "auto" && <span className="muted">تأیید خودکار (زیر سقف)</span>}
+          </div>
           <div className="muted">{r.items.map((i) => `${i.name} ×${i.qty}`).join("، ")}</div>
           <div style={{ marginTop: ".5rem" }}>
             <button onClick={() => makeDispatch(r.id)} disabled={pending === r.id}>

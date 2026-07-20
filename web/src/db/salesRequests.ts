@@ -1,9 +1,13 @@
+import postgres from "postgres";
 import { withTenant } from "./client";
 import { resolvePricesIn, CURRENCY } from "./pricing";
 
 export type ApproveResult =
   | { ok: true; salesRequestId: string; deduped?: false }
   | { ok: false; reason: "not_found" | "not_active" };
+
+/** چطور تأیید شد — روی sales_request ثبت می‌شود تا «چه کسی تأیید کرد؟» جواب داشته باشد. */
+export type ApprovalMode = "manual" | "auto";
 
 /**
  * تأیید رزرو → SalesRequest تأییدشده. جابه‌جاییِ اتمیکِ held → allocated (spec ۱۴.۲).
@@ -19,9 +23,30 @@ export async function approveReservation(params: {
   reservationId: string;
   actorUserId: string;
 }): Promise<ApproveResult> {
-  const { tenantId, reservationId, actorUserId } = params;
+  return withTenant(params.tenantId, (tx) => approveReservationIn(tx, { ...params, mode: "manual" }));
+}
 
-  return withTenant(tenantId, async (tx) => {
+/**
+ * همان تأیید، ولی داخلِ تراکنشِ صداکننده — تا `reserve()` بتواند در همان تراکنش
+ * تأییدِ خودکار را انجام دهد. اگر دو تراکنش می‌بود، پنجره‌ای می‌ماند که رزرو ساخته
+ * شده ولی هنوز تأیید نشده، و شکستِ نیمه‌راه یک رزروِ سرگردان به‌جا می‌گذاشت.
+ * (همان الگوی `resolvePrices` / `resolvePricesIn`.)
+ */
+export async function approveReservationIn(
+  tx: postgres.TransactionSql,
+  params: {
+    tenantId: string;
+    reservationId: string;
+    /** در تأییدِ خودکار actor انسانی وجود ندارد → null. */
+    actorUserId: string | null;
+    mode: ApprovalMode;
+    /** فقط برای mode='auto': سقفی که اعمال شد (snapshot). */
+    limitApplied?: number;
+  },
+): Promise<ApproveResult> {
+  const { tenantId, reservationId, actorUserId, mode, limitApplied } = params;
+
+  {
     // ۱. رزرو باید مالِ همین tenant باشه (وگرنه not_found). agent از خودِ رزرو.
     const [resv] = await tx<{ agent_account_id: string }[]>`
       SELECT agent_account_id FROM reservation
@@ -50,10 +75,10 @@ export async function approveReservation(params: {
       RETURNING id`;
     if (converted.length === 0) return { ok: false, reason: "not_active" };
 
-    // ۴. SalesRequest تأییدشده
+    // ۴. SalesRequest تأییدشده — با ثبتِ اینکه دستی بود یا خودکار (و با چه سقفی)
     const [sr] = await tx<{ id: string }[]>`
-      INSERT INTO sales_request (tenant_id, agent_account_id, status)
-      VALUES (${tenantId}, ${resv.agent_account_id}, 'approved')
+      INSERT INTO sales_request (tenant_id, agent_account_id, status, approval_mode, auto_approve_limit_applied)
+      VALUES (${tenantId}, ${resv.agent_account_id}, 'approved', ${mode}, ${limitApplied ?? null})
       RETURNING id`;
 
     // ۵. یک SalesRequestItem به‌ازای هر variant (جمعِ کارتن)، با line_no
@@ -100,10 +125,11 @@ export async function approveReservation(params: {
         INSERT INTO inventory_transaction
           (tenant_id, lot_id, transaction_type, allocated_delta_boxes, reference_type, reference_id, actor_user_id, note)
         VALUES (${tenantId}, ${it.lot_id}, 'reservation_convert', ${it.quantity_boxes},
-                'sales_request', ${sr.id}, ${actorUserId}, ${"held→allocated " + it.quantity_boxes})`;
+                'sales_request', ${sr.id}, ${actorUserId},
+                ${(mode === "auto" ? "تأیید خودکار · " : "") + "held→allocated " + it.quantity_boxes})`;
     }
 
-    // ۷. COMMIT خودکار. held این lotها صفر شد (رزرو converted)، allocated همون‌قدر بالا رفت — بدون گپ.
+    // ۷. held این lotها صفر شد (رزرو converted)، allocated همون‌قدر بالا رفت — بدون گپ.
     return { ok: true, salesRequestId: sr.id };
-  });
+  }
 }

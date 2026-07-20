@@ -13,12 +13,14 @@
 
 BEGIN;
 
--- idempotent: هر بار از صفر
+-- idempotent: هر بار از صفر (اسکریپت seed:dev خودش schema را هم از نو می‌سازد)
 TRUNCATE tenant CASCADE;
 DELETE FROM app_user WHERE phone IN ('09120000000', '09120000001');
 
-INSERT INTO tenant(id, name, slug) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'کارخانه کاشی نمونه', 'nemoone');
+-- سقفِ تأییدِ خودکار ۲۰۰ میلیون ریال: سفارشِ کوچک خودکار قطعی می‌شود، سفارشِ بزرگ
+-- به صفِ پشتیبان می‌رود. در دمو هر دو حالت اتفاق می‌افتد تا تفاوت دیده شود.
+INSERT INTO tenant(id, name, slug, auto_approve_limit) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'کارخانه کاشی نمونه', 'nemoone', 200000000);
 
 -- هر دو رمز: pass1234  (bcrypt، فقط برای محیط توسعه)
 INSERT INTO app_user(id, phone, password_hash) VALUES

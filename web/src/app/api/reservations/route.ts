@@ -101,8 +101,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "conflict", ...result.conflict }, { status: 409 });
   }
 
+  // autoApproved (v2): نماینده باید بداند سفارشش همین حالا قطعی شد یا در صفِ تأیید است —
+  // «رزرو ثبت شد» برای هر دو حالت، یکی از آن‌ها را غلط توصیف می‌کند.
   return NextResponse.json(
-    { reservationId: result.reservationId },
+    { reservationId: result.reservationId, autoApproved: result.autoApproved ?? null },
     { status: result.deduped ? 200 : 201 },
   );
 }

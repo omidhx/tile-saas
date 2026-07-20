@@ -33,10 +33,19 @@ async function main() {
     throw new Error("seed:dev روی production اجرا نمی‌شود (TRUNCATE tenant CASCADE).");
   }
 
-  const base = readFileSync(new URL("../../db/seed-dev.sql", import.meta.url), "utf8")
-    // postgres.js تراکنشِ صریح روی pool را رد می‌کند (UNSAFE_TRANSACTION)
-    .replace(/^BEGIN;$/m, "").replace(/^COMMIT;$/m, "");
-  await sql.unsafe(base);
+  // postgres.js تراکنشِ صریح روی pool را رد می‌کند (UNSAFE_TRANSACTION)
+  const load = (f: string) =>
+    readFileSync(new URL(`../../db/${f}`, import.meta.url), "utf8")
+      .replace(/^BEGIN;$/m, "").replace(/^COMMIT;$/m, "");
+
+  // schema از نو ساخته می‌شود. `CREATE TABLE`های schema.sql بدونِ IF NOT EXISTS‌اند،
+  // پس اجرای دوباره روی DBِ موجود شکست می‌خورد — و بدترین حالتش این بود که seed
+  // روی schemaی قدیمی اجرا شود و ستون‌های تازه بی‌سروصدا غایب بمانند.
+  await sql.unsafe("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+  await sql.unsafe(load("schema.sql"));
+  console.log("✓ schema از db/schema.sql");
+
+  await sql.unsafe(load("seed-dev.sql"));
   console.log("✓ داده‌ی پایه (کارخانه، کاربران، کالا، موجودی، قیمت)");
 
   // سفارش ۱ — چرخه‌ی کامل تا بارگیری: هم «تعهد» دارد هم «تحویلِ فیزیکی»
@@ -65,12 +74,23 @@ async function main() {
   }), "تأییدِ ۲");
   console.log("✓ سفارش ۲: ۶۰ کارتن گرانیت — تأییدشده، هنوز بارگیری نشده");
 
-  // سفارش ۳ — رزروِ فعالِ در انتظارِ تأیید، تا پنل staff صفِ خالی نباشد
-  must(await reserve({
+  // سفارش ۳ — زیرِ سقفِ ۲۰۰ میلیون: باید **خودکار** تأیید شود، بدون دخالتِ پشتیبان.
+  // ۲۵ کارتن × ۴٬۲۰۰٬۰۰۰ = ۱۰۵٬۰۰۰٬۰۰۰
+  const r3 = must(await reserve({
     tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "seed-dev-3",
     items: [{ lotId: LOT_WHITE, quantityBoxes: 25 }],
   }), "رزروِ ۳");
-  console.log("✓ سفارش ۳: ۲۵ کارتن کاشی سفید — در انتظارِ تأیید");
+  if (!r3.autoApproved) throw new Error("سفارش ۳ باید خودکار تأیید می‌شد — سقف اعمال نشد.");
+  console.log(`✓ سفارش ۳: ۲۵ کارتن کاشی سفید — تأییدِ خودکار (${r3.autoApproved.orderValue.toLocaleString("fa-IR")} ریال، زیر سقف)`);
+
+  // سفارش ۴ — بالای سقف: باید در صفِ تأییدِ پشتیبان بماند، تا هر دو مسیر در دمو دیده شود.
+  // ۳۰ کارتن × ۸٬۵۰۰٬۰۰۰ = ۲۵۵٬۰۰۰٬۰۰۰ (بالای ۲۰۰ میلیون، و زیر پله‌ی تخفیفِ ۵۰ کارتن)
+  const r4 = must(await reserve({
+    tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "seed-dev-4",
+    items: [{ lotId: LOT_GRANITE, quantityBoxes: 30 }],
+  }), "رزروِ ۴");
+  if (r4.autoApproved) throw new Error("سفارش ۴ نباید خودکار تأیید می‌شد — بالای سقف است.");
+  console.log("✓ سفارش ۴: ۳۰ کارتن گرانیت — بالای سقف، در انتظارِ تأییدِ پشتیبان");
 
   // اگر این تراز نباشد، دمو همان باگی را دارد که /staff/ledger برای گرفتنش هست
   const [drift] = await sql<{ bad: number }[]>`

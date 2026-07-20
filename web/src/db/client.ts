@@ -2,7 +2,12 @@ import postgres from "postgres";
 
 // یک اتصال مشترک. postgres.js خودش pool مدیریت می‌کنه.
 // نکته‌ی امنیتی: اپ باید با نقشِ NON-superuser وصل شه وگرنه RLS بایپس می‌شه (schema.sql).
-const sql = postgres(process.env.DATABASE_URL!, { max: 10 });
+const sql = postgres(process.env.DATABASE_URL!, {
+  max: 10,
+  // NOTICEهای پرحرفِ postgres (مثلاً «drop cascades to ۳۵ object») خروجی seed و تست را
+  // غیرقابل‌خواندن می‌کنند و در production فقط لاگ را پر می‌کنند. با DEBUG_PG_NOTICE برمی‌گردند.
+  onnotice: process.env.DEBUG_PG_NOTICE ? console.log : () => {},
+});
 
 export { sql };
 

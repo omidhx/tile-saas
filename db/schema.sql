@@ -49,6 +49,10 @@ CREATE TABLE tenant (
     default_reservation_ttl_hours INT NOT NULL DEFAULT 24,   -- بخش ۷.۸ پیش‌فرض ۲۴ ساعت
     track_shade_caliber         TEXT NOT NULL DEFAULT 'optional'
         CHECK (track_shade_caliber IN ('off','optional','required')),  -- بخش ۷.۱ پیش‌فرض optional
+    -- v2 «تأیید هیبریدی» (بخش ۹): سقفِ ارزشِ سفارش که زیرش رزرو خودکار تأیید می‌شود.
+    -- NULL = خاموش، یعنی همه‌ی رزروها تأییدِ دستی می‌خواهند. پیش‌فرض عمداً خاموش است:
+    -- فیچری که پول را بدونِ نگاهِ انسان متعهد می‌کند نباید با نصبِ ساده روشن شود.
+    auto_approve_limit          BIGINT CHECK (auto_approve_limit >= 0),
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -68,6 +72,11 @@ CREATE TABLE agent_account (
     code         TEXT NOT NULL,
     credit_limit BIGINT,                     -- پول: کوچیک‌ترین واحد صحیح (قانون #۷)
     price_list_id UUID,                      -- v2: لیست قیمتِ این نماینده (FK پایین‌تر، بعد از price_list)
+    -- v2 «تأیید هیبریدی»: سقفِ اختصاصیِ این نماینده.
+    --   NULL = ارث از tenant.auto_approve_limit
+    --   0    = هرگز خودکار (نماینده‌ی تازه/بدهکار) — چون ۰ کوچک‌تر از هر سفارشی است،
+    --          همین یک عدد جای یک ستونِ بولیِ جداگانه را می‌گیرد.
+    auto_approve_limit BIGINT CHECK (auto_approve_limit >= 0),
     is_active    BOOLEAN NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
@@ -244,6 +253,13 @@ CREATE TABLE sales_request (
     agent_account_id UUID NOT NULL,
     status           TEXT NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft','submitted','approved','rejected','cancelled','fulfilled')),
+    -- v2 «تأیید هیبریدی»: چرا این سفارش تأیید شد. اولین سؤالِ کارخانه وقتی سفارشی
+    -- بدونِ دخالتِ او تأیید شده «چه کسی این را تأیید کرد؟» است — بدونِ این ستون،
+    -- پاسخ فقط یک actor_user_id خالی در لجر بود.
+    approval_mode    TEXT NOT NULL DEFAULT 'manual' CHECK (approval_mode IN ('manual','auto')),
+    -- سقفی که در لحظه‌ی تأییدِ خودکار اعمال شد (snapshot، مثل قیمت). اگر بعداً سقف
+    -- عوض شود، نباید تاریخچه بازنویسی شود.
+    auto_approve_limit_applied BIGINT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),

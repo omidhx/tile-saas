@@ -80,7 +80,12 @@ export default function ReservePage() {
       });
       if (res.ok) {
         setCart({});
-        setMsg({ kind: "ok", text: "رزرو با موفقیت ثبت شد." });
+        // تأیید هیبریدی: اگر زیرِ سقف بود سفارش همین حالا قطعی شده. گفتنِ «رزرو ثبت شد»
+        // به نماینده‌ای که سفارشش تأیید شده، او را بی‌دلیل منتظرِ تماسِ پشتیبان می‌گذارد.
+        const { autoApproved } = await res.json().catch(() => ({ autoApproved: null }));
+        setMsg(autoApproved
+          ? { kind: "ok", text: `سفارش شما تأیید شد و برای آماده‌سازی رفت — نیازی به تأیید پشتیبان نبود (${money(autoApproved.orderValue)} ریال).` }
+          : { kind: "ok", text: "رزرو ثبت شد و در انتظار تأیید پشتیبان است." });
         await loadLots(ctx); // همگام‌سازیِ نمایشی بعد از موفقیت
       } else if (res.status === 409) {
         const c = await res.json();
