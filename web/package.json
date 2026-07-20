@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import tsx --test --test-concurrency=1 src/auth/rateLimit.test.ts src/db/reserve.test.ts src/auth/authz.test.ts src/db/salesRequests.test.ts src/db/dispatches.test.ts src/db/backorders.test.ts src/db/imports.test.ts src/db/alerts.test.ts src/db/ledger.test.ts src/db/pricing.test.ts src/db/cancelReservation.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 src/auth/rateLimit.test.ts src/db/reserve.test.ts src/auth/authz.test.ts src/db/salesRequests.test.ts src/db/dispatches.test.ts src/db/backorders.test.ts src/db/imports.test.ts src/db/alerts.test.ts src/db/ledger.test.ts src/db/pricing.test.ts src/db/reports.test.ts src/db/cancelReservation.test.ts",
     "db:pull": "drizzle-kit pull",
     "worker:expire": "node --import tsx scripts/expire.ts",
     "worker:outbox": "node --import tsx scripts/outbox.ts"

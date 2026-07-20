@@ -33,6 +33,12 @@ button {
   background: var(--accent); color: #fff; cursor: pointer;
 }
 
+/* number-tabular (ui-ux-pro-max): ارقامِ هم‌عرض در ستون‌های عددی، تا با تغییر عدد
+   چیدمان نپرد. برای گزارش‌ها و قیمت‌ها. */
+.num { font-variant-numeric: tabular-nums; }
+/* contrast-data: خودِ عدد باید کنتراست کامل داشته باشد، نه رنگِ کم‌رنگِ توضیحات */
+.metric { color: var(--text); font-weight: 600; }
+
 /* --- دسترسی‌پذیری (قواعد CRITICALِ ui-ux-pro-max) --------------------------- */
 /* touch-target-size: حداقل ۴۴×۴۴ (Apple HIG) / ۴۸dp (Material).
    این اپ موبایل-فرست است و انباردار/نماینده با گوشی کار می‌کنند، پس هدفِ کوچک

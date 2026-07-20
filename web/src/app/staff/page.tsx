@@ -159,7 +159,7 @@ export default function StaffPage() {
 
   return (
     <main>
-      <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی ←</a><a href="/staff/prices" className="muted">قیمت‌گذاری ←</a><a href="/staff/ledger" className="muted">دفتر لجر ←</a><LogoutButton /></span></div>
+      <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی ←</a><a href="/staff/prices" className="muted">قیمت‌گذاری ←</a><a href="/staff/reports" className="muted">گزارش‌ها ←</a><a href="/staff/ledger" className="muted">دفتر لجر ←</a><LogoutButton /></span></div>
       <p className="muted">{ctx.tenantName}</p>
 
       {loadErr && (
