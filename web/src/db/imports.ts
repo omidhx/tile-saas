@@ -1,5 +1,6 @@
 import { withTenant } from "./client";
 import { enqueueRestockNotifications } from "./alerts";
+import { advanceWaitlist } from "./waitlist";
 
 export type SnapshotRow = {
   sku: string; warehouseCode: string;
@@ -136,10 +137,19 @@ export async function applySnapshot(params: {
       zeroed++;
     }
 
+    // صف انتظار **قبل از** پخشِ «موجود شد»: صف حقِ تقدم دارد. اگر اول به همه خبر
+    // می‌دادیم، نماینده‌ای که در صف منتظر بوده با رهگذرها هم‌رقابت می‌شد و صف
+    // بی‌معنا می‌گشت. هرچه به صف برسد از available کم می‌شود، و alert فقط باقیمانده
+    // را اعلام می‌کند (و اگر چیزی نماند، اصلاً اعلام نمی‌کند).
+    const variants = touched.size === 0 ? [] : await tx<{ variant_id: string }[]>`
+      SELECT DISTINCT variant_id FROM inventory_lot
+      WHERE tenant_id = ${tenantId} AND id IN ${tx([...touched])}`;
+    const offers = await advanceWaitlist(tx, tenantId, variants.map((v) => v.variant_id));
+
     // Outbox: پیامِ «موجود شد» در همین تراکنش صف می‌شه — اگه import رول‌بک شه، پیامی هم نمی‌مونه
     const notified = await enqueueRestockNotifications(tx, tenantId, [...touched]);
 
     await tx`UPDATE import_batch SET status = 'committed', committed_at = now() WHERE id = ${batch.id}`;
-    return { ok: true, batchId: batch.id, deduped: false, applied, zeroed, errors, notified };
+    return { ok: true, batchId: batch.id, deduped: false, applied, zeroed, errors, notified, offers: offers.length };
   });
 }

@@ -13,6 +13,8 @@ type Lot = {
   unitPrice: number | null;
 };
 
+type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
+
 // پول در دیتابیس عددِ صحیح است؛ اعشار/جداکننده فقط همین‌جا در لایه‌ی UI (قانون #۷)
 const money = (v: number) => v.toLocaleString("fa-IR");
 
@@ -26,19 +28,25 @@ export default function ReservePage() {
   const [subscribed, setSubscribed] = useState<string[]>([]);
   const [outOfStock, setOutOfStock] = useState<{ variantId: string; name: string; code: string }[]>([]);
   const [alertPending, setAlertPending] = useState<string | null>(null);
+  const [queue, setQueue] = useState<WaitlistEntry[]>([]);
+  const [queueQty, setQueueQty] = useState<Record<string, string>>({});
+  const [queuePending, setQueuePending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   const loadLots = useCallback(async (c: Ctx) => {
-    const [lotsRes, alertsRes] = await Promise.all([
+    const [lotsRes, alertsRes, queueRes] = await Promise.all([
       getJson<{ lots: Lot[] }>(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
       getJson<{ subscribed: string[]; outOfStock: { variantId: string; name: string; code: string }[] }>(
         `/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
+      getJson<{ entries: WaitlistEntry[] }>(
+        `/api/waitlist?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
     ]);
     if (lotsRes.ok) setLots(lotsRes.data.lots);
     if (alertsRes.ok) { setSubscribed(alertsRes.data.subscribed); setOutOfStock(alertsRes.data.outOfStock); }
+    if (queueRes.ok) setQueue(queueRes.data.entries);
     // «کالایی نیست» نباید وقتی نگرفتیم نشان داده شود
-    const failed = [lotsRes, alertsRes].find((x) => !x.ok);
+    const failed = [lotsRes, alertsRes, queueRes].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
@@ -54,6 +62,35 @@ export default function ReservePage() {
       });
       await loadLots(ctx);
     } finally { setAlertPending(null); }
+  }
+
+  async function joinQueue(variantId: string) {
+    if (!ctx) return;
+    const quantityBoxes = Number(queueQty[variantId]);
+    if (!Number.isInteger(quantityBoxes) || quantityBoxes <= 0) return;
+    setQueuePending(variantId);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId, quantityBoxes }),
+      });
+      setMsg(res.ok
+        ? { kind: "ok", text: "در صف قرار گرفتی. به‌محض آزاد شدن موجودی، همان تعداد برایت رزرو می‌شود." }
+        : { kind: "err", text: "ثبت نوبت انجام نشد." });
+      if (res.ok) await loadLots(ctx);
+    } finally { setQueuePending(null); }
+  }
+
+  async function leaveQueue(variantId: string) {
+    if (!ctx) return;
+    setQueuePending(variantId);
+    try {
+      await fetch("/api/waitlist", {
+        method: "DELETE", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }),
+      });
+      await loadLots(ctx);
+    } finally { setQueuePending(null); }
   }
 
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
@@ -162,9 +199,15 @@ export default function ReservePage() {
       {outOfStock.length > 0 && (
         <>
           <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>ناموجودها</h2>
-          <p className="muted">با «خبرم کن» به‌محض موجود شدن پیامک می‌گیری (یک‌بار).</p>
+          <p className="muted">
+            <strong>خبرم کن</strong>: به‌محض موجود شدن یک پیامک می‌گیری (بدون رزرو — هرکس زودتر
+            سفارش دهد می‌برد).{" "}
+            <strong>نوبت بگیر</strong>: به‌ترتیبِ نوبت، به‌محض آزاد شدن موجودی همان تعداد
+            <em> برایت رزرو می‌شود</em> و خبرش را می‌گیری.
+          </p>
           {outOfStock.map((v) => {
             const on = subscribed.includes(v.variantId);
+            const q = queue.find((w) => w.variantId === v.variantId);
             return (
               <div className="card" key={v.variantId}>
                 <div className="row">
@@ -174,6 +217,30 @@ export default function ReservePage() {
                     {alertPending === v.variantId && <span className="spinner" aria-hidden="true" />}
                     {on ? "🔔 خبرم بده (فعال)" : "خبرم کن"}
                   </button>
+                </div>
+                <div className="row" style={{ gap: ".5rem", justifyContent: "flex-start", marginTop: ".5rem" }}>
+                  {q ? (
+                    <>
+                      <span className="num">در نوبت: {money(q.quantityBoxes)} کارتن · نفر {money(q.position)}</span>
+                      <button className="ghost" disabled={queuePending === v.variantId}
+                        onClick={() => leaveQueue(v.variantId)}>
+                        {queuePending === v.variantId && <span className="spinner" aria-hidden="true" />}
+                        انصراف از نوبت
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <input type="number" min={1} inputMode="numeric" placeholder="تعداد کارتن"
+                        aria-label={`تعداد برای نوبت ${v.name}`} style={{ maxWidth: 150 }}
+                        value={queueQty[v.variantId] ?? ""}
+                        onChange={(e) => setQueueQty({ ...queueQty, [v.variantId]: e.target.value })} />
+                      <button disabled={queuePending === v.variantId || !(Number(queueQty[v.variantId]) > 0)}
+                        onClick={() => joinQueue(v.variantId)}>
+                        {queuePending === v.variantId && <span className="spinner" aria-hidden="true" />}
+                        نوبت بگیر
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );

@@ -464,6 +464,26 @@ CREATE TABLE notification_outbox (
     sent_at       TIMESTAMPTZ
 );
 
+-- v2 «صف انتظار برای رزروهای آزادشده» (بخش ۹).
+--
+-- تفاوتش با stock_alert: آن اشتراکِ «خبرم کن» است و به همه پخش می‌شود (هرکس زودتر
+-- کلیک کرد برنده)؛ این یک **صفِ منصفانه** است — وقتی موجودی آزاد شود، به ترتیبِ
+-- نوبت برای نفرِ اولِ صف رزرو ساخته می‌شود، نه اینکه همه با هم بدوند.
+CREATE TABLE waitlist_entry (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        UUID NOT NULL REFERENCES tenant(id),
+    agent_account_id UUID NOT NULL,
+    variant_id       UUID NOT NULL,
+    quantity_boxes   INT  NOT NULL CHECK (quantity_boxes > 0),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),  -- ترتیبِ صف (FIFO)
+    -- یک نوبت برای هر نماینده روی هر کالا. دوباره‌درخواست = به‌روزرسانیِ تعداد،
+    -- نه گرفتنِ نوبتِ دوم — وگرنه با چند بار کلیک می‌شد صف را قبضه کرد.
+    UNIQUE (agent_account_id, variant_id),
+    FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id),
+    FOREIGN KEY (tenant_id, variant_id)       REFERENCES product_variant(tenant_id, id)
+);
+CREATE INDEX idx_waitlist_queue ON waitlist_entry (tenant_id, variant_id, created_at);
+
 CREATE TABLE stock_alert (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id        UUID NOT NULL REFERENCES tenant(id),
@@ -572,15 +592,21 @@ REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;
 -- گزارش‌ها و اعلان‌ها. تأخیر یا شکستش بی‌خطر است (runbook بخش ۶).
 -- SECURITY DEFINER چون نگهداریِ cross-tenant است؛ امن است چون فقط رزروهایی را که
 -- خودشان از مهلت گذشته‌اند علامت می‌زند و هیچ داده‌ای برنمی‌گرداند.
+-- برمی‌گرداند: کدام (tenant, variant) موجودی‌شان آزاد شد — نه فقط یک عدد.
+-- worker به این نیاز دارد تا صفِ انتظارِ همان کالاها را جلو ببرد؛ با شمارشِ خالی
+-- می‌دانست «چیزی آزاد شد» ولی نه «چه چیزی»، و صف هرگز حرکت نمی‌کرد.
 CREATE FUNCTION expire_due_reservations()
-RETURNS INT
+RETURNS TABLE (tenant_id UUID, variant_id UUID)
 LANGUAGE sql SECURITY DEFINER AS $$
     WITH done AS (
         UPDATE reservation SET status = 'expired'
         WHERE status = 'active' AND expires_at <= now()
-        RETURNING 1
+        RETURNING id, reservation.tenant_id
     )
-    SELECT count(*)::int FROM done;
+    SELECT DISTINCT d.tenant_id, l.variant_id
+    FROM done d
+    JOIN reservation_item ri ON ri.reservation_id = d.id
+    JOIN inventory_lot l ON l.id = ri.lot_id;
 $$;
 REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
 -- در دیپلوی: GRANT EXECUTE ... TO <نقشِ worker>; و cron هر ۱۰-۱۵ دقیقه.

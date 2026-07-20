@@ -10,8 +10,8 @@ import { expireDueReservations } from "../src/db/expiry";
 import { sql } from "../src/db/client";
 
 async function main() {
-  const n = await expireDueReservations();
-  console.log(`[expire] ${n} reservation(s) marked expired`);
+  const { expired, offers } = await expireDueReservations();
+  console.log(`[expire] ${expired} freed variant-row(s), ${offers} waitlist offer(s) made`);
   await sql.end();
 }
 

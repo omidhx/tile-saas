@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import type { TransactionSql } from "postgres";
 import { withTenant } from "./client";
 import { decideAutoApproval } from "./autoApprove";
 import { approveReservationIn } from "./salesRequests";
+import { advanceWaitlist } from "./waitlist";
 
 export type CancelResult =
   | { ok: true }
@@ -44,6 +46,15 @@ export async function cancelReservation(params: {
           (tenant_id, lot_id, transaction_type, reference_type, reference_id, actor_user_id, note)
         VALUES (${tenantId}, ${it.lot_id}, 'reservation_cancel', 'reservation', ${reservationId},
                 ${actorUserId}, ${"آزادسازی " + it.quantity_boxes})`;
+
+    // صف انتظار: موجودی همین حالا آزاد شد (held فقط activeها را می‌شمارد)، پس صف باید
+    // در **همین تراکنش** جلو برود — وگرنه نفرِ اولِ صف به کسی می‌بازد که صفحه‌اش باز است.
+    const variants = await tx<{ variant_id: string }[]>`
+      SELECT DISTINCT l.variant_id FROM reservation_item ri
+      JOIN inventory_lot l ON l.id = ri.lot_id
+      WHERE ri.reservation_id = ${reservationId} AND ri.tenant_id = ${tenantId}`;
+    await advanceWaitlist(tx, tenantId, variants.map((v) => v.variant_id));
+
     return { ok: true };
   });
 }
@@ -75,7 +86,30 @@ export async function reserve(params: {
   idempotencyKey: string;
   items: ReserveItem[];
 }): Promise<ReserveResult> {
-  const { tenantId, agentAccountId, ttlHours, idempotencyKey, items } = params;
+  return withTenant(params.tenantId, (tx) => reserveIn(tx, params));
+}
+
+/**
+ * همان رزرو، داخلِ تراکنشِ صداکننده — تا صفِ انتظار بتواند در **همان تراکنشی** که
+ * موجودی آزاد می‌شود پیشنهاد بسازد. اگر تراکنشِ جدا بود، بینِ آزادسازی و پیشنهاد
+ * پنجره‌ای می‌ماند که هرکس صفحه‌اش باز است موجودی را می‌برد و صف بی‌معنا می‌شود.
+ */
+export async function reserveIn(
+  tx: TransactionSql,
+  params: {
+    tenantId: string;
+    agentAccountId: string;
+    ttlHours: number;
+    idempotencyKey: string;
+    items: ReserveItem[];
+    /**
+     * پیشنهادِ صفِ انتظار نباید خودکار تأیید شود: نماینده در آن لحظه حاضر نیست و
+     * درخواستش شاید روزها پیش ثبت شده. تعهدِ پول باید با حضورِ او باشد.
+     */
+    skipAutoApprove?: boolean;
+  },
+): Promise<ReserveResult> {
+  const { tenantId, agentAccountId, ttlHours, idempotencyKey, items, skipAutoApprove } = params;
   if (items.length === 0) throw new Error("رزرو خالی مجاز نیست");
 
   // اقلام هم‌lot را جمع و بر اساس lot_id مرتب کن — قفل همیشه ORDER BY lot_id (#۴)
@@ -91,7 +125,7 @@ export async function reserve(params: {
     .update(agentAccountId + "|" + lotIds.map((l) => `${l}:${byLot.get(l)}`).join(","))
     .digest("hex");
 
-  return withTenant(tenantId, async (tx) => {
+  {
     // ۱. idempotency: کلید تکراری → رزرو موجود را برگردون (بخش ۶: ۲۰۰ نه ۴۰۹، نه رزرو دوباره)
     const existing = await tx<{ id: string; idempotency_request_hash: string | null }[]>`
       SELECT id, idempotency_request_hash FROM reservation
@@ -150,7 +184,9 @@ export async function reserve(params: {
     //    تأیید می‌شود. جدا کردنش به تراکنشِ دوم یعنی پنجره‌ای که رزرو هست ولی تأیید نیست،
     //    و شکستِ نیمه‌راه یک رزروِ سرگردان می‌گذاشت. سقفِ تعریف‌نشده یا خطِ بی‌قیمت →
     //    تصمیم «نه» است، پس رفتارِ پیش‌فرض همان تأییدِ دستیِ قبلی می‌ماند.
-    const decision = await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resv.id });
+    const decision = skipAutoApprove
+      ? ({ approve: false, reason: "disabled" } as const)
+      : await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resv.id });
     if (decision.approve) {
       const approved = await approveReservationIn(tx, {
         tenantId, reservationId: resv.id, actorUserId: null,
@@ -169,7 +205,6 @@ export async function reserve(params: {
       };
     }
 
-    // ۸. COMMIT خودکار در پایان begin()
     return { ok: true, reservationId: resv.id, deduped: false };
-  });
+  }
 }
