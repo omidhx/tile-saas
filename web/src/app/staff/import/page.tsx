@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import Icon from "../../Icon";
+import { getJson, loadError } from "@/lib/api";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 
@@ -32,6 +33,8 @@ export default function ImportPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [err, setErr] = useState("");
   const [skipped, setSkipped] = useState(0);
+  const [whErr, setWhErr] = useState("");
+  const [noAccess, setNoAccess] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -39,10 +42,17 @@ export default function ImportPage() {
       if (res.status === 401) { router.push("/login"); return; }
       const { contexts } = await res.json();
       const staffCtx = contexts?.find((c: { role?: string }) => c.role === "staff" || c.role === "admin") ?? contexts?.[0];
-      if (!staffCtx) return;
+      // بدونِ این، صفحه برای همیشه روی «در حال بارگذاری…» می‌ماند و کاربر
+      // نمی‌فهمد چرا — همان هنگی که قبلاً در پنل پشتیبان بود.
+      if (!staffCtx) { setNoAccess(true); return; }
       setCtx(staffCtx);
-      const w = await fetch(`/api/warehouses?tenantId=${staffCtx.tenantId}`);
-      if (w.ok) setWarehouses((await w.json()).warehouses);
+
+      const w = await getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${staffCtx.tenantId}`);
+      // شکستِ خاموش اینجا فقط آزاردهنده نیست، **خطرناک** است: کاربری که نمی‌تواند
+      // انبار انتخاب کند طبیعتاً دامنه را روی «کل کارخانه» می‌گذارد تا جلو برود —
+      // یعنی همان گزینه‌ای که موجودیِ همه‌ی انبارها را صفر می‌کند.
+      if (w.ok) setWarehouses(w.data.warehouses);
+      else setWhErr(loadError(w.status));
     })();
   }, [router]);
 
@@ -91,10 +101,20 @@ export default function ImportPage() {
     } finally { setPending(false); }
   }
 
+  if (noAccess)
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   const scopeName = warehouses.find((w) => w.id === scopeWh)?.name;
-  const ready = rows.length > 0 && (scopeType === "tenant" || !!scopeWh);
+  // وقتی فهرستِ انبارها نیامده، «کل کارخانه» هم قفل می‌شود: نباید شکستِ بارگذاری
+  // کاربر را به‌سمتِ گزینه‌ی مخرب هُل بدهد.
+  const ready = rows.length > 0 && !whErr && (scopeType === "tenant" || !!scopeWh);
 
   return (
     <main>
@@ -140,6 +160,15 @@ export default function ImportPage() {
       </div>
 
       <h2>۲. دامنه</h2>
+      {whErr && (
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" />
+          <span>
+            {whErr} فهرستِ انبارها نیامد، پس اعمالِ Snapshot قفل است — تا اشتباهاً
+            دامنه‌ی «کل کارخانه» انتخاب نشود. صفحه را دوباره باز کنید.
+          </span>
+        </div>
+      )}
       <div className="card">
         <label htmlFor="scope">ردیف‌های غایب فقط داخل همین دامنه صفر می‌شوند</label>
         <div className="row row--start">
