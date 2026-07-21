@@ -99,16 +99,38 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 
 ---
 
-## Planned (هنوز ساخته نشده — قرارداد پیشنهادی)
-| endpoint | کار | مرجع الگوریتم |
-|---|---|---|
-| `GET /api/reservations` (mine) | رزروهای نماینده + TTL | فیلترِ `agent_account_id` (spec ۱۴.۶) |
-| `POST /api/sales-dispatches` (backorder مستقل) | حواله بدون request (backorder) | spec ۵.۶ |
-| `POST /api/sales-dispatches/:id/status` | `loaded` (idempotent، on_hand↓) | spec ۱۴.۳ |
-| `POST /api/import/batches` | آپلود اکسل snapshot | spec ۱۴.۵ |
+## فهرست کاملِ endpointها
+> این جدول باید با پوشه‌ی `web/src/app/api/` یکی بماند — تستِ
+> `web/src/db/docsDrift.test.ts` اگر endpointی مستند نشده باشد **شکست می‌خورد**.
 
-## Rate limits (planned)
-روی login/reservation/import/dispatch-transition. spec ۸/۱۴.۶.
+| endpoint | نقش | کار |
+|---|---|---|
+| `/api/auth/login` `/logout` | همه | ورود/خروج |
+| `/api/auth/password` | واردشده | تغییر رمز (نشست‌ها را باطل می‌کند) |
+| `/api/auth/reset` | عمومی | بازیابی با کدِ پیامکی — وجودِ شماره را لو نمی‌دهد |
+| `/api/auth/logout-all` | واردشده | خروج از همه‌ی دستگاه‌های دیگر |
+| `/api/me` | واردشده | contextهای کاربر (`user_contexts`) |
+| `/api/lots` | نماینده | موجودیِ قابل‌سفارش + «قیمت من» + انبار |
+| `/api/reservations` (+`/:id/approve` `/:id/cancel`) | نماینده/staff | رزرو، تأیید، لغو |
+| `/api/alerts` | نماینده | «خبرم کن» + ناموجودها + **جایگزین‌ها** + **موجودی در راه** |
+| `/api/waitlist` | نماینده | صف انتظار (نوبت گرفتن/انصراف) |
+| `/api/sales-requests` | staff | سفارش‌های تأییدشده (+`approvalMode`) |
+| `/api/sales-dispatches` (+`/:id/status`) | staff | حواله (**آرایه** — چندانباره) و گذارِ وضعیت |
+| `/api/backorders` (+`/:itemId/status`) | staff | backorder |
+| `/api/imports` | staff | ورودِ اکسل snapshot |
+| `/api/prices` | staff | قیمت‌گذاری (تغییر در `audit_log` ثبت می‌شود) |
+| `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
+| `/api/substitutes` | staff | تعریفِ کالای جایگزین |
+| `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
+| `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
+| `/api/reports` | staff | گزارش‌های مدیریتی |
+| `/api/ledger` | staff | دفتر حرکات + تطبیق (drift) |
+| `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی |
+| `/api/agents` `/api/catalog` `/api/warehouses` | staff | فهرست‌های کمکی |
+
+## Rate limits
+پیاده‌شده روی: `login`، `reservations` (۳۰/دقیقه per user)، `auth/password` (۵/۱۵دقیقه)،
+`auth/reset` (درخواست ۳ و تأیید ۱۰ در ۱۵ دقیقه، per phone). spec ۸/۱۴.۶.
 
 ## Assumptions
 - کلاینت `idempotencyKey` را UUIDv4 تولید می‌کند و برای retryِ همان عملیات همان را می‌فرستد.

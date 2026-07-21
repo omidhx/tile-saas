@@ -15,9 +15,15 @@ tenant ──< agent_account ──< agent_account_user (FK به membership: ک�
    ├─ reservation ──< reservation_item ─→ lot        (held = SUM active)
    ├─ sales_request ──< sales_request_item ──< sales_request_allocation ─→ lot
    ├─ sales_dispatch ──< sales_dispatch_item ─→ lot|NULL (backorder)
-   ├─ price_list ──< price_list_item ;  agent_price_override
-   ├─ import_batch (scope: tenant/warehouse/brand) ──< import_row
+   ├─ price_list ──< price_list_item ;  agent_price_override ; volume_discount   (v2)
+   ├─ customer ─→ sales_dispatch.customer_id  (نام روی حواله snapshot می‌ماند)      (v2)
+   ├─ waitlist_entry (صف انتظار) ; product_substitute (جایگزین، جهت‌دار)            (v2)
+   ├─ incoming_stock (موجودی در راه — **هرگز وارد available نمی‌شود**)              (v2)
+   ├─ import_template ; import_batch (scope: tenant/warehouse/brand) ──< import_row
    └─ notification_outbox ; stock_alert ; audit_log (old/new JSONB)
+
+app_user.session_epoch  ──  نسخه‌ی نشست؛ هر تغییر/بازیابیِ رمز یکی جلو می‌بردش
+password_reset          ──  کدِ یک‌بارمصرفِ بازیابی (hash می‌شود، نه خودِ کد)
 ```
 
 ## قواعدی که در DDL کد شده‌اند (نه فقط قرارداد)
@@ -31,6 +37,13 @@ tenant ──< agent_account ──< agent_account_user (FK به membership: ک�
 | backorder ⟺ lot NULL ∧ backorder_status | `CHECK` روی `sales_dispatch_item` |
 | idempotency scope tenant + hash | `UNIQUE(tenant_id, idempotency_key)` + `idempotency_request_hash` |
 | bootstrap هویتِ cross-tenant | تابع `user_contexts` (SECURITY DEFINER) |
+| **موجودیِ در راه هرگز available نیست** | `incoming_stock` جدا از `inventory_balance`؛ رسیدن از مسیرِ لجر |
+| رسیدنِ محموله برگشت‌پذیر نیست | `CHECK` روی `incoming_stock` (arrived ⟺ lot و زمان دارد) |
+| کالا جایگزینِ خودش نمی‌شود | `CHECK (variant_id <> substitute_variant_id)` |
+| یک نوبت برای هر نماینده روی هر کالا | `UNIQUE (agent_account_id, variant_id)` روی `waitlist_entry` |
+| سقفِ تأییدِ خودکار: NULL=ارث/خاموش، ۰=هرگز | `auto_approve_limit` روی tenant و agent_account |
+| چرا سفارش تأیید شد | `sales_request.approval_mode` + `auto_approve_limit_applied` (snapshot) |
+| نشستِ باطل‌شده | `app_user.session_epoch` (شمارنده، نه timestamp — مرزِ ثانیه ندارد) |
 
 ## ایندکس‌های حیاتی
 `idx_reservation_item_lot` و `idx_active_reservation_expiry` (partial، `WHERE status='active'`) و `idx_reservation_items_lot_qty` (covering) — همه برای کوئریِ `held`. بقیه در schema.sql بخش ۵.۱۰.
