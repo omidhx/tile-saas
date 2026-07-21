@@ -7,6 +7,7 @@ import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import { formatJalaliDate } from "@/lib/date";
+import { matches } from "@/lib/search";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -43,6 +44,7 @@ export default function ReservePage() {
   const [queueQty, setQueueQty] = useState<Record<string, string>>({});
   const [queuePending, setQueuePending] = useState<string | null>(null);
   const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
+  const [query, setQuery] = useState("");
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
   const [loadErr, setLoadErr] = useState("");
@@ -125,12 +127,28 @@ export default function ReservePage() {
   // فهرستِ انبارها از خودِ اقلام ساخته می‌شود، نه یک کوئریِ جدا: انباری که چیزی
   // برای سفارش ندارد، فیلترِ بی‌نتیجه می‌سازد.
   const warehouses = [...new Map(lots.map((l) => [l.warehouse_id, l.warehouse_name])).entries()];
-  const visibleLots = whFilter ? lots.filter((l) => l.warehouse_id === whFilter) : lots;
+  // جستجو روی نام/کد/شید/کالیبر (spec ۱۱.۲). نرمال‌سازیِ ارقام و حروف در lib/search.
+  const visibleLots = lots.filter((l) =>
+    (!whFilter || l.warehouse_id === whFilter)
+    && matches(query, [l.name, l.code, l.grade, l.shade_code, l.caliber_code]));
 
   // سفارشِ دوانباره ممنوع نیست — فقط دو حواله می‌شود. هشدارِ نرم، مثل شیدِ مخلوط،
   // چون یک کامیون نمی‌تواند از دو انبار بار بزند و نماینده باید از قبل بداند.
   const cartWarehouses = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.warehouse_name).filter(Boolean));
   const mixedWarehouse = cartWarehouses.size > 1;
+
+  // جمعِ زنده‌ی سبد. برای کسی که تلفنی با مشتری هماهنگ می‌کند «الان چقدر شد؟»
+  // سؤالِ لحظه‌به‌لحظه است. این فقط برآوردِ نمایشی است — قیمتِ قطعی در لحظه‌ی
+  // **تأیید** snapshot می‌شود (تخفیفِ حجمی هم آنجا)، نه اینجا؛ پس صریح «تقریبی»
+  // گفته می‌شود تا با فاکتور اشتباه نشود.
+  const cartBoxes = items.reduce((s, [, q]) => s + q, 0);
+  let cartValue = 0;
+  let anyUnpriced = false;
+  for (const [id, q] of items) {
+    const lot = lots.find((l) => l.lot_id === id);
+    if (lot?.unitPrice != null) cartValue += lot.unitPrice * q;
+    else anyUnpriced = true;
+  }
 
   async function submit() {
     if (!ctx || items.length === 0) return;
@@ -206,8 +224,27 @@ export default function ReservePage() {
       )}
       {loaded && !loadErr && lots.length === 0 && <p className="empty">فعلاً کالای قابل‌سفارشی نیست.</p>}
 
-      {/* فیلترِ انبار فقط وقتی بیش از یک انبار هست — دراپ‌داونِ تک‌گزینه‌ای فقط نویز است */}
-      {warehouses.length > 1 && (
+      {/* جستجو/فیلتر (spec ۱۱.۲) — فقط وقتی فهرست به‌اندازه‌ای هست که ارزش داشته باشد.
+          با ۲–۳ کالا، جعبه‌ی جستجو فقط جا می‌گیرد. */}
+      {loaded && !loadErr && lots.length > 4 && (
+        <div className="row row--start" style={{ marginBottom: "var(--sp-3)", flexWrap: "wrap" }}>
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+                 placeholder="جستجو: نام، کد، شید، کالیبر…" aria-label="جستجوی کالا"
+                 style={{ maxWidth: 260, flex: 1 }} />
+          {warehouses.length > 1 && (
+            <select aria-label="فیلتر انبار" value={whFilter}
+                    onChange={(e) => setWhFilter(e.target.value)} style={{ maxWidth: 200 }}>
+              <option value="">همه‌ی انبارها</option>
+              {warehouses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          )}
+          {(query || whFilter) && (
+            <span className="subtle">{money(visibleLots.length)} از {money(lots.length)}</span>
+          )}
+        </div>
+      )}
+      {/* فیلترِ انبار حتی وقتی فهرست کوتاه است اگر بیش از یک انبار باشد */}
+      {loaded && !loadErr && lots.length > 1 && lots.length <= 4 && warehouses.length > 1 && (
         <div className="row row--start" style={{ marginBottom: "var(--sp-3)" }}>
           <label htmlFor="wh-filter" style={{ margin: 0 }}>انبار</label>
           <select id="wh-filter" value={whFilter} onChange={(e) => setWhFilter(e.target.value)} style={{ maxWidth: 220 }}>
@@ -217,7 +254,9 @@ export default function ReservePage() {
         </div>
       )}
       {loaded && !loadErr && lots.length > 0 && visibleLots.length === 0 && (
-        <p className="empty">در این انبار کالای قابل‌سفارشی نیست.</p>
+        <p className="empty">
+          {query ? `چیزی با «${query}» پیدا نشد.` : "در این انبار کالای قابل‌سفارشی نیست."}
+        </p>
       )}
 
       {visibleLots.map((l) => {
@@ -276,8 +315,21 @@ export default function ReservePage() {
         <div className="card card--raised" style={{ position: "sticky", bottom: "var(--sp-3)" }}>
           <div className="row">
             <strong>سبد رزرو</strong>
-            <span className="badge">{money(items.length)} قلم · {money(items.reduce((s, [, q]) => s + q, 0))} کارتن</span>
+            <span className="badge">{money(items.length)} قلم · {money(cartBoxes)} کارتن</span>
           </div>
+
+          {/* جمعِ ریالیِ تقریبی — «تقریبی» چون تخفیفِ حجمی و قیمتِ قطعی در لحظه‌ی تأیید */}
+          {cartValue > 0 && (
+            <div className="row" style={{ marginTop: "var(--sp-2)" }}>
+              <span className="muted">جمعِ تقریبی</span>
+              <span className="metric">{money(cartValue)} ریال</span>
+            </div>
+          )}
+          {anyUnpriced && (
+            <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>
+              بعضی اقلام قیمتِ ثبت‌شده ندارند و در این جمع نیستند — قیمتِ نهایی را پشتیبان تأیید می‌کند.
+            </div>
+          )}
 
           {/* هشدارِ نرم، نه منع: تصمیم با نماینده است ولی باید پیامدش را بداند */}
           {mixedShade && (
