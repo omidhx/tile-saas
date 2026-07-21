@@ -494,6 +494,31 @@ CREATE TABLE notification_outbox (
     sent_at       TIMESTAMPTZ
 );
 
+-- v2 «پیشنهاد خودکار کالای جایگزین» (بخش ۹).
+--
+-- چرا جدولِ صریح و نه تطبیقِ خودکار بر اساس صفت: **هیچ فیلدِ ساختاریافته‌ای برای
+-- ابعاد نداریم** — اندازه فقط داخلِ نام/کد است، و `sqcm_per_box` مساحتِ کارتن
+-- است نه ابعاد (۶۰×۶۰ و ۳۰×۱۲۰ می‌توانند مساحتِ یکسان داشته باشند و هرگز
+-- جایگزینِ هم نیستند). `color`/`glaze`/`grade` هم nullable‌اند و import پرشان
+-- نمی‌کند. حدسِ ماشینی اینجا یعنی پیشنهادِ اشتباه به نماینده — بدتر از پیشنهاد ندادن.
+--
+-- جهت‌دار است، نه متقارن: «اگر گرانیتِ گران نبود، ارزان را پیشنهاد بده» لزوماً
+-- برعکسش درست نیست.
+CREATE TABLE product_substitute (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id             UUID NOT NULL REFERENCES tenant(id),
+    variant_id            UUID NOT NULL,   -- کالایی که موجود نیست
+    substitute_variant_id UUID NOT NULL,   -- چیزی که به‌جایش پیشنهاد می‌شود
+    note                  TEXT,            -- «همان اندازه، لعابِ مات» — برای نماینده
+    sort_order            INT NOT NULL DEFAULT 0,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, variant_id, substitute_variant_id),
+    CHECK (variant_id <> substitute_variant_id),
+    FOREIGN KEY (tenant_id, variant_id)            REFERENCES product_variant(tenant_id, id),
+    FOREIGN KEY (tenant_id, substitute_variant_id) REFERENCES product_variant(tenant_id, id)
+);
+CREATE INDEX idx_substitute_lookup ON product_substitute (tenant_id, variant_id, sort_order);
+
 -- v2 «صف انتظار برای رزروهای آزادشده» (بخش ۹).
 --
 -- تفاوتش با stock_alert: آن اشتراکِ «خبرم کن» است و به همه پخش می‌شود (هرکس زودتر

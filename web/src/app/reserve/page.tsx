@@ -17,6 +17,12 @@ type Lot = {
 
 type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
 
+type Substitute = {
+  variantId: string; name: string; code: string; grade: string | null;
+  available: number; unitPrice: number | null; note: string | null;
+  source: "explicit" | "same_product";
+};
+
 // پول در دیتابیس عددِ صحیح است؛ اعشار/جداکننده فقط همین‌جا در لایه‌ی UI (قانون #۷)
 const money = (v: number) => v.toLocaleString("fa-IR");
 
@@ -34,19 +40,26 @@ export default function ReservePage() {
   const [queueQty, setQueueQty] = useState<Record<string, string>>({});
   const [queuePending, setQueuePending] = useState<string | null>(null);
   const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
+  const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   const loadLots = useCallback(async (c: Ctx) => {
     const [lotsRes, alertsRes, queueRes] = await Promise.all([
       getJson<{ lots: Lot[] }>(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
-      getJson<{ subscribed: string[]; outOfStock: { variantId: string; name: string; code: string }[] }>(
-        `/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
+      getJson<{
+        subscribed: string[]; outOfStock: { variantId: string; name: string; code: string }[];
+        substitutes: Record<string, Substitute[]>;
+      }>(`/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
       getJson<{ entries: WaitlistEntry[] }>(
         `/api/waitlist?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
     ]);
     if (lotsRes.ok) setLots(lotsRes.data.lots);
-    if (alertsRes.ok) { setSubscribed(alertsRes.data.subscribed); setOutOfStock(alertsRes.data.outOfStock); }
+    if (alertsRes.ok) {
+      setSubscribed(alertsRes.data.subscribed);
+      setOutOfStock(alertsRes.data.outOfStock);
+      setSubs(alertsRes.data.substitutes ?? {});
+    }
     if (queueRes.ok) setQueue(queueRes.data.entries);
     // «کالایی نیست» نباید وقتی نگرفتیم نشان داده شود
     const failed = [lotsRes, alertsRes, queueRes].find((x) => !x.ok);
@@ -343,6 +356,36 @@ export default function ReservePage() {
                       {queuePending === v.variantId && <span className="spinner" aria-hidden="true" />}
                       نوبت بگیر
                     </button>
+                  </div>
+                )}
+
+                {/* جایگزین‌ها دقیقاً همین‌جا می‌آیند — جایی که نماینده تازه فهمیده
+                    کالا نیست. فرستادنش به بالای صفحه برای پیدا کردنِ مشابه، همان
+                    فروشی است که از دست می‌رود. */}
+                {(subs[v.variantId] ?? []).length > 0 && (
+                  <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+                    <div className="muted" style={{ marginBottom: "var(--sp-2)" }}>به‌جایش موجود است:</div>
+                    {(subs[v.variantId] ?? []).map((s) => (
+                      <div className="row" key={s.variantId} style={{ marginBottom: "var(--sp-2)" }}>
+                        <span>
+                          <strong>{s.name}</strong> <span className="subtle">{s.code}</span>
+                          {s.grade ? <span className="subtle"> · درجه {s.grade}</span> : null}
+                          {/* منبعِ پیشنهاد صریح گفته می‌شود: «کارخانه گفته» با
+                              «سیستم حدس زده» برای نماینده یکی نیست. */}
+                          {s.note
+                            ? <div className="subtle">{s.note}</div>
+                            : s.source === "same_product"
+                              ? <div className="subtle">همین کالا با درجه‌ی دیگر</div>
+                              : null}
+                        </span>
+                        <span style={{ textAlign: "start" }}>
+                          <span className="metric">{money(s.available)}</span> <span className="muted">کارتن</span>
+                          {s.unitPrice !== null && (
+                            <div className="subtle num">{money(s.unitPrice)} ریال / کارتن</div>
+                          )}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

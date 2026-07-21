@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeAgent, AuthzError } from "@/auth/authz";
+import { suggestSubstitutes } from "@/db/substitutes";
 import { subscribeAlert, unsubscribeAlert, listAlertsAndOutOfStock } from "@/db/alerts";
 
 /** context مشترک: احراز هویت + مجوزِ همین نمایندگی (chokepoint IDOR). */
@@ -23,7 +24,14 @@ export async function GET(req: Request) {
   const u = new URL(req.url);
   const c = await ctx(u.searchParams.get("tenantId"), u.searchParams.get("agentAccountId"));
   if ("err" in c) return c.err;
-  return NextResponse.json(await listAlertsAndOutOfStock(c));
+
+  const data = await listAlertsAndOutOfStock(c);
+  // جایگزین‌ها همراهِ همین پاسخ می‌آیند، نه در یک درخواستِ جدا: دقیقاً برای همین
+  // کالاهای ناموجود لازم‌اند و رفت‌وبرگشتِ دومی فقط صفحه را کندتر می‌کرد.
+  const substitutes = await suggestSubstitutes({
+    ...c, variantIds: data.outOfStock.map((v) => v.variantId),
+  });
+  return NextResponse.json({ ...data, substitutes });
 }
 
 /** POST {tenantId, agentAccountId, variantId} — اشتراک. */
