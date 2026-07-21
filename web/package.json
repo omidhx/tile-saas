@@ -13,6 +13,7 @@
     "worker:outbox": "node --import tsx scripts/outbox.ts"
   },
   "dependencies": {
+    "@fontsource-variable/vazirmatn": "^5.3.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.3",

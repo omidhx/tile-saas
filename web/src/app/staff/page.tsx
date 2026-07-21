@@ -3,6 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getJson, loadError } from "@/lib/api";
 import LogoutButton from "../LogoutButton";
+import Icon from "../Icon";
+
+/** ارقامِ فارسی، همه‌جا یکسان. */
+const num = (v: number) => v.toLocaleString("fa-IR");
 
 type Ctx = { tenantId: string; tenantName: string };
 type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
@@ -145,7 +149,7 @@ export default function StaffPage() {
       if (res.ok) {
         const { dispatchIds } = await res.json().catch(() => ({ dispatchIds: [] }));
         if (dispatchIds?.length > 1)
-          setNote(`این سفارش از ${dispatchIds.length} انبار تأمین می‌شود، پس ${dispatchIds.length} حواله‌ی جدا ساخته شد.`);
+          setNote(`این سفارش از ${num(dispatchIds.length)} انبار تأمین می‌شود، پس ${num(dispatchIds.length)} حواله‌ی جدا ساخته شد.`);
       }
       await load(ctx);
     } finally { setPending(null); }
@@ -163,68 +167,102 @@ export default function StaffPage() {
     } finally { setPending(null); }
   }
 
-  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
+  if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
     <main>
-      <div className="row"><h1>پنل پشتیبان</h1><span style={{ display: "flex", gap: ".75rem", alignItems: "center" }}><a href="/staff/import" className="muted">ورود موجودی ←</a><a href="/staff/prices" className="muted">قیمت‌گذاری ←</a><a href="/staff/auto-approve" className="muted">تأیید خودکار ←</a><a href="/staff/reports" className="muted">گزارش‌ها ←</a><a href="/staff/ledger" className="muted">دفتر لجر ←</a><LogoutButton /></span></div>
-      <p className="muted">{ctx.tenantName}</p>
+      <div className="topbar">
+        <div>
+          <h1>پنل پشتیبان</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
+        </div>
+        <nav>
+          <a href="/staff/import">ورود موجودی</a>
+          <a href="/staff/prices">قیمت‌گذاری</a>
+          <a href="/staff/auto-approve">تأیید خودکار</a>
+          <a href="/staff/reports">گزارش‌ها</a>
+          <a href="/staff/ledger">دفتر لجر</a>
+          <LogoutButton />
+        </nav>
+      </div>
 
       {loadErr && (
-        <div className="card" role="alert"><span className="err">⚠️ {loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span></div>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" />
+          <span>{loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span>
+        </div>
       )}
-      {note && <div className="card" role="status">{note}</div>}
+      {note && (
+        <div className="banner banner--ok" role="status">
+          <Icon name="check" /><span>{note}</span>
+        </div>
+      )}
 
-      <h2 style={{ fontSize: "1.05rem" }}>رزروهای در انتظار تأیید</h2>
-      {loaded && !loadErr && pendingResvs.length === 0 && <p className="muted">رزروِ فعالی برای تأیید نیست.</p>}
+      {/* صفِ کار: چیزی که پشتیبان برای آن وارد شده، پس اول می‌آید و شمارشش
+          روی تیتر است تا بدون اسکرول معلوم باشد چقدر کار مانده. */}
+      <h2>
+        رزروهای در انتظار تأیید
+        {pendingResvs.length > 0 && <span className="badge badge--warn">{num(pendingResvs.length)}</span>}
+      </h2>
+      {loaded && !loadErr && pendingResvs.length === 0 && <p className="empty">رزروِ فعالی برای تأیید نیست.</p>}
       {pendingResvs.map((r) => (
         <div className="card" key={r.id}>
           <div className="row"><strong>{r.agentName}</strong></div>
-          <div className="muted">{r.items.map((i) => `${i.name} ×${i.quantityBoxes}`).join("، ")}</div>
-          <div style={{ marginTop: ".5rem" }}>
-            <button onClick={() => approve(r.id)} disabled={pending === "approve" + r.id}>
-              {pending === "approve" + r.id && <span className="spinner" aria-hidden="true" />}تأیید (held→allocated)
-            </button>{" "}
-            <button className="ghost" onClick={() => cancelResv(r.id)} disabled={pending === "cancel" + r.id}>
+          <div className="muted">{r.items.map((i) => `${i.name} ×${num(i.quantityBoxes)}`).join("، ")}</div>
+          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
+            <button className="primary" onClick={() => approve(r.id)}
+              disabled={pending === "approve" + r.id} aria-busy={pending === "approve" + r.id}>
+              {pending === "approve" + r.id && <span className="spinner" aria-hidden="true" />}تأیید
+            </button>
+            <button className="ghost" onClick={() => cancelResv(r.id)}
+              disabled={pending === "cancel" + r.id} aria-busy={pending === "cancel" + r.id}>
               {pending === "cancel" + r.id && <span className="spinner" aria-hidden="true" />}لغو
             </button>
           </div>
         </div>
       ))}
 
-      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>درخواست‌های تأییدشده</h2>
-      {loaded && !loadErr && reqs.length === 0 && <p className="muted">درخواست تأییدشده‌ای برای حواله نیست.</p>}
+      <h2>
+        درخواست‌های تأییدشده
+        {reqs.length > 0 && <span className="badge">{num(reqs.length)}</span>}
+      </h2>
+      {loaded && !loadErr && reqs.length === 0 && <p className="empty">درخواست تأییدشده‌ای برای حواله نیست.</p>}
       {reqs.map((r) => (
         <div className="card" key={r.id}>
           <div className="row">
             <strong>{r.agentName}</strong>
             {/* پشتیبان باید ببیند کدام سفارش بدونِ او تأیید شده — وگرنه فیچر بی‌سروصدا کار می‌کند */}
-            {r.approvalMode === "auto" && <span className="muted">تأیید خودکار (زیر سقف)</span>}
+            {r.approvalMode === "auto" && <span className="badge badge--ok">تأیید خودکار (زیر سقف)</span>}
           </div>
-          <div className="muted">{r.items.map((i) => `${i.name} ×${i.qty}`).join("، ")}</div>
-          <div style={{ marginTop: ".5rem" }}>
-            <button onClick={() => makeDispatch(r.id)} disabled={pending === r.id}>
+          <div className="muted">{r.items.map((i) => `${i.name} ×${num(i.qty)}`).join("، ")}</div>
+          <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+            <button onClick={() => makeDispatch(r.id)} disabled={pending === r.id} aria-busy={pending === r.id}>
               {pending === r.id && <span className="spinner" aria-hidden="true" />}ساخت حواله
             </button>
           </div>
         </div>
       ))}
 
-      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>حواله‌ها</h2>
-      {loaded && !loadErr && disps.length === 0 && <p className="muted">حواله‌ای نیست.</p>}
+      <h2>حواله‌ها</h2>
+      {loaded && !loadErr && disps.length === 0 && <p className="empty">حواله‌ای نیست.</p>}
       {disps.map((d) => (
         <div className="card" key={d.id}>
           <div className="row">
-            <strong>{d.dispatchCode}</strong>
-            <span className="muted">
-              {d.warehouseName ? `${d.warehouseName} · ` : ""}{FA[d.status] ?? d.status} · {d.items} قلم
+            <strong className="num">{d.dispatchCode}</strong>
+            <span className="row row--start" style={{ gap: "var(--sp-1)" }}>
+              {/* انبار badge است نه متن: انباردار باید با یک نگاه بفهمد این حواله مالِ اوست */}
+              {d.warehouseName && <span className="badge"><Icon name="warehouse" size={13} />{d.warehouseName}</span>}
+              <span className={`badge${d.status === "delivered" || d.status === "loaded" ? " badge--ok" : d.status === "cancelled" ? " badge--error" : ""}`}>
+                {FA[d.status] ?? d.status}
+              </span>
+              <span className="subtle">{num(d.items)} قلم</span>
             </span>
           </div>
           {d.customerName && <div className="muted">{d.customerName}</div>}
-          <div className="row" style={{ marginTop: ".5rem", justifyContent: "flex-start", gap: ".5rem" }}>
+          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
             {(NEXT[d.status] ?? []).map((s) => (
-              <button key={s} className={s === "cancelled" ? "ghost" : undefined}
-                onClick={() => advance(d.id, s)} disabled={pending === d.id + s}>
+              <button key={s} className={s === "cancelled" ? "danger" : s === "loaded" ? "primary" : undefined}
+                onClick={() => advance(d.id, s)} disabled={pending === d.id + s} aria-busy={pending === d.id + s}>
                 {pending === d.id + s && <span className="spinner" aria-hidden="true" />}{FA[s]}
               </button>
             ))}
@@ -232,28 +270,29 @@ export default function StaffPage() {
         </div>
       ))}
 
-      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>Backorder (محصول ناموجود)</h2>
+      <h2>Backorder (محصول ناموجود)</h2>
       <div className="card">
-        <label>ثبت backorder جدید</label>
-        <div className="row" style={{ gap: ".5rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
-          <select value={boAgent} onChange={(e) => setBoAgent(e.target.value)}
-            style={{ padding: ".5rem", borderRadius: 8, border: "1px solid var(--line)" }}>
+        <label htmlFor="bo-agent">ثبت backorder جدید</label>
+        <div className="row row--start" style={{ gap: "var(--sp-2)" }}>
+          <select id="bo-agent" aria-label="نمایندگی" value={boAgent} onChange={(e) => setBoAgent(e.target.value)}
+            style={{ maxWidth: 200 }}>
             <option value="">نمایندگی…</option>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.legalName}</option>)}
           </select>
-          <select value={boVariant} onChange={(e) => setBoVariant(e.target.value)}
-            style={{ padding: ".5rem", borderRadius: 8, border: "1px solid var(--line)" }}>
+          <select aria-label="کالا" value={boVariant} onChange={(e) => setBoVariant(e.target.value)}
+            style={{ maxWidth: 240 }}>
             <option value="">کالا…</option>
             {variants.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
           </select>
-          <input type="number" min={1} placeholder="کارتن" value={boQty}
-            onChange={(e) => setBoQty(e.target.value)} style={{ maxWidth: 100 }} />
-          <button onClick={createBackorder} disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
+          <input type="number" min={1} placeholder="کارتن" aria-label="تعداد کارتن" value={boQty}
+            onChange={(e) => setBoQty(e.target.value)} style={{ maxWidth: 110 }} />
+          <button onClick={createBackorder} aria-busy={pending === "bo-create"}
+            disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
             {pending === "bo-create" && <span className="spinner" aria-hidden="true" />}ثبت
           </button>
         </div>
       </div>
-      {loaded && !loadErr && backorders.length === 0 && <p className="muted">backorderی نیست.</p>}
+      {loaded && !loadErr && backorders.length === 0 && <p className="empty">backorderی نیست.</p>}
       {backorders.map((b) => (
         <div className="card" key={b.id}>
           <div className="row">

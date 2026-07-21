@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Icon from "../../Icon";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
@@ -58,8 +59,8 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {inverted && <div className="card" role="alert"><span className="err">⚠️ تاریخِ «از» بعد از «تا» است — بازه را اصلاح کنید.</span></div>}
-      {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
+      {inverted && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>تاریخِ «از» بعد از «تا» است — بازه را اصلاح کنید.</span></div>}
+      {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
 
       {rep && !loadErr && !inverted && (
         <>
@@ -74,7 +75,7 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>عملکرد نمایندگان</h2>
+          <h2>عملکرد نمایندگان</h2>
           {rep.agents.length === 0
             ? <p className="muted">در این بازه سفارش تأییدشده‌ای ثبت نشده.</p>
             : rep.agents.map((a) => (
@@ -85,14 +86,15 @@ export default function ReportsPage() {
                   </div>
                   <div className="muted num">{n(a.requests)} سفارش · {n(a.boxes)} کارتن</div>
                   {a.unpricedLines > 0 && (
-                    <div className="err">
-                      ⚠️ {n(a.unpricedLines)} خط بدون قیمتِ ثبت‌شده — ارزشِ بالا کمتر از واقعیت است.
+                    <div className="err" style={{ marginTop: "var(--sp-2)" }}>
+                      <Icon name="alert" />
+                      {n(a.unpricedLines)} خط بدون قیمتِ ثبت‌شده — ارزشِ بالا کمتر از واقعیت است.
                     </div>
                   )}
                 </div>
               ))}
 
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>پرفروش‌ها (بارگیری‌شده)</h2>
+          <h2>پرفروش‌ها (بارگیری‌شده)</h2>
           {rep.topProducts.length === 0
             ? <p className="muted">در این بازه چیزی بارگیری نشده.</p>
             : rep.topProducts.map((p) => (
@@ -104,7 +106,7 @@ export default function ReportsPage() {
                 </div>
               ))}
 
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>راکدها (موجودیِ بدون فروش)</h2>
+          <h2>راکدها (موجودیِ بدون فروش)</h2>
           {rep.deadStock.length === 0
             ? <p className="muted">همه‌ی کالاهای موجود در این بازه فروش داشته‌اند.</p>
             : <>

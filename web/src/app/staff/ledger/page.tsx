@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Icon from "../../Icon";
 import { formatJalaliDateTime } from "@/lib/date";
 
 type Ctx = { tenantId: string; tenantName: string };
@@ -61,16 +62,24 @@ export default function LedgerPage() {
       <div className="row"><h1>دفتر حرکات موجودی</h1><Link href="/staff" className="muted">← پنل</Link></div>
       <p className="muted">{ctx.tenantName}</p>
 
-      <h2 style={{ fontSize: "1.05rem" }}>تطبیق لجر با موجودی</h2>
+      <h2>تطبیق لجر با موجودی</h2>
       {loadErr ? (
-        <div className="card" role="alert"><span className="err">⚠️ {loadErr} — وضعیت ترازی نامشخص است.</span></div>
+        <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr} — وضعیت ترازی نامشخص است.</span></div>
       ) : !loaded ? (
         <div className="card"><span className="muted">در حال بررسی…</span></div>
       ) : drift.length === 0 ? (
-        <div className="card"><span style={{ color: "var(--ok)" }}>✓ تراز است — جمع لجر با موجودی هر Lot می‌خواند.</span></div>
+        <div className="banner banner--ok" role="status">
+          <Icon name="check" /><span>تراز است — جمع لجر با موجودی هر Lot می‌خواند.</span>
+        </div>
       ) : (
         <>
-          <p className="err">⚠️ {drift.length} Lot ناتراز: موجودی از مسیری عوض شده که لجر ننوشته (مثلاً UPDATE دستی روی دیتابیس).</p>
+          <div className="banner banner--error" role="alert">
+            <Icon name="alert" />
+            <span>
+              {drift.length.toLocaleString("fa-IR")} Lot ناتراز: موجودی از مسیری عوض شده که لجر
+              ننوشته (مثلاً UPDATE دستی روی دیتابیس).
+            </span>
+          </div>
           {drift.map((d) => (
             <div className="card" key={d.lotId}>
               <div className="row">
@@ -86,7 +95,7 @@ export default function LedgerPage() {
         </>
       )}
 
-      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>حرکات اخیر</h2>
+      <h2>حرکات اخیر</h2>
       {loaded && movements.length === 0 && <p className="muted">حرکتی ثبت نشده.</p>}
       {movements.map((m) => (
         <div className="card" key={m.id}>

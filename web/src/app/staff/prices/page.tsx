@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Icon from "../../Icon";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 
@@ -61,13 +62,13 @@ export default function PricesPage() {
     <main>
       <div className="row"><h1>قیمت‌گذاری</h1><Link href="/staff" className="muted">← پنل</Link></div>
       <p className="muted">{ctx.tenantName} — قیمت‌ها به <strong>ریال</strong> و عددِ صحیح‌اند.</p>
-      {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
+      {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
 
       {loaded && lists.length === 0 && <p className="muted">هنوز لیست قیمتی ساخته نشده.</p>}
 
       {lists.map((pl) => (
         <div key={pl.id}>
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.25rem" }}>
+          <h2>
             {pl.name} <span className="muted">· {pl.agentCount} نمایندگی</span>
           </h2>
           {variants.map((v) => {
@@ -96,7 +97,7 @@ export default function PricesPage() {
         </div>
       ))}
 
-      <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>پله‌های تخفیف حجمی</h2>
+      <h2>پله‌های تخفیف حجمی</h2>
       {loaded && tiers.length === 0 && <p className="muted">پله‌ای تعریف نشده.</p>}
       {tiers.map((t) => (
         <div className="card" key={t.id}>

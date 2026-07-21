@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Icon from "../../Icon";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 
@@ -68,12 +69,12 @@ export default function AutoApprovePage() {
         </p>
       </div>
 
-      {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
+      {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
       {saved && <div className="card" role="status">{saved}</div>}
 
       {s && !loadErr && (
         <>
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>سقف پیش‌فرض کارخانه</h2>
+          <h2>سقف پیش‌فرض کارخانه</h2>
           <div className="card">
             <label htmlFor="tenant-limit">سقف (ریال) — خالی یعنی خاموش</label>
             <div className="row" style={{ gap: ".5rem", justifyContent: "flex-start" }}>
@@ -88,7 +89,7 @@ export default function AutoApprovePage() {
             </div>
           </div>
 
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>سقف اختصاصی نمایندگان</h2>
+          <h2>سقف اختصاصی نمایندگان</h2>
           <p className="muted">
             خالی = همان سقفِ کارخانه. عددِ <strong>۰</strong> = این نماینده هرگز خودکار تأیید نشود.
           </p>

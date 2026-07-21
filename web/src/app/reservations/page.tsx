@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Icon from "../Icon";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
@@ -52,23 +53,35 @@ export default function MyReservationsPage() {
 
   return (
     <main>
-      <div className="row"><h1>رزروهای من</h1><Link href="/reserve" className="muted">+ رزرو جدید</Link></div>
-      <div className="row" style={{ justifyContent: "flex-start", gap: ".75rem", flexWrap: "wrap" }}>
-        <p className="muted" style={{ margin: 0 }}>{ctx.tenantName} — {ctx.agentLegalName}</p>
-        <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
+      <div className="topbar">
+        <div>
+          <h1>رزروهای من</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName} — {ctx.agentLegalName}</p>
+        </div>
+        <nav>
+          <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
+          <Link href="/reserve">+ رزرو جدید</Link>
+        </nav>
       </div>
-      {loadErr && <div className="card" role="alert"><span className="err">⚠️ {loadErr}</span></div>}
-      {loaded && !loadErr && rows.length === 0 && <p className="muted">رزروی نداری.</p>}
+      {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
+      {loaded && !loadErr && rows.length === 0 && <p className="empty">رزروی نداری.</p>}
       {rows.map((r) => (
         <div className="card" key={r.id}>
           <div className="row">
-            <span>{STATUS_FA[r.status] ?? r.status}</span>
-            {r.status === "active" && <span className="muted">⏳ {remaining(r.expiresAt)}</span>}
+            <span className={`badge${r.status === "converted" ? " badge--ok" : r.status === "active" ? " badge--warn" : ""}`}>
+              {STATUS_FA[r.status] ?? r.status}
+            </span>
+            {r.status === "active" && (
+              <span className="subtle" style={{ display: "inline-flex", gap: ".3em", alignItems: "center" }}>
+                <Icon name="clock" size={13} />{remaining(r.expiresAt)}
+              </span>
+            )}
           </div>
-          <div className="muted">{r.items.map((i) => `${i.name} (${i.code}) ×${i.quantityBoxes}`).join("، ")}</div>
+          <div className="muted">{r.items.map((i) => `${i.name} (${i.code}) ×${i.quantityBoxes.toLocaleString("fa-IR")}`).join("، ")}</div>
           {r.status === "active" && (
-            <div style={{ marginTop: ".5rem" }}>
-              <button className="ghost" disabled={cancelling === r.id} onClick={() => cancel(r.id)}>
+            <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+              <button className="ghost" disabled={cancelling === r.id} aria-busy={cancelling === r.id}
+                onClick={() => cancel(r.id)}>
                 {cancelling === r.id && <span className="spinner" aria-hidden="true" />}لغو رزرو
               </button>
             </div>
