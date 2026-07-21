@@ -6,6 +6,7 @@ import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
+import { formatJalaliDate } from "@/lib/date";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -16,6 +17,8 @@ type Lot = {
 };
 
 type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
+
+type Arrival = { quantityBoxes: number; expectedAt: string; status: "planned" | "confirmed" };
 
 type Substitute = {
   variantId: string; name: string; code: string; grade: string | null;
@@ -41,6 +44,7 @@ export default function ReservePage() {
   const [queuePending, setQueuePending] = useState<string | null>(null);
   const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
+  const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -50,6 +54,7 @@ export default function ReservePage() {
       getJson<{
         subscribed: string[]; outOfStock: { variantId: string; name: string; code: string }[];
         substitutes: Record<string, Substitute[]>;
+        arrivals: Record<string, Arrival[]>;
       }>(`/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
       getJson<{ entries: WaitlistEntry[] }>(
         `/api/waitlist?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
@@ -59,6 +64,7 @@ export default function ReservePage() {
       setSubscribed(alertsRes.data.subscribed);
       setOutOfStock(alertsRes.data.outOfStock);
       setSubs(alertsRes.data.substitutes ?? {});
+      setArrivals(alertsRes.data.arrivals ?? {});
     }
     if (queueRes.ok) setQueue(queueRes.data.entries);
     // «کالایی نیست» نباید وقتی نگرفتیم نشان داده شود
@@ -356,6 +362,25 @@ export default function ReservePage() {
                       {queuePending === v.variantId && <span className="spinner" aria-hidden="true" />}
                       نوبت بگیر
                     </button>
+                  </div>
+                )}
+
+                {/* «کِی می‌رسد» — همان چیزی که در v1 کم بود. نماینده باید بتواند بین
+                    صبر کردن و گرفتنِ جایگزین انتخاب کند، و بدونِ تاریخ نمی‌تواند. */}
+                {(arrivals[v.variantId] ?? []).length > 0 && (
+                  <div className="banner banner--info" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+                    <Icon name="clock" />
+                    <span>
+                      {(arrivals[v.variantId] ?? []).map((a, i) => (
+                        <div key={i}>
+                          <strong>{money(a.quantityBoxes)} کارتن</strong> در راه —
+                          حدودِ {formatJalaliDate(a.expectedAt)}
+                          {a.status === "planned"
+                            ? <span className="subtle"> (برنامه‌ریزی‌شده، هنوز قطعی نیست)</span>
+                            : <span className="subtle"> (قطعی‌شده)</span>}
+                        </div>
+                      ))}
+                    </span>
                   </div>
                 )}
 

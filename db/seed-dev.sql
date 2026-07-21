@@ -69,6 +69,14 @@ INSERT INTO price_list_item(tenant_id, price_list_id, variant_id, price) VALUES
   ('11111111-1111-1111-1111-111111111111', 'aaaa1111-1111-1111-1111-111111111111',
    'a2222222-2222-2222-2222-222222222223', 4200000);
 
+-- موجودی در راه: پرسلانِ بژِ ناموجود، محموله‌ای در راه دارد با تاریخ.
+-- عمداً وارد available نمی‌شود — فقط به نماینده می‌گوید چقدر و کِی.
+INSERT INTO incoming_stock(tenant_id, variant_id, warehouse_id, quantity_boxes, expected_at, source, status, note) VALUES
+  ('11111111-1111-1111-1111-111111111111',
+   'a2222222-2222-2222-2222-222222222224',
+   'a3333333-3333-3333-3333-333333333333',
+   320, CURRENT_DATE + 21, 'production', 'confirmed', 'بچ تولید — خط ۲');
+
 -- کالای جایگزین: پرسلانِ بژ ناموجود است، پس کاشی سفید پیشنهاد می‌شود.
 INSERT INTO product_substitute(tenant_id, variant_id, substitute_variant_id, note) VALUES
   ('11111111-1111-1111-1111-111111111111',

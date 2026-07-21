@@ -494,6 +494,42 @@ CREATE TABLE notification_outbox (
     sent_at       TIMESTAMPTZ
 );
 
+-- v2 «موجودی در راه / پیش‌فروش تولید» (بخش ۹) — فلوی کامل‌تر از فلگ ساده.
+--
+-- **این جدول هرگز وارد `available` نمی‌شود.** معادله‌ی
+-- `available = on_hand − held − allocated − blocked` دست‌نخورده می‌ماند (spec ۱۹۸):
+-- اگر موجودیِ نیامده را available حساب کنیم، نماینده روی کالایی سفارش می‌دهد که
+-- وجود ندارد و اولین کسی که واقعاً بار می‌خواهد دستش خالی می‌ماند.
+--
+-- پس این «موجودیِ دوم» نیست، یک **تعهدِ زمان‌دار** است: چقدر، کجا، و کِی می‌رسد.
+-- چیزی که در v1 کم بود همین «کِی» بود — backorder فقط می‌گفت «در انتظار تولید».
+--
+-- رسیدن (`arrived`) موجودی را از مسیرِ عادیِ لجر وارد می‌کند، نه با UPDATE مستقیم،
+-- تا گزارشِ تطبیق تراز بماند.
+CREATE TABLE incoming_stock (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id      UUID NOT NULL REFERENCES tenant(id),
+    variant_id     UUID NOT NULL,
+    warehouse_id   UUID NOT NULL,          -- کجا قرار است بنشیند
+    quantity_boxes INT  NOT NULL CHECK (quantity_boxes > 0),
+    expected_at    DATE NOT NULL,          -- همان «کِی» که کم بود
+    source         TEXT NOT NULL DEFAULT 'production'
+        CHECK (source IN ('production','transfer','purchase')),
+    status         TEXT NOT NULL DEFAULT 'planned'
+        CHECK (status IN ('planned','confirmed','arrived','cancelled')),
+    -- lotی که موقعِ رسیدن ساخته/به‌روز شد — رد پا برای اینکه دوباره وارد نشود
+    arrived_lot_id UUID,
+    note           TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    arrived_at     TIMESTAMPTZ,
+    -- arrived حتماً lot دارد؛ بقیه‌ی وضعیت‌ها حتماً ندارند
+    CHECK ((status = 'arrived' AND arrived_lot_id IS NOT NULL AND arrived_at IS NOT NULL)
+        OR (status <> 'arrived' AND arrived_lot_id IS NULL AND arrived_at IS NULL)),
+    FOREIGN KEY (tenant_id, variant_id)   REFERENCES product_variant(tenant_id, id),
+    FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id)
+);
+CREATE INDEX idx_incoming_lookup ON incoming_stock (tenant_id, variant_id, status, expected_at);
+
 -- v2 «پیشنهاد خودکار کالای جایگزین» (بخش ۹).
 --
 -- چرا جدولِ صریح و نه تطبیقِ خودکار بر اساس صفت: **هیچ فیلدِ ساختاریافته‌ای برای

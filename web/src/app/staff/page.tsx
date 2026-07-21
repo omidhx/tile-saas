@@ -181,6 +181,7 @@ export default function StaffPage() {
           <a href="/staff/prices">قیمت‌گذاری</a>
           <a href="/staff/auto-approve">تأیید خودکار</a>
           <a href="/staff/substitutes">کالای جایگزین</a>
+          <a href="/staff/incoming">موجودی در راه</a>
           <a href="/staff/reports">گزارش‌ها</a>
           <a href="/staff/ledger">دفتر لجر</a>
           <a href="/staff/audit">دفتر تغییرات</a>

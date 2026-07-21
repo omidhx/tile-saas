@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 src/lib/date.test.ts src/auth/rateLimit.test.ts src/auth/passwordFlows.test.ts src/db/reserve.test.ts src/auth/authz.test.ts src/db/salesRequests.test.ts src/db/dispatches.test.ts src/db/backorders.test.ts src/db/imports.test.ts src/db/alerts.test.ts src/db/ledger.test.ts src/db/pricing.test.ts src/db/reports.test.ts src/db/autoApprove.test.ts src/db/waitlist.test.ts src/db/multiWarehouse.test.ts src/db/audit.test.ts src/db/substitutes.test.ts src/db/cancelReservation.test.ts",
+    "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 src/lib/date.test.ts src/auth/rateLimit.test.ts src/auth/passwordFlows.test.ts src/db/reserve.test.ts src/auth/authz.test.ts src/db/salesRequests.test.ts src/db/dispatches.test.ts src/db/backorders.test.ts src/db/imports.test.ts src/db/alerts.test.ts src/db/ledger.test.ts src/db/pricing.test.ts src/db/reports.test.ts src/db/autoApprove.test.ts src/db/waitlist.test.ts src/db/multiWarehouse.test.ts src/db/audit.test.ts src/db/substitutes.test.ts src/db/incoming.test.ts src/db/cancelReservation.test.ts",
     "db:pull": "drizzle-kit pull",
     "seed:dev": "node --env-file=.env --import tsx scripts/seed-dev.ts",
     "worker:expire": "node --env-file-if-exists=.env --import tsx scripts/expire.ts",

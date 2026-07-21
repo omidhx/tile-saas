@@ -1,0 +1,208 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import Icon from "../../Icon";
+import { getJson, loadError } from "@/lib/api";
+import { useContexts } from "@/lib/useContexts";
+import { formatJalaliDate } from "@/lib/date";
+import { JalaliDateInput } from "@/lib/JalaliDateInput";
+import { jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
+
+type Item = {
+  id: string; variantId: string; name: string; code: string;
+  warehouseId: string; warehouseName: string;
+  quantityBoxes: number; expectedAt: string;
+  source: string; status: "planned" | "confirmed" | "arrived" | "cancelled"; note: string | null;
+};
+type Variant = { id: string; name: string; code: string; sku: string };
+type Wh = { id: string; name: string; code: string };
+
+const n = (v: number) => v.toLocaleString("fa-IR");
+const STATUS_FA: Record<string, string> = {
+  planned: "برنامه‌ریزی‌شده", confirmed: "قطعی‌شده", arrived: "رسیده", cancelled: "لغوشده",
+};
+const SOURCE_FA: Record<string, string> = {
+  production: "تولید", transfer: "انتقال بین انبار", purchase: "خرید",
+};
+
+export default function IncomingPage() {
+  const { ctx, state } = useContexts("staff");
+  const [items, setItems] = useState<Item[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [whs, setWhs] = useState<Wh[]>([]);
+  const [variantId, setVariantId] = useState("");
+  const [warehouseId, setWarehouseId] = useState("");
+  const [qty, setQty] = useState("");
+  const [when, setWhen] = useState<Jalali>(todayJalali);
+  const [source, setSource] = useState("production");
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+  const [loadErr, setLoadErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async (tenantId: string) => {
+    const [i, cat, w] = await Promise.all([
+      getJson<{ items: Item[] }>(`/api/incoming?tenantId=${tenantId}`),
+      getJson<{ variants: Variant[] }>(`/api/catalog?tenantId=${tenantId}`),
+      getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${tenantId}`),
+    ]);
+    if (i.ok) setItems(i.data.items);
+    if (cat.ok) setVariants(cat.data.variants);
+    if (w.ok) setWhs(w.data.warehouses);
+    const failed = [i, cat, w].find((x) => !x.ok);
+    setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => { if (ctx) load(ctx.tenantId); }, [ctx, load]);
+
+  async function add() {
+    if (!ctx || !variantId || !warehouseId || Number(qty) <= 0) return;
+    setPending("add");
+    try {
+      const res = await fetch("/api/incoming", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tenantId: ctx.tenantId, variantId, warehouseId,
+          quantityBoxes: Number(qty),
+          // تاریخ به ISO می‌رود چون DB با آن کار می‌کند؛ فقط نمایش شمسی است
+          expectedAt: jalaliToDate(when).toISOString().slice(0, 10),
+          source, note,
+        }),
+      });
+      setMsg(res.ok ? "ثبت شد." : "ثبت نشد.");
+      if (res.ok) { setQty(""); setNote(""); await load(ctx.tenantId); }
+    } finally { setPending(null); }
+  }
+
+  async function act(id: string, action: "arrive" | "confirm" | "cancel") {
+    if (!ctx) return;
+    const batchNumber = action === "arrive"
+      ? window.prompt("شماره بچ (اختیاری) — خالی بگذارید اگر ندارد:") ?? ""
+      : undefined;
+    setPending(id + action);
+    try {
+      const res = await fetch("/api/incoming", {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId: ctx.tenantId, id, action, batchNumber }),
+      });
+      if (res.ok && action === "arrive") {
+        const d = await res.json().catch(() => ({}));
+        // اثرِ رسیدن صریح گفته می‌شود: پشتیبان باید بداند چند نفر از صف نوبت گرفتند
+        setMsg(`موجودی وارد شد.${d.offers ? ` ${n(d.offers)} نوبت از صف انتظار پر شد.` : ""}`
+          + `${d.notified ? ` ${n(d.notified)} اعلان «موجود شد» صف شد.` : ""}`);
+      } else if (res.ok) setMsg("انجام شد.");
+      else setMsg("انجام نشد.");
+      await load(ctx.tenantId);
+    } finally { setPending(null); }
+  }
+
+  if (state === "none")
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
+  if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
+
+  return (
+    <main>
+      <div className="topbar">
+        <div>
+          <h1>موجودی در راه</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
+        </div>
+        <nav><Link href="/staff">← پنل</Link></nav>
+      </div>
+
+      <div className="banner banner--info">
+        <Icon name="info" />
+        <span>
+          محموله‌ی در راه <strong>قابلِ سفارش نیست</strong> و در موجودی شمرده نمی‌شود —
+          فقط به نماینده نشان می‌دهد <strong>چقدر و کِی</strong> می‌رسد، تا بین صبر کردن
+          و گرفتنِ جایگزین انتخاب کند. با زدنِ <strong>«رسید»</strong> موجودی از مسیرِ
+          دفتر حرکات وارد می‌شود و صفِ انتظار همان لحظه جلو می‌رود.
+        </span>
+      </div>
+
+      {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
+      {msg && <div className="banner banner--ok" role="status"><Icon name="check" /><span>{msg}</span></div>}
+
+      <h2>ثبت محموله</h2>
+      <div className="card">
+        <label htmlFor="v">کالا</label>
+        <select id="v" value={variantId} onChange={(e) => setVariantId(e.target.value)}>
+          <option value="">انتخاب کالا…</option>
+          {variants.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
+        </select>
+
+        <label htmlFor="w">انبار مقصد</label>
+        <select id="w" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+          <option value="">انتخاب انبار…</option>
+          {whs.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+        </select>
+
+        <label htmlFor="q">تعداد کارتن</label>
+        <input id="q" type="number" min={1} inputMode="numeric" value={qty}
+               onChange={(e) => setQty(e.target.value)} style={{ maxWidth: 200 }} />
+
+        <label style={{ marginBottom: 0 }}>تاریخ تقریبی رسیدن</label>
+        <JalaliDateInput label="" value={when} onChange={setWhen} currentYear={todayJalali().jy + 1} />
+
+        <label htmlFor="s">منبع</label>
+        <select id="s" value={source} onChange={(e) => setSource(e.target.value)} style={{ maxWidth: 220 }}>
+          <option value="production">تولید</option>
+          <option value="transfer">انتقال بین انبار</option>
+          <option value="purchase">خرید</option>
+        </select>
+
+        <label htmlFor="nt">توضیح (اختیاری)</label>
+        <input id="nt" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلاً: بچ تولید مهر" />
+
+        <button className="primary" onClick={add} aria-busy={pending === "add"}
+                disabled={pending === "add" || !variantId || !warehouseId || Number(qty) <= 0}
+                style={{ width: "100%", marginTop: "var(--sp-4)" }}>
+          {pending === "add" && <span className="spinner" aria-hidden="true" />}ثبت محموله
+        </button>
+      </div>
+
+      <h2>محموله‌های در راه</h2>
+      {loaded && !loadErr && items.length === 0 && <p className="empty">محموله‌ی در راهی ثبت نشده.</p>}
+      {items.map((i) => (
+        <div className="card" key={i.id}>
+          <div className="row">
+            <strong>{i.name} <span className="subtle">{i.code}</span></strong>
+            <span className={`badge ${i.status === "confirmed" ? "badge--ok" : "badge--warn"}`}>
+              {STATUS_FA[i.status]}
+            </span>
+          </div>
+          <div className="muted">
+            <span className="metric">{n(i.quantityBoxes)}</span> کارتن → {i.warehouseName}
+            {" · "}حدودِ {formatJalaliDate(i.expectedAt)}
+            {" · "}{SOURCE_FA[i.source] ?? i.source}
+          </div>
+          {i.note && <div className="subtle">{i.note}</div>}
+          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
+            <button className="primary" onClick={() => act(i.id, "arrive")}
+                    aria-busy={pending === i.id + "arrive"} disabled={pending === i.id + "arrive"}>
+              {pending === i.id + "arrive" && <span className="spinner" aria-hidden="true" />}رسید
+            </button>
+            {i.status === "planned" && (
+              <button className="ghost" onClick={() => act(i.id, "confirm")}
+                      aria-busy={pending === i.id + "confirm"} disabled={pending === i.id + "confirm"}>
+                قطعی شد
+              </button>
+            )}
+            <button className="danger" onClick={() => act(i.id, "cancel")}
+                    aria-busy={pending === i.id + "cancel"} disabled={pending === i.id + "cancel"}>
+              لغو
+            </button>
+          </div>
+        </div>
+      ))}
+    </main>
+  );
+}

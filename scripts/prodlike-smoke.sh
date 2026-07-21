@@ -233,6 +233,36 @@ c=$(api -H "$AH" "localhost:$PORT/api/waitlist?tenantId=$T&agentAccountId=$AG")
 [ "$c" = 200 ] || fail "waitlist list $c"
 echo "  reports + settings + waitlist همه ۲۰۰ OK"
 
+echo "== 13. موجودی در راه زیر RLS (ثبت → رسید → لجر) =="
+# incoming_stock ستون tenant_id دارد، و markArrived داخلِ withTenant به لجر،
+# صف انتظار و Outbox دست می‌زند — همه‌ی این‌ها RLS دارند.
+TOMORROW=$(date -d "+7 days" +%Y-%m-%d 2>/dev/null || date -v+7d +%Y-%m-%d)
+c=$(api -H "$SH" -X POST "localhost:$PORT/api/incoming" -H 'content-type: application/json' \
+  -d "{\"tenantId\":\"$T\",\"variantId\":\"$VAR\",\"warehouseId\":\"$WH\",\"quantityBoxes\":150,\"expectedAt\":\"$TOMORROW\",\"note\":\"smoke\"}")
+[ "$c" = 201 ] || fail "incoming create $c ($(cat /tmp/pb))"
+
+c=$(api -H "$SH" "localhost:$PORT/api/incoming?tenantId=$T")
+[ "$c" = 200 ] || fail "incoming list $c"
+INC=$(grep -o '"id":"[^"]*"' /tmp/pb | head -1 | cut -d'"' -f4)
+[ -n "$INC" ] || fail "محموله‌ی ثبت‌شده در فهرست نیامد (RLS): $(cat /tmp/pb)"
+
+# قبل از رسیدن نباید در available باشد
+BEFORE=$(docker exec tile_prod psql -U postgres -tAc \
+  "SELECT COALESCE(SUM(a.available_qty_boxes),0) FROM v_lot_availability a JOIN inventory_lot l ON l.id=a.lot_id WHERE l.variant_id='$VAR'" | tr -d '[:space:]')
+
+c=$(api -H "$SH" -X PATCH "localhost:$PORT/api/incoming" -H 'content-type: application/json' \
+  -d "{\"tenantId\":\"$T\",\"id\":\"$INC\",\"action\":\"arrive\",\"batchNumber\":\"B-SMOKE\"}")
+[ "$c" = 200 ] || fail "incoming arrive $c ($(cat /tmp/pb))"
+
+AFTER=$(docker exec tile_prod psql -U postgres -tAc \
+  "SELECT COALESCE(SUM(a.available_qty_boxes),0) FROM v_lot_availability a JOIN inventory_lot l ON l.id=a.lot_id WHERE l.variant_id='$VAR'" | tr -d '[:space:]')
+[ "$((AFTER - BEFORE))" = 150 ] || fail "رسیدن ۱۵۰ کارتن اضافه نکرد: $BEFORE → $AFTER"
+
+# و مهم‌تر: لجر باید تراز مانده باشد
+c=$(api -H "$SH" "localhost:$PORT/api/ledger?tenantId=$T")
+grep -q '"drift":\[\]' /tmp/pb || fail "رسیدنِ محموله لجر را ناتراز کرد: $(head -c 300 /tmp/pb)"
+echo "  محموله ثبت شد، رسید، available $BEFORE→$AFTER، لجر تراز OK"
+
 echo ""
 echo "ALL PROD-LIKE (RLS ENFORCED) CHECKS PASSED"
 cleanup
