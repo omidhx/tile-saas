@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { withTenant } from "@/db/client";
+import { writeAudit } from "@/db/audit";
 
 /**
  * سقفِ تأییدِ خودکار (v2 «تأیید هیبریدی»). فقط staff.
@@ -63,6 +64,18 @@ export async function PUT(req: Request) {
   }
 
   await withTenant(tenantId, async (tx) => {
+    // این سقف اجازه می‌دهد پول **بدونِ نگاهِ انسان** متعهد شود. بدونِ ردپا، کسی
+    // می‌توانست سقف را بردارد، سفارشِ بزرگ خودکار تأیید شود، و سقف را برگرداند —
+    // بدونِ اینکه هیچ‌جا معلوم باشد چه کسی و کِی. مقدارِ قبلی در همان تراکنش خوانده
+    // و ثبت می‌شود.
+    const [prev] = scope === "tenant"
+      ? await tx<{ limit: string | null }[]>`
+          SELECT auto_approve_limit AS limit FROM tenant WHERE id = ${tenantId}`
+      : await tx<{ limit: string | null }[]>`
+          SELECT auto_approve_limit AS limit FROM agent_account
+          WHERE id = ${agentAccountId as string} AND tenant_id = ${tenantId}`;
+    const before = prev?.limit == null ? null : Number(prev.limit);
+
     if (scope === "tenant") {
       await tx`UPDATE tenant SET auto_approve_limit = ${limit} WHERE id = ${tenantId}`;
     } else {
@@ -70,6 +83,15 @@ export async function PUT(req: Request) {
         UPDATE agent_account SET auto_approve_limit = ${limit}
         WHERE id = ${agentAccountId as string} AND tenant_id = ${tenantId}`;
     }
+
+    if (before !== limit)
+      await writeAudit(tx, {
+        tenantId, actorUserId: userId,
+        action: scope === "tenant" ? "auto_approve_limit.tenant" : "auto_approve_limit.agent",
+        entity: scope === "tenant" ? "tenant" : "agent_account",
+        entityId: scope === "tenant" ? tenantId : (agentAccountId as string),
+        oldValue: before, newValue: limit,
+      });
   });
 
   return NextResponse.json({ ok: true });

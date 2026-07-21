@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { writeAudit } from "@/db/audit";
 
 /** context مشترک: staff-only — قیمت‌گذاری کارِ پشتیبان است، نه نماینده. */
 async function staffCtx(tenantId: unknown) {
@@ -14,7 +15,8 @@ async function staffCtx(tenantId: unknown) {
     if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
     throw e;
   }
-  return { tenantId };
+  // userId هم برمی‌گردد: دفترِ تغییرات باید بداند «چه کسی»
+  return { tenantId, userId };
 }
 
 /** GET ?tenantId — لیست‌های قیمت + اقلامشان + پله‌های تخفیف (پنل قیمت‌گذاری staff). */
@@ -60,9 +62,27 @@ export async function POST(req: Request) {
       || !Number.isInteger(price) || price < 0)
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
-  await withTenant(c.tenantId, (tx) => tx`
-    INSERT INTO price_list_item (tenant_id, price_list_id, variant_id, price)
-    VALUES (${c.tenantId}, ${priceListId}, ${variantId}, ${price})
-    ON CONFLICT (price_list_id, variant_id) DO UPDATE SET price = EXCLUDED.price`);
+  await withTenant(c.tenantId, async (tx) => {
+    // قیمتِ قبلی **قبل از** نوشتن خوانده می‌شود: بدون آن، ردپا فقط می‌گوید
+    // «قیمت شد X» و سؤالِ اصلی («از چند آمد؟») بی‌جواب می‌ماند.
+    const [prev] = await tx<{ price: string }[]>`
+      SELECT price FROM price_list_item
+      WHERE tenant_id = ${c.tenantId} AND price_list_id = ${priceListId} AND variant_id = ${variantId}`;
+
+    await tx`
+      INSERT INTO price_list_item (tenant_id, price_list_id, variant_id, price)
+      VALUES (${c.tenantId}, ${priceListId}, ${variantId}, ${price})
+      ON CONFLICT (price_list_id, variant_id) DO UPDATE SET price = EXCLUDED.price`;
+
+    // فقط وقتی واقعاً چیزی عوض شده — ذخیره‌ی بی‌تغییر، ردپای بی‌معنی می‌سازد
+    // و دفتر را پر می‌کند تا تغییرِ واقعی گم شود.
+    const before = prev ? Number(prev.price) : null;
+    if (before !== price)
+      await writeAudit(tx, {
+        tenantId: c.tenantId, actorUserId: c.userId,
+        action: "price.set", entity: "price_list_item", entityId: variantId,
+        oldValue: before, newValue: price,
+      });
+  });
   return NextResponse.json({ ok: true });
 }

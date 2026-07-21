@@ -114,9 +114,13 @@ export async function applySnapshot(params: {
           INSERT INTO inventory_transaction (tenant_id, lot_id, transaction_type, on_hand_delta_boxes, reference_type, reference_id, actor_user_id)
           VALUES (${tenantId}, ${lot.id}, 'import_snapshot', ${delta}, 'import_batch', ${batch.id}, ${uploaderUserId})`;
       }
+      // tx.json و نه JSON.stringify+cast: دومی مقدار را دوبار encode می‌کرد و
+      // raw_data به‌جای object، یک jsonb از نوعِ string می‌شد — یعنی استخراجِ
+      // فیلد از آن همیشه NULL می‌داد، در حالی که این ستون دقیقاً برای همان
+      // سؤال («در فایل چه بود؟») وجود دارد.
       await tx`
         INSERT INTO import_row (tenant_id, batch_id, row_number, raw_data, processing_status, matched_variant_id, matched_lot_id)
-        VALUES (${tenantId}, ${batch.id}, ${i + 1}, ${JSON.stringify(row)}::jsonb, 'applied', ${variant.id}, ${lot.id})`;
+        VALUES (${tenantId}, ${batch.id}, ${i + 1}, ${tx.json(row)}, 'applied', ${variant.id}, ${lot.id})`;
       // نقشه را به‌روز کن: اگر همین lot دوباره در فایل بیاید، delta باید از مقدارِ اعمال‌شده
       // حساب شود نه از مقدارِ اولیه — وگرنه جمعِ لجر با on_hand نهایی نمی‌خواند (drift).
       balOf.set(lot.id, { on_hand: row.onHand, committed: bal.committed });
