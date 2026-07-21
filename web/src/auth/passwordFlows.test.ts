@@ -30,15 +30,15 @@ after(async () => { await sql.end(); });
 // هر تست از رمزِ معلوم و بدونِ کدِ باز شروع می‌شود
 beforeEach(async () => {
   await sql`UPDATE app_user SET password_hash = ${await hashPassword(OLD)},
-            sessions_valid_from = date_trunc('second', now() - interval '1 hour') WHERE id = ${U}`;
+            session_epoch = 0 WHERE id = ${U}`;
   await sql`DELETE FROM password_reset`;
   await sql`DELETE FROM notification_outbox`;
 });
 
 const currentHash = async () =>
   (await sql<{ password_hash: string }[]>`SELECT password_hash FROM app_user WHERE id = ${U}`)[0].password_hash;
-const validFrom = async () =>
-  (await sql<{ v: Date }[]>`SELECT sessions_valid_from AS v FROM app_user WHERE id = ${U}`)[0].v;
+const epoch = async () =>
+  (await sql<{ e: number }[]>`SELECT session_epoch AS e FROM app_user WHERE id = ${U}`)[0].e;
 
 // ---------------------------------------------------------------- تغییر رمز
 
@@ -66,11 +66,22 @@ test("رمز جدید نباید همان رمز فعلی باشد", async () =>
 });
 
 test("🔴 تغییر رمز همه‌ی نشست‌ها را باطل می‌کند", async () => {
-  const before = await validFrom();
+  const before = await epoch();
   await changePassword({ userId: U, currentPassword: OLD, newPassword: "brandnew123" });
-  const after = await validFrom();
-  assert.ok(after.getTime() > before.getTime(),
+  const after = await epoch();
+  assert.ok(after > before,
     "بدون این، نشستِ دزدیده‌شده روی دستگاهِ دیگر تا ۷ روز زنده می‌ماند و تغییرِ رمز بی‌اثر است");
+});
+
+test("🔴 باطل‌سازیِ پشتِ‌هم در یک ثانیه هم شمرده می‌شود (بدونِ مرزِ زمانی)", async () => {
+  // قبلاً معیار یک timestampِ ثانیه‌گرد بود و شرط `iat < valid_from`. یعنی توکنی که
+  // در **همان ثانیه‌ی** باطل‌سازی صادر شده بود از فیلتر رد می‌شد و برای همیشه زنده
+  // می‌ماند — پنجره‌ای باریک ولی با اثرِ دائمی، دقیقاً در فیچری که برای بستنش هست.
+  // شمارنده این مرز را ندارد: هر باطل‌سازی حتماً عدد را جلو می‌برد.
+  const start = await epoch();
+  await changePassword({ userId: U, currentPassword: OLD, newPassword: "first12345x" });
+  await changePassword({ userId: U, currentPassword: "first12345x", newPassword: "second12345x" });
+  assert.equal(await epoch(), start + 2, "دو تغییرِ پشتِ‌هم = دو نسخه، هرچقدر هم سریع");
 });
 
 test("تغییر رمز، کدهای بازیابیِ در جریان را هم می‌سوزاند", async () => {
@@ -102,12 +113,12 @@ test("کد در همان تراکنش به Outbox می‌رود (پیامک)", a
 });
 
 test("کدِ درست رمز را عوض می‌کند و نشست‌ها را می‌کشد", async () => {
-  const before = await validFrom();
+  const before = await epoch();
   const { code } = await requestReset(PHONE);
   const r = await confirmReset({ phone: PHONE, code: code!, newPassword: "resetpass123" });
   assert.ok(r.ok);
   assert.ok(await verifyPassword("resetpass123", await currentHash()));
-  assert.ok((await validFrom()).getTime() > before.getTime(), "بازیابی هم باید نشست‌ها را باطل کند");
+  assert.ok((await epoch()) > before, "بازیابی هم باید نشست‌ها را باطل کند");
 });
 
 test("کد یک‌بارمصرف است", async () => {

@@ -7,8 +7,15 @@ import { sql } from "@/db/client";
 const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET!);
 const COOKIE = "session";
 
+/**
+ * توکن، همراه با **نسخه‌ی نشستِ** فعلیِ کاربر (`ep`).
+ * نسخه از DB خوانده می‌شود نه از ورودی: بعد از یک باطل‌سازی، توکنِ تازه باید
+ * نسخه‌ی جدید را بگیرد وگرنه همان لحظه نامعتبر می‌شود.
+ */
 export async function issueSession(userId: string): Promise<string> {
-  return new SignJWT({ sub: userId })
+  const [u] = await sql<{ session_epoch: number }[]>`
+    SELECT session_epoch FROM app_user WHERE id = ${userId}`;
+  return new SignJWT({ sub: userId, ep: u?.session_epoch ?? 0 })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
@@ -35,8 +42,8 @@ export async function clearSessionCookie() {
  * userId از کوکی، یا null اگر نبود/نامعتبر/**باطل‌شده** بود.
  *
  * فقط امضا کافی نیست: JWT تا ۷ روز معتبر می‌ماند و هیچ راهی برای پس‌گرفتنش نیست.
- * پس بعد از تغییر/بازیابیِ رمز، `sessions_valid_from` کاربر جلو می‌رود و هر توکنی
- * که `iat`اش قدیمی‌تر باشد رد می‌شود — یعنی «خروج از همه‌ی دستگاه‌ها».
+ * پس بعد از تغییر/بازیابیِ رمز، `session_epoch` کاربر جلو می‌رود و هر توکنی
+ * که نسخه‌اش قدیمی‌تر باشد رد می‌شود — یعنی «خروج از همه‌ی دستگاه‌ها».
  * بدون این، عوض‌کردنِ رمز نشستِ دزدیده‌شده را نمی‌کشت و امنیتِ نمایشی بود.
  *
  * هزینه: یک lookup روی PK در هر درخواستِ احرازشده. هر route بعدش هم یک کوئریِ
@@ -49,13 +56,14 @@ export async function currentUserId(): Promise<string | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
     const userId = (payload.sub as string) ?? null;
-    if (!userId || typeof payload.iat !== "number") return null;
+    if (!userId || typeof payload.ep !== "number") return null;
 
-    const [u] = await sql<{ valid_from: Date; is_active: boolean }[]>`
-      SELECT sessions_valid_from AS valid_from, is_active FROM app_user WHERE id = ${userId}`;
+    const [u] = await sql<{ session_epoch: number; is_active: boolean }[]>`
+      SELECT session_epoch, is_active FROM app_user WHERE id = ${userId}`;
     // کاربرِ حذف‌شده یا غیرفعال‌شده هم همین‌جا می‌افتد، نه فقط توکنِ باطل
     if (!u || !u.is_active) return null;
-    if (payload.iat * 1000 < u.valid_from.getTime()) return null;
+    // تساویِ دقیق: هر توکنی از نسخه‌ی قبلی باطل است، بدونِ مرزِ زمانی
+    if (payload.ep !== u.session_epoch) return null;
 
     return userId;
   } catch {
@@ -68,9 +76,9 @@ export async function currentUserId(): Promise<string | null> {
  * `tx` می‌گیرد تا در همان تراکنشِ تغییرِ رمز اجرا شود — وگرنه پنجره‌ای می‌ماند که
  * رمز عوض شده ولی نشست‌های قدیمی هنوز زنده‌اند.
  *
- * `date_trunc('second')`: `iat` در JWT ثانیه‌ای است؛ اگر این مقدار کسرِ ثانیه داشته
- * باشد، توکنی که در همان ثانیه صادر شده به‌غلط باطل می‌شود.
+ * افزایشِ اتمیکِ شمارنده در خودِ SQL (`+ 1`)، نه خواندن-و-نوشتن در اپ: دو
+ * باطل‌سازیِ هم‌زمان نباید یکی از دیگری را بازنویسی کند.
  */
 export async function invalidateSessionsIn(tx: TransactionSql, userId: string) {
-  await tx`UPDATE app_user SET sessions_valid_from = date_trunc('second', now()) WHERE id = ${userId}`;
+  await tx`UPDATE app_user SET session_epoch = session_epoch + 1 WHERE id = ${userId}`;
 }

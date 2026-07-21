@@ -175,7 +175,7 @@ export default function ReservePage() {
         <nav>
           <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
           <Link href="/reservations">رزروهای من</Link>
-          <Link href="/account/password">تغییر رمز</Link>
+          <Link href="/account/password">امنیت حساب</Link>
           <LogoutButton />
         </nav>
       </div>

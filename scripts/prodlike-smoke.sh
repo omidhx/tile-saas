@@ -167,7 +167,7 @@ CODE=$(docker exec tile_prod psql -U postgres -tAc \
 c=$(api -X POST "localhost:$PORT/api/auth/reset" -H 'content-type: application/json' \
   -d "{\"phone\":\"09120000000\",\"code\":\"$CODE\",\"newPassword\":\"prodlike12345\"}")
 [ "$c" = 200 ] || fail "reset confirm $c ($(cat /tmp/pb))"
-# نشستِ قدیمیِ نماینده باید مرده باشد (sessions_valid_from جلو رفته)
+# نشستِ قدیمیِ نماینده باید مرده باشد (session_epoch جلو رفته)
 c=$(api -H "$AH" "localhost:$PORT/api/me")
 [ "$c" = 401 ] || fail "نشستِ قدیمی بعد از بازیابی رمز باید ۴۰۱ می‌گرفت، گرفت $c"
 echo "  رمز عوض شد و نشستِ قدیمی باطل شد OK"

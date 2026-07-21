@@ -183,7 +183,7 @@ export default function StaffPage() {
           <a href="/staff/reports">گزارش‌ها</a>
           <a href="/staff/ledger">دفتر لجر</a>
           <a href="/staff/audit">دفتر تغییرات</a>
-          <a href="/account/password">تغییر رمز</a>
+          <a href="/account/password">امنیت حساب</a>
           <LogoutButton />
         </nav>
       </div>
