@@ -38,8 +38,27 @@ CREATE TABLE app_user (
     email         TEXT,
     password_hash TEXT NOT NULL,
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    -- هر توکنی که **قبل از** این لحظه صادر شده باشد نامعتبر است.
+    -- بدون این، تغییرِ رمز امنیتِ نمایشی بود: JWT امضاشده تا ۷ روز معتبر می‌ماند و
+    -- نشستِ دزدیده‌شده روی دستگاهِ دیگر زنده می‌ماند، حتی بعد از عوض‌کردنِ رمز.
+    -- ثانیه‌گرد است چون `iat` در JWT ثانیه‌ای است (مقایسه باید هم‌واحد باشد).
+    sessions_valid_from TIMESTAMPTZ NOT NULL DEFAULT date_trunc('second', now()),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- کدِ یک‌بارمصرفِ بازیابی رمز (SMS). خودِ کد ذخیره نمی‌شود — hash می‌شود، چون
+-- یک اعتبارنامه است: هرکس به DB خواندنی دسترسی پیدا کند نباید بتواند رمز عوض کند.
+CREATE TABLE password_reset (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    code_hash     TEXT NOT NULL,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    used_at       TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (expires_at > created_at)
+);
+CREATE INDEX idx_password_reset_user ON password_reset (user_id, created_at DESC);
 
 CREATE TABLE tenant (
     id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

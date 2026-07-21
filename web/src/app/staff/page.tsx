@@ -182,6 +182,7 @@ export default function StaffPage() {
           <a href="/staff/auto-approve">تأیید خودکار</a>
           <a href="/staff/reports">گزارش‌ها</a>
           <a href="/staff/ledger">دفتر لجر</a>
+          <a href="/account/password">تغییر رمز</a>
           <LogoutButton />
         </nav>
       </div>

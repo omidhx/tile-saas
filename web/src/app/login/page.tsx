@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Icon from "../Icon";
 
 /** پیامِ خطا از روی **status** ساخته می‌شود، نه رشته‌ی سرور.
@@ -77,6 +78,9 @@ export default function LoginPage() {
           </button>
         </form>
 
+        <p style={{ textAlign: "center", margin: "var(--sp-3) 0 0" }}>
+          <Link href="/reset">رمز عبور را فراموش کرده‌اید؟</Link>
+        </p>
         <p className="subtle" style={{ textAlign: "center" }}>
           حساب کاربری را کارخانه می‌سازد — ثبت‌نام عمومی نداریم.
         </p>

@@ -30,5 +30,12 @@ export async function sendSms(sms: Sms): Promise<SmsResult> {
 export function renderMessage(payload: Record<string, unknown>): string {
   if (payload.type === "restock")
     return `موجود شد: ${payload.product} (${payload.code}). برای رزرو وارد پنل شوید.`;
+  if (payload.type === "waitlist_offer")
+    return `نوبت شما رسید: ${payload.qty} کارتن ${payload.product} (${payload.code}) برای شما رزرو شد `
+      + `و تا ${payload.ttlHours} ساعت نگه داشته می‌شود. برای نهایی‌کردن وارد پنل شوید.`;
+  if (payload.type === "password_reset")
+    // بدونِ نامِ کاربر یا هر چیزِ دیگر: پیامکِ حاوی کد ممکن است روی قفلِ صفحه دیده شود
+    return `کد بازیابی رمز: ${payload.code}\nتا ${payload.ttlMinutes} دقیقه معتبر است. `
+      + `اگر شما درخواست نداده‌اید، این پیام را نادیده بگیرید.`;
   return String(payload.text ?? "اعلان جدید");
 }
