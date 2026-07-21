@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { tenantId, salesRequestId, agentAccountId, items, dispatchCode, customerName, destination } = body ?? {};
+  const { tenantId, salesRequestId, agentAccountId, items, dispatchCode, customerName, destination, customerId } = body ?? {};
   if (typeof tenantId !== "string" || typeof dispatchCode !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
@@ -54,9 +54,9 @@ export async function POST(req: Request) {
   }
 
   const result = Array.isArray(items)
-    ? await createBackorderDispatch({ tenantId, agentAccountId, createdByUserId: userId, dispatchCode, customerName, destination, items })
+    ? await createBackorderDispatch({ tenantId, agentAccountId, createdByUserId: userId, dispatchCode, customerName, destination, items, customerId })
     : typeof salesRequestId === "string"
-      ? await createDispatchFromRequest({ tenantId, salesRequestId, createdByUserId: userId, dispatchCode, customerName, destination })
+      ? await createDispatchFromRequest({ tenantId, salesRequestId, createdByUserId: userId, dispatchCode, customerName, destination, customerId })
       : null;
   if (!result) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   if (!result.ok) {

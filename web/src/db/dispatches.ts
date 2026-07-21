@@ -31,8 +31,10 @@ const NEXT: Record<DispatchStatus, DispatchStatus[]> = {
 export async function createDispatchFromRequest(params: {
   tenantId: string; salesRequestId: string; createdByUserId: string;
   dispatchCode: string; customerName?: string; destination?: string;
+  /** v2: مشتری Entity شد. customerName همچنان snapshotِ نام است. */
+  customerId?: string;
 }): Promise<CreateDispatchResult> {
-  const { tenantId, salesRequestId, createdByUserId, dispatchCode, customerName, destination } = params;
+  const { tenantId, salesRequestId, createdByUserId, dispatchCode, customerName, destination, customerId } = params;
   return withTenant(tenantId, async (tx) => {
     const [req] = await tx<{ agent_account_id: string; status: string }[]>`
       SELECT agent_account_id, status FROM sales_request
@@ -69,9 +71,9 @@ export async function createDispatchFromRequest(params: {
       const [d] = await tx<{ id: string }[]>`
         INSERT INTO sales_dispatch
           (tenant_id, sales_request_id, agent_account_id, dispatch_code, warehouse_id,
-           customer_name, destination, status, created_by_user_id)
+           customer_name, customer_id, destination, status, created_by_user_id)
         VALUES (${tenantId}, ${salesRequestId}, ${req.agent_account_id}, ${code}, ${warehouseId},
-                ${customerName ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
+                ${customerName ?? null}, ${customerId ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
         RETURNING id`;
       for (const a of group)
         await tx`
@@ -164,17 +166,17 @@ const BO_NEXT: Record<BackorderStatus, BackorderStatus[]> = {
 /** حواله‌ی مستقلِ backorder (بدون SalesRequest). هیچ ردیف موجودی‌ای را دست نمی‌زند. */
 export async function createBackorderDispatch(params: {
   tenantId: string; agentAccountId: string; createdByUserId: string;
-  dispatchCode: string; customerName?: string; destination?: string;
+  dispatchCode: string; customerName?: string; destination?: string; customerId?: string;
   items: { variantId: string; quantityBoxes: number }[];
 }): Promise<{ ok: true; dispatchId: string } | { ok: false; reason: "no_items" | "bad_qty" }> {
-  const { tenantId, agentAccountId, createdByUserId, dispatchCode, customerName, destination, items } = params;
+  const { tenantId, agentAccountId, createdByUserId, dispatchCode, customerName, destination, items, customerId } = params;
   if (items.length === 0) return { ok: false, reason: "no_items" };
   if (items.some((i) => !Number.isInteger(i.quantityBoxes) || i.quantityBoxes <= 0)) return { ok: false, reason: "bad_qty" };
   return withTenant(tenantId, async (tx) => {
     const [d] = await tx<{ id: string }[]>`
       INSERT INTO sales_dispatch
-        (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, destination, status, created_by_user_id)
-      VALUES (${tenantId}, NULL, ${agentAccountId}, ${dispatchCode}, ${customerName ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
+        (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, customer_id, destination, status, created_by_user_id)
+      VALUES (${tenantId}, NULL, ${agentAccountId}, ${dispatchCode}, ${customerName ?? null}, ${customerId ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
       RETURNING id`;
     for (const it of items)
       await tx`

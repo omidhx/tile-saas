@@ -322,6 +322,28 @@ CREATE TABLE sales_request_allocation (
     FOREIGN KEY (tenant_id, lot_id)                REFERENCES inventory_lot(tenant_id, id)
 );
 
+-- v2 «Customer به‌عنوان Entity کامل با تاریخچه» (بخش ۹، مشروط به بخش ۷.۷).
+--
+-- در MVP عمداً متن آزاد بود؛ spec ارتقا را مشروط کرده بود به «اگر گزارشِ
+-- پرخریدترین مشتری لازم شد». همان گزارش دلیلِ وجودِ این جدول است.
+--
+-- مشتریِ نهاییِ نماینده است، نه مشتریِ کارخانه: `agent_account_id` می‌گوید مالِ
+-- کدام نمایندگی است، تا نماینده‌ها فهرستِ مشتریانِ هم را نبینند.
+CREATE TABLE customer (
+    id               UUID NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id        UUID NOT NULL REFERENCES tenant(id),
+    agent_account_id UUID,            -- nullable: مشتریِ مستقیمِ کارخانه هم ممکن است
+    name             TEXT NOT NULL,
+    phone            TEXT,
+    note             TEXT,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    UNIQUE (tenant_id, id),          -- هدفِ composite FK
+    FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id)
+);
+CREATE INDEX idx_customer_agent ON customer (tenant_id, agent_account_id, name);
+
 CREATE TABLE sales_dispatch (
     id                UUID NOT NULL DEFAULT gen_random_uuid(),
     tenant_id         UUID NOT NULL REFERENCES tenant(id),
@@ -334,7 +356,12 @@ CREATE TABLE sales_dispatch (
     -- NULLABLE چون حواله‌ی backorder هنوز lot ندارد، پس انبارش هم معلوم نیست.
     warehouse_id      UUID,
     reference_number  TEXT,            -- «دفتر ۱» — فقط اطلاعاتی، در uniqueness نیست
-    customer_name     TEXT,            -- بخش ۷.۷: متن آزاد در MVP (نه Entity)
+    -- v2: مشتری Entity شد، ولی این ستون **می‌ماند** و نقشش عوض شد:
+    -- حالا snapshotِ نامِ مشتری در لحظه‌ی حواله است. اگر بعداً نامِ مشتری اصلاح شود،
+    -- حواله‌ی صادرشده نباید بازنویسی شود — همان قاعده‌ی snapshotِ قیمت.
+    -- برای حواله‌های قدیمی (قبل از Entity) این تنها چیزی است که داریم.
+    customer_name     TEXT,
+    customer_id       UUID,            -- v2، nullable: حواله‌ی بدونِ مشتریِ ثبت‌شده مجاز است
     destination       TEXT,
     status            TEXT NOT NULL DEFAULT 'registered'
         CHECK (status IN ('registered','ready_for_loading','loaded','delivered','cancelled')),
@@ -345,8 +372,10 @@ CREATE TABLE sales_dispatch (
     UNIQUE (tenant_id, dispatch_code),
     FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id),
     FOREIGN KEY (tenant_id, sales_request_id) REFERENCES sales_request(tenant_id, id),
-    FOREIGN KEY (tenant_id, warehouse_id)     REFERENCES warehouse(tenant_id, id)
+    FOREIGN KEY (tenant_id, warehouse_id)     REFERENCES warehouse(tenant_id, id),
+    FOREIGN KEY (tenant_id, customer_id)      REFERENCES customer(tenant_id, id)
 );
+CREATE INDEX idx_dispatch_customer ON sales_dispatch (tenant_id, customer_id);
 
 CREATE TABLE sales_dispatch_item (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
