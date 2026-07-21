@@ -275,7 +275,10 @@ button[aria-busy="true"]:disabled { background: var(--primary); color: var(--on-
   margin-bottom: var(--sp-4);
 }
 .topbar nav { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; }
-.topbar nav a {
+/* فرزندِ **مستقیم** (`>`): این قانون برای لینک‌های خودِ نوار است. بدونِ `>` به
+   داخلِ پنلِ منو هم نشت می‌کرد و آیتم‌هایش را inline-flex می‌کرد، پس به‌جای
+   زیرِ هم، کنارِ هم می‌نشستند. */
+.topbar nav > a {
   display: inline-flex; align-items: center;
   /* ۴۴px مثل دکمه‌ها: لینکِ ناوبری هم هدفِ لمسی است و روی موبایل ۳۴px می‌شد */
   min-height: 44px;
@@ -284,9 +287,60 @@ button[aria-busy="true"]:disabled { background: var(--primary); color: var(--on-
   font-size: .85rem;
   transition: background-color .15s, color .15s;
 }
-.topbar nav a:hover { background: var(--surface-sunken); color: var(--text); }
+.topbar nav > a:hover { background: var(--surface-sunken); color: var(--text); }
 
 a { color: var(--ring); }
+
+/* --- منوی ناوبری ---------------------------------------------------------- */
+.navmenu { position: relative; }
+.navmenu__button { gap: var(--sp-2); }
+/* روی موبایل فقط آیکن؛ aria-label معنی را نگه می‌دارد */
+@media (max-width: 480px) { .navmenu__label { display: none; } }
+
+.navmenu__panel {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  /* inset-inline-end: در RTL یعنی سمت راست — پنل زیرِ دکمه می‌نشیند نه بیرونِ صفحه */
+  inset-inline-end: 0;
+  z-index: 20;
+  min-width: 260px;
+  max-width: min(320px, calc(100vw - 2rem));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-2);
+}
+.navmenu__group + .navmenu__group {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line);
+}
+.navmenu__title {
+  font-size: .75rem; font-weight: 600; color: var(--text-subtle);
+  padding: var(--sp-1) var(--sp-2);
+}
+.navmenu__item {
+  display: block;
+  padding: .5rem var(--sp-2);
+  min-height: 44px;                 /* هدفِ لمسی، مثل بقیه‌ی دکمه‌ها */
+  line-height: 1.9;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: .9rem;
+  transition: background-color .15s;
+}
+.navmenu__item:hover { background: var(--surface-sunken); }
+/* صفحه‌ی فعلی: پس‌زمینه **به‌علاوه‌ی** نوارِ کناری و وزنِ فونت — رنگ به‌تنهایی
+   برای کاربرِ کوررنگ کافی نیست */
+.navmenu__item[aria-current="page"] {
+  background: var(--surface-sunken);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 
 /* --- چیدمانِ دوستونه (پنل پشتیبان) --------------------------------------- */
 /*

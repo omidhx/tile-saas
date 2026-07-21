@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
@@ -53,7 +54,7 @@ export default function ReportsPage() {
           <h1>گزارش‌های مدیریتی</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link></nav>
+        <nav><Link href="/staff">← پنل</Link><NavMenu /></nav>
       </div>
 
       <div className="card">

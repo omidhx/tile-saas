@@ -18,7 +18,9 @@ export type IconName =
   | "bell"       // خبرم کن
   | "info"       // توضیح
   | "warehouse"  // انبار
-  | "queue";     // نوبت در صف
+  | "queue"      // نوبت در صف
+  | "menu"       // بازکردنِ منو
+  | "close";     // بستنِ منو
 
 const PATHS: Record<IconName, React.ReactNode> = {
   alert: <><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /></>,
@@ -28,6 +30,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
   warehouse: <><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z" /><path d="M6 18h12" /><path d="M6 14h12" /></>,
   queue: <><path d="M3 6h18" /><path d="M3 12h12" /><path d="M3 18h6" /></>,
+  menu: <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>,
+  close: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
 };
 
 export default function Icon({ name, size = 16, className }: Props) {

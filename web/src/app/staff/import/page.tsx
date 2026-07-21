@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import Icon from "../../Icon";
+import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
@@ -123,7 +124,7 @@ export default function ImportPage() {
           <h1>ورود موجودی از اکسل</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link></nav>
+        <nav><Link href="/staff">← پنل</Link><NavMenu /></nav>
       </div>
 
       {/* این عملیات مخرب است (موجودیِ غایب صفر می‌شود) — قبل از هر فیلدی گفته می‌شود */}

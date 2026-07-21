@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { getJson, loadError } from "@/lib/api";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
+import NavMenu from "../NavMenu";
 
 /** ارقامِ فارسی، همه‌جا یکسان. */
 const num = (v: number) => v.toLocaleString("fa-IR");
@@ -176,17 +177,10 @@ export default function StaffPage() {
           <h1>پنل پشتیبان</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
+        {/* ده لینکِ تخت روی موبایل می‌پیچید و روی دسکتاپ هم نویز بود.
+            «خروج» عمداً بیرونِ منو ماند: یک عملِ پرتکرار پشتِ یک کلیکِ اضافه نرود. */}
         <nav>
-          <a href="/staff/import">ورود موجودی</a>
-          <a href="/staff/prices">قیمت‌گذاری</a>
-          <a href="/staff/auto-approve">تأیید خودکار</a>
-          <a href="/staff/substitutes">کالای جایگزین</a>
-          <a href="/staff/incoming">موجودی در راه</a>
-          <a href="/staff/customers">مشتریان</a>
-          <a href="/staff/reports">گزارش‌ها</a>
-          <a href="/staff/ledger">دفتر لجر</a>
-          <a href="/staff/audit">دفتر تغییرات</a>
-          <a href="/account/password">امنیت حساب</a>
+          <NavMenu />
           <LogoutButton />
         </nav>
       </div>

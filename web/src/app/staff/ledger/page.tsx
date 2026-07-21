@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Icon from "../../Icon";
+import NavMenu from "../../NavMenu";
 import { formatJalaliDateTime } from "@/lib/date";
 
 type Ctx = { tenantId: string; tenantName: string };
@@ -64,7 +65,7 @@ export default function LedgerPage() {
           <h1>دفتر حرکات موجودی</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link></nav>
+        <nav><Link href="/staff">← پنل</Link><NavMenu /></nav>
       </div>
 
       <h2>تطبیق لجر با موجودی</h2>
