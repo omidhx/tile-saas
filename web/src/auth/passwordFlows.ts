@@ -1,5 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
-import { sql } from "@/db/client";
+import { sql, withTenant } from "@/db/client";
 import { hashPassword, verifyPassword } from "./password";
 import { invalidateSessionsIn } from "./session";
 
@@ -70,13 +70,30 @@ export async function changePassword(p: {
  * خروجی `code` فقط در تست/dev استفاده می‌شود و هرگز به کلاینت نمی‌رود.
  */
 export async function requestReset(phone: string): Promise<{ code: string | null }> {
+  // app_user ستون tenant_id ندارد، پس RLS رویش نیست و این کوئری امن است.
   const [u] = await sql<{ id: string }[]>`
     SELECT id FROM app_user WHERE phone = ${phone} AND is_active`;
   if (!u) return { code: null };
 
+  /*
+   * بازیابیِ رمز کارِ **کاربر** است نه یک tenant، پس هیچ app.tenant_id در کار نیست.
+   * ولی `notification_outbox` و `tenant_membership` هر دو ستون tenant_id دارند،
+   * یعنی RLS رویشان فعال است. قبلاً این INSERT مستقیم اجرا می‌شد و زیر نقشِ واقعیِ
+   * اپ **صفر ردیف** درج می‌کرد — بدون خطا، فقط سکوت. یعنی نماینده برای همیشه
+   * منتظرِ پیامکی می‌ماند که هرگز نمی‌آید. (dev با superuser است و RLS را دور
+   * می‌زند، پس فقط در production ظاهر می‌شد — همان تله‌ی workerِ پیامک.)
+   *
+   * راه‌حل: tenant را با `user_contexts` (SECURITY DEFINER، از قبل موجود) پیدا کن،
+   * بعد هر نوشتنی داخلِ `withTenant` انجام شود تا سیاستِ RLS برقرار باشد.
+   */
+  const [ctx] = await sql<{ tenant_id: string }[]>`
+    SELECT tenant_id FROM user_contexts(${u.id}) LIMIT 1`;
+  // کاربرِ بدونِ عضویتِ فعال: کدی نمی‌سازیم چون جایی برای فرستادنش نیست
+  if (!ctx) return { code: null };
+
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
 
-  await sql.begin(async (tx) => {
+  await withTenant(ctx.tenant_id, async (tx) => {
     // کدهای قبلیِ همین کاربر باطل می‌شوند: هر بار درخواست، فقط آخرین کد کار کند.
     await tx`UPDATE password_reset SET used_at = now()
              WHERE user_id = ${u.id} AND used_at IS NULL`;
@@ -86,12 +103,9 @@ export async function requestReset(phone: string): Promise<{ code: string | null
     // Outbox: در همان تراکنش، تا اگر چیزی رول‌بک شد پیامکِ کدِ ناموجود فرستاده نشود
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-      SELECT tm.tenant_id, 'sms', ${phone}::text,
-             jsonb_build_object('type', 'password_reset', 'code', ${code}::text,
-                                'ttlMinutes', ${CODE_TTL_MIN}::int)
-      FROM tenant_membership tm
-      WHERE tm.user_id = ${u.id} AND tm.is_active
-      LIMIT 1`;
+      VALUES (${ctx.tenant_id}, 'sms', ${phone},
+              jsonb_build_object('type', 'password_reset', 'code', ${code}::text,
+                                 'ttlMinutes', ${CODE_TTL_MIN}::int))`;
   });
 
   return { code };
