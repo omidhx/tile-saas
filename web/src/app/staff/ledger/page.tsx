@@ -59,8 +59,13 @@ export default function LedgerPage() {
 
   return (
     <main>
-      <div className="row"><h1>دفتر حرکات موجودی</h1><Link href="/staff" className="muted">← پنل</Link></div>
-      <p className="muted">{ctx.tenantName}</p>
+      <div className="topbar">
+        <div>
+          <h1>دفتر حرکات موجودی</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
+        </div>
+        <nav><Link href="/staff">← پنل</Link></nav>
+      </div>
 
       <h2>تطبیق لجر با موجودی</h2>
       {loadErr ? (

@@ -48,8 +48,13 @@ export default function ReportsPage() {
 
   return (
     <main>
-      <div className="row"><h1>گزارش‌های مدیریتی</h1><Link href="/staff" className="muted">← پنل</Link></div>
-      <p className="muted">{ctx.tenantName}</p>
+      <div className="topbar">
+        <div>
+          <h1>گزارش‌های مدیریتی</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
+        </div>
+        <nav><Link href="/staff">← پنل</Link></nav>
+      </div>
 
       <div className="card">
         <div className="row" style={{ gap: ".5rem", justifyContent: "flex-start", flexWrap: "wrap" }}>

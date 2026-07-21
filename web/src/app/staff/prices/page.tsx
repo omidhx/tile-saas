@@ -55,58 +55,102 @@ export default function PricesPage() {
     } finally { setSaving(null); }
   }
 
-  if (state === "none") return <main><p className="err" role="alert">این بخش فقط برای پشتیبان است.</p></main>;
-  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
+  if (state === "none")
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
+  if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
     <main>
-      <div className="row"><h1>قیمت‌گذاری</h1><Link href="/staff" className="muted">← پنل</Link></div>
-      <p className="muted">{ctx.tenantName} — قیمت‌ها به <strong>ریال</strong> و عددِ صحیح‌اند.</p>
+      <div className="topbar">
+        <div>
+          <h1>قیمت‌گذاری</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
+        </div>
+        <nav><Link href="/staff">← پنل</Link></nav>
+      </div>
+
+      <div className="banner banner--info">
+        <Icon name="info" />
+        <span>
+          قیمت‌ها به <strong>ریال</strong> و عددِ صحیح‌اند. قیمتِ ثبت‌نشده یعنی
+          «قیمت ندارد» — نه رایگان: چنین کالایی هرگز خودکار تأیید نمی‌شود و در گزارش
+          به‌عنوان «خطِ بی‌قیمت» شمرده می‌شود.
+        </span>
+      </div>
+
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
 
-      {loaded && lists.length === 0 && <p className="muted">هنوز لیست قیمتی ساخته نشده.</p>}
+      {loaded && lists.length === 0 && <p className="empty">هنوز لیست قیمتی ساخته نشده.</p>}
 
-      {lists.map((pl) => (
-        <div key={pl.id}>
-          <h2>
-            {pl.name} <span className="muted">· {pl.agentCount} نمایندگی</span>
-          </h2>
-          {variants.map((v) => {
-            const existing = items.find((i) => i.priceListId === pl.id && i.variantId === v.id);
-            const key = pl.id + v.id;
-            const val = edit[key] ?? (existing ? String(existing.price) : "");
-            return (
-              <div className="card" key={v.id}>
-                <div className="row">
-                  <span>{v.name} <span className="muted">({v.code})</span></span>
-                  <span className="muted">
-                    {existing ? `${money(Number(existing.price))} ریال` : "بدون قیمت"}
-                  </span>
+      {lists.map((pl) => {
+        const priced = variants.filter((v) => items.some((i) => i.priceListId === pl.id && i.variantId === v.id)).length;
+        return (
+          <div key={pl.id}>
+            <h2>
+              {pl.name}
+              <span className="badge">{money(pl.agentCount)} نمایندگی</span>
+              {/* پوششِ قیمت: کالای بی‌قیمت پیامدِ واقعی دارد، پس شمارشش دیده می‌شود */}
+              <span className={`badge${priced === variants.length ? " badge--ok" : " badge--warn"}`}>
+                {money(priced)} از {money(variants.length)} کالا قیمت دارد
+              </span>
+            </h2>
+            {variants.map((v) => {
+              const existing = items.find((i) => i.priceListId === pl.id && i.variantId === v.id);
+              const key = pl.id + v.id;
+              const val = edit[key] ?? (existing ? String(existing.price) : "");
+              const dirty = edit[key] !== undefined && edit[key] !== (existing ? String(existing.price) : "");
+              return (
+                <div className="card" key={v.id}>
+                  <div className="row">
+                    <span><strong>{v.name}</strong> <span className="subtle">{v.code}</span></span>
+                    {existing
+                      ? <span className="metric">{money(Number(existing.price))} ریال</span>
+                      : <span className="badge badge--warn">بدون قیمت</span>}
+                  </div>
+                  <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+                    <label htmlFor={`p-${key}`} className="sr-only">قیمت {v.name} در {pl.name}</label>
+                    <input id={`p-${key}`} type="number" min={0} step={1} inputMode="numeric" placeholder="قیمت (ریال)"
+                      value={val} style={{ maxWidth: 200 }}
+                      onChange={(e) => setEdit((s) => ({ ...s, [key]: e.target.value }))} />
+                    <button onClick={() => save(pl.id, v.id)} aria-busy={saving === key}
+                      className={dirty ? "primary" : undefined}
+                      disabled={saving === key || val === "" || !dirty}>
+                      {saving === key && <span className="spinner" aria-hidden="true" />}
+                      {dirty ? "ذخیره" : "ذخیره شده"}
+                    </button>
+                  </div>
                 </div>
-                <div className="row" style={{ marginTop: ".5rem", gap: ".5rem", justifyContent: "flex-start" }}>
-                  <input type="number" min={0} step={1} inputMode="numeric" placeholder="قیمت (ریال)"
-                    aria-label={`قیمت ${v.name}`} value={val} style={{ maxWidth: 180 }}
-                    onChange={(e) => setEdit((s) => ({ ...s, [key]: e.target.value }))} />
-                  <button onClick={() => save(pl.id, v.id)} disabled={saving === key || val === ""}>
-                    {saving === key && <span className="spinner" aria-hidden="true" />}ذخیره
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
+              );
+            })}
+          </div>
+        );
+      })}
 
       <h2>پله‌های تخفیف حجمی</h2>
-      {loaded && tiers.length === 0 && <p className="muted">پله‌ای تعریف نشده.</p>}
-      {tiers.map((t) => (
-        <div className="card" key={t.id}>
-          <div className="row">
-            <span>{t.name ?? "همه‌ی کالاها"}</span>
-            <span className="muted">از {t.minQty} کارتن → {t.percentOff}٪ تخفیف</span>
-          </div>
-        </div>
-      ))}
+      {loaded && tiers.length === 0
+        ? <p className="empty">پله‌ای تعریف نشده — تخفیف حجمی اعمال نمی‌شود.</p>
+        : tiers.map((t) => (
+            <div className="card" key={t.id}>
+              <div className="row">
+                <span>{t.name ?? <span className="muted">همه‌ی کالاها</span>}</span>
+                <span>
+                  <span className="muted">از {money(t.minQty)} کارتن → </span>
+                  <span className="metric">{money(t.percentOff)}٪</span> <span className="muted">تخفیف</span>
+                </span>
+              </div>
+            </div>
+          ))}
+      {tiers.length > 0 && (
+        <p className="subtle">
+          افزودن/ویرایشِ پله فعلاً با SQL انجام می‌شود؛ این فهرست فقط خواندنی است.
+        </p>
+      )}
     </main>
   );
 }

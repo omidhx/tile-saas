@@ -170,7 +170,7 @@ export default function StaffPage() {
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
-    <main>
+    <main className="wide">
       <div className="topbar">
         <div>
           <h1>پنل پشتیبان</h1>
@@ -197,6 +197,10 @@ export default function StaffPage() {
           <Icon name="check" /><span>{note}</span>
         </div>
       )}
+
+      {/* دو ستون: راست = کارهایی که منتظرِ تصمیم‌اند، چپ = چیزهایی که پیگیری می‌شوند */}
+      <div className="cols">
+      <div className="col">
 
       {/* صفِ کار: چیزی که پشتیبان برای آن وارد شده، پس اول می‌آید و شمارشش
           روی تیتر است تا بدون اسکرول معلوم باشد چقدر کار مانده. */}
@@ -242,6 +246,9 @@ export default function StaffPage() {
           </div>
         </div>
       ))}
+
+      </div>{/* /col — کارهای در انتظار تصمیم */}
+      <div className="col">
 
       <h2>حواله‌ها</h2>
       {loaded && !loadErr && disps.length === 0 && <p className="empty">حواله‌ای نیست.</p>}
@@ -296,20 +303,26 @@ export default function StaffPage() {
       {backorders.map((b) => (
         <div className="card" key={b.id}>
           <div className="row">
-            <strong>{b.name} ({b.code}) ×{b.qty}</strong>
-            <span className="muted">{BO_FA[b.status] ?? b.status}</span>
+            <strong>{b.name} <span className="subtle">{b.code}</span> ×{num(b.qty)}</strong>
+            <span className={`badge${b.status === "fulfilled" ? " badge--ok" : b.status === "cancelled" ? " badge--error" : " badge--warn"}`}>
+              {BO_FA[b.status] ?? b.status}
+            </span>
           </div>
-          <div className="muted">{b.agentName} · {b.dispatchCode}</div>
-          <div className="row" style={{ marginTop: ".5rem", justifyContent: "flex-start", gap: ".5rem" }}>
+          <div className="muted">{b.agentName} · <span className="num">{b.dispatchCode}</span></div>
+          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
             {(BO_NEXT[b.status] ?? []).map((s) => (
-              <button key={s} className={s === "cancelled" ? "ghost" : undefined}
-                onClick={() => advanceBackorder(b.id, s)} disabled={pending === "bo" + b.id + s}>
+              <button key={s} className={s === "cancelled" ? "danger" : s === "fulfilled" ? "primary" : undefined}
+                onClick={() => advanceBackorder(b.id, s)} disabled={pending === "bo" + b.id + s}
+                aria-busy={pending === "bo" + b.id + s}>
                 {pending === "bo" + b.id + s && <span className="spinner" aria-hidden="true" />}{BO_FA[s]}
               </button>
             ))}
           </div>
         </div>
       ))}
+
+      </div>{/* /col — پیگیری */}
+      </div>{/* /cols */}
     </main>
   );
 }

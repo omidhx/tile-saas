@@ -50,27 +50,41 @@ export default function AutoApprovePage() {
     if (res.ok) await load(ctx.tenantId);
   }
 
-  if (state === "none") return <main><p className="err" role="alert">این بخش فقط برای پشتیبان است.</p></main>;
-  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
+  if (state === "none")
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
+  if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
     <main>
-      <div className="row"><h1>تأیید خودکار سفارش</h1><Link href="/staff" className="muted">← پنل</Link></div>
-      <p className="muted">{ctx.tenantName}</p>
+      <div className="topbar">
+        <div>
+          <h1>تأیید خودکار سفارش</h1>
+          <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
+        </div>
+        <nav><Link href="/staff">← پنل</Link></nav>
+      </div>
 
-      <div className="card">
-        <p style={{ margin: 0 }}>
-          سفارشی که ارزشش <strong>زیر سقف</strong> باشد بدون تأیید پشتیبان قطعی می‌شود.
-          سفارشِ بالای سقف مثل قبل به صف تأیید می‌آید.
-        </p>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          سقف را خالی بگذارید تا خاموش شود (همه‌چیز دستی تأیید می‌شود).
+      <div className="banner banner--info">
+        <Icon name="info" />
+        <span>
+          سفارشی که ارزشش <strong>زیر سقف</strong> باشد بدون تأیید پشتیبان قطعی می‌شود؛
+          بالای سقف مثل قبل به صف تأیید می‌آید. سقف را <strong>خالی</strong> بگذارید تا خاموش شود.
           اگر قیمتِ کالایی ثبت نشده باشد، آن سفارش هرگز خودکار تأیید نمی‌شود.
-        </p>
+        </span>
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {saved && <div className="card" role="status">{saved}</div>}
+      {saved && (
+        <div className={`banner banner--${saved.includes("نامعتبر") || saved.includes("نشد") ? "error" : "ok"}`} role="status">
+          <Icon name={saved.includes("نامعتبر") || saved.includes("نشد") ? "alert" : "check"} /><span>{saved}</span>
+        </div>
+      )}
 
       {s && !loadErr && (
         <>
