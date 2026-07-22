@@ -51,7 +51,7 @@ export default async function PublicCatalogPage(
               )}
               {it.customerPrice != null && (
                 <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
-                  <span className="metric">{it.customerPrice.toLocaleString("fa-IR")}</span> ریال
+                  <span className="metric">{it.customerPrice.toLocaleString("fa-IR")}</span> ریال / مترمربع
                 </div>
               )}
             </div>

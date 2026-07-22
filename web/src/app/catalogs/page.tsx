@@ -142,7 +142,7 @@ export default function CatalogsPage() {
         <Icon name="info" />
         <span>
           محصول‌ها را انتخاب کنید و یک <strong>لینک</strong> بگیرید تا برای مشتری بفرستید.
-          برای هر محصول می‌توانید یک <strong>قیمتِ فروش</strong> بگذارید (اختیاری) — همانی که
+          برای هر محصول می‌توانید <strong>قیمتِ هر مترمربع</strong> بگذارید (اختیاری) — همانی که
           مشتری می‌بیند، نه قیمتِ خودتان. مشتری بدونِ ورود عکس و مشخصات و <strong>موجود/ناموجود</strong>
           را می‌بیند. لینک را هر وقت خواستید می‌توانید <strong>باطل</strong> کنید.
         </span>
@@ -162,7 +162,7 @@ export default function CatalogsPage() {
                placeholder="مثلاً: پیشنهاد برای پروژه‌ی لابی" />
 
         <label htmlFor="cq" style={{ marginTop: "var(--sp-4)" }}>
-          محصول‌ها <span className="subtle">({picked.length.toLocaleString("fa-IR")} انتخاب‌شده) — قیمت اختیاری است</span>
+          محصول‌ها <span className="subtle">({picked.length.toLocaleString("fa-IR")} انتخاب‌شده) — قیمتِ هر مترمربع اختیاری است</span>
         </label>
         {products.length > 6 && (
           <input id="cq" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
@@ -181,7 +181,7 @@ export default function CatalogsPage() {
                 </label>
                 {on && (
                   <input inputMode="numeric" value={picked[idx].price} onChange={(e) => setPrice(p.id, e.target.value)}
-                         placeholder="قیمت فروش (ریال)" aria-label={`قیمت فروش ${p.name}`} style={{ maxWidth: 180 }} />
+                         placeholder="قیمتِ هر مترمربع (ریال)" aria-label={`قیمتِ هر مترمربع ${p.name}`} style={{ maxWidth: 200 }} />
                 )}
               </div>
             );
