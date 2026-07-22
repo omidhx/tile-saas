@@ -15,7 +15,8 @@ type Lot = {
   available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
   unitPrice: number | null;
   warehouse_id: string; warehouse_name: string;
-  image_url: string | null; color: string | null; glaze: string | null; punch: string | null;
+  image_url: string | null; color: string | null; glaze: string | null;
+  punch: string | null; body: string | null;
 };
 
 type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
@@ -46,6 +47,9 @@ export default function ReservePage() {
   const [queuePending, setQueuePending] = useState<string | null>(null);
   const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
   const [query, setQuery] = useState("");
+  // فیلترِ ساخت‌یافته بر ویژگی‌ها؛ "" = بی‌قید. مقدارها از خودِ اقلامِ موجود ساخته می‌شوند.
+  const [attr, setAttr] = useState<{ color: string; glaze: string; punch: string; body: string }>(
+    { color: "", glaze: "", punch: "", body: "" });
   const [preview, setPreview] = useState<Lot | null>(null); // مودالِ عکسِ بزرگ
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
@@ -137,9 +141,21 @@ export default function ReservePage() {
   // فهرستِ انبارها از خودِ اقلام ساخته می‌شود، نه یک کوئریِ جدا: انباری که چیزی
   // برای سفارش ندارد، فیلترِ بی‌نتیجه می‌سازد.
   const warehouses = [...new Map(lots.map((l) => [l.warehouse_id, l.warehouse_name])).entries()];
+
+  // مقدارهای یکتای هر ویژگی، فقط از اقلامِ موجود — تا فیلترِ بی‌نتیجه ساخته نشود.
+  // دراپ‌داون فقط وقتی نشان داده می‌شود که ۲ مقدار یا بیشتر باشد (یک مقدار فیلترِ بی‌فایده است).
+  const distinct = (key: "color" | "glaze" | "punch" | "body") =>
+    [...new Set(lots.map((l) => l[key]).filter((v): v is string => !!v))].sort();
+  const attrOpts = { color: distinct("color"), glaze: distinct("glaze"), punch: distinct("punch"), body: distinct("body") };
+  const attrActive = attr.color || attr.glaze || attr.punch || attr.body;
+
   // جستجو روی نام/کد/شید/کالیبر (spec ۱۱.۲). نرمال‌سازیِ ارقام و حروف در lib/search.
   const visibleLots = lots.filter((l) =>
     (!whFilter || l.warehouse_id === whFilter)
+    && (!attr.color || l.color === attr.color)
+    && (!attr.glaze || l.glaze === attr.glaze)
+    && (!attr.punch || l.punch === attr.punch)
+    && (!attr.body || l.body === attr.body)
     && matches(query, [l.name, l.code, l.grade, l.shade_code, l.caliber_code]));
 
   // سفارشِ دوانباره ممنوع نیست — فقط دو حواله می‌شود. هشدارِ نرم، مثل شیدِ مخلوط،
@@ -248,7 +264,17 @@ export default function ReservePage() {
               {warehouses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           )}
-          {(query || whFilter) && (
+          {/* فیلترِ ساخت‌یافته بر ویژگی — هرکدام فقط اگر ۲ مقدار یا بیشتر داشته باشد */}
+          {([["color", "رنگ"], ["glaze", "لعاب"], ["punch", "پانچ"], ["body", "بدنه"]] as const).map(([k, lbl]) =>
+            attrOpts[k].length > 1 ? (
+              <select key={k} aria-label={`فیلتر ${lbl}`} value={attr[k]}
+                      onChange={(e) => setAttr((a) => ({ ...a, [k]: e.target.value }))} style={{ maxWidth: 160 }}>
+                <option value="">همه‌ی {lbl}‌ها</option>
+                {attrOpts[k].map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            ) : null,
+          )}
+          {(query || whFilter || attrActive) && (
             <span className="subtle">{money(visibleLots.length)} از {money(lots.length)}</span>
           )}
         </div>
@@ -265,7 +291,7 @@ export default function ReservePage() {
       )}
       {loaded && !loadErr && lots.length > 0 && visibleLots.length === 0 && (
         <p className="empty">
-          {query ? `چیزی با «${query}» پیدا نشد.` : "در این انبار کالای قابل‌سفارشی نیست."}
+          {query ? `چیزی با «${query}» پیدا نشد.` : attrActive ? "چیزی با این فیلترها پیدا نشد." : "در این انبار کالای قابل‌سفارشی نیست."}
         </p>
       )}
 
@@ -506,6 +532,7 @@ export default function ReservePage() {
               {preview.color && <div className="row"><span className="muted">رنگ</span><span>{preview.color}</span></div>}
               {preview.glaze && <div className="row"><span className="muted">لعاب</span><span>{preview.glaze}</span></div>}
               {preview.punch && <div className="row"><span className="muted">پانچ</span><span>{preview.punch}</span></div>}
+              {preview.body && <div className="row"><span className="muted">بدنه</span><span>{preview.body}</span></div>}
               {preview.grade && <div className="row"><span className="muted">درجه</span><span>{preview.grade}</span></div>}
               {preview.shade_code && <div className="row"><span className="muted">شید</span><span>{preview.shade_code}</span></div>}
               {preview.caliber_code && <div className="row"><span className="muted">کالیبر</span><span>{preview.caliber_code}</span></div>}
