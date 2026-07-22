@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import NavMenu from "../NavMenu";
@@ -48,6 +48,7 @@ export default function StaffPage() {
   const [boQty, setBoQty] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
+  const [actionErr, setActionErr] = useState("");
   const [note, setNote] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -72,58 +73,37 @@ export default function StaffPage() {
     setLoaded(true);
   }, []);
 
+  /** هر عملِ نوشتن از این عبور می‌کند: شکست را صریح نشان می‌دهد، نه اینکه فقط
+   *  load() صدا بزند و رزروِ تأییدنشده را همان‌جا بگذارد. */
+  async function act(key: string, url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
+    if (!ctx) return false;
+    setPending(key); setActionErr("");
+    try {
+      const res = await postJson(url, body, method);
+      if (!res.ok) { setActionErr(actionError(res.status)); }
+      await load(ctx); // چه موفق چه ناموفق: فهرست را تازه کن تا وضعیتِ واقعی دیده شود
+      return res.ok;
+    } finally { setPending(null); }
+  }
+
   async function createBackorder() {
     if (!ctx || !boAgent || !boVariant || Number(boQty) <= 0) return;
-    setPending("bo-create");
-    try {
-      await fetch("/api/sales-dispatches", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          tenantId: ctx.tenantId, agentAccountId: boAgent, dispatchCode: `BO-${Date.now()}`,
-          items: [{ variantId: boVariant, quantityBoxes: Number(boQty) }],
-        }),
-      });
-      setBoQty("");
-      await load(ctx);
-    } finally { setPending(null); }
+    const ok = await act("bo-create", "/api/sales-dispatches", {
+      tenantId: ctx.tenantId, agentAccountId: boAgent, dispatchCode: `BO-${Date.now()}`,
+      items: [{ variantId: boVariant, quantityBoxes: Number(boQty) }],
+    });
+    if (ok) setBoQty("");
   }
 
-  async function advanceBackorder(itemId: string, toStatus: string) {
-    if (!ctx) return;
-    setPending("bo" + itemId + toStatus);
-    try {
-      await fetch(`/api/backorders/${itemId}/status`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, toStatus }),
-      });
-      await load(ctx);
-    } finally { setPending(null); }
-  }
+  const advanceBackorder = (itemId: string, toStatus: string) =>
+    act("bo" + itemId + toStatus, `/api/backorders/${itemId}/status`, { tenantId: ctx!.tenantId, toStatus });
 
-  async function cancelResv(reservationId: string) {
-    if (!ctx) return;
-    setPending("cancel" + reservationId);
-    try {
-      // بدون agentAccountId → مسیرِ staff (هر رزروِ این tenant)
-      await fetch(`/api/reservations/${reservationId}/cancel`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId }),
-      });
-      await load(ctx);
-    } finally { setPending(null); }
-  }
+  // بدون agentAccountId → مسیرِ staff (هر رزروِ این tenant)
+  const cancelResv = (reservationId: string) =>
+    act("cancel" + reservationId, `/api/reservations/${reservationId}/cancel`, { tenantId: ctx!.tenantId });
 
-  async function approve(reservationId: string) {
-    if (!ctx) return;
-    setPending("approve" + reservationId);
-    try {
-      await fetch(`/api/reservations/${reservationId}/approve`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId }),
-      });
-      await load(ctx);
-    } finally { setPending(null); }
-  }
+  const approve = (reservationId: string) =>
+    act("approve" + reservationId, `/api/reservations/${reservationId}/approve`, { tenantId: ctx!.tenantId });
 
   useEffect(() => {
     (async () => {
@@ -139,34 +119,24 @@ export default function StaffPage() {
 
   async function makeDispatch(requestId: string) {
     if (!ctx) return;
-    setPending(requestId);
+    setPending(requestId); setActionErr("");
     try {
-      const res = await fetch("/api/sales-dispatches", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, salesRequestId: requestId, dispatchCode: `D-${Date.now()}` }),
-      });
-      // سفارشِ دوانباره دو حواله می‌سازد — پشتیبان باید بداند، وگرنه دنبالِ حواله‌ی
-      // دومی می‌گردد که فکر می‌کند ساخته نشده.
-      if (res.ok) {
-        const { dispatchIds } = await res.json().catch(() => ({ dispatchIds: [] }));
-        if (dispatchIds?.length > 1)
-          setNote(`این سفارش از ${num(dispatchIds.length)} انبار تأمین می‌شود، پس ${num(dispatchIds.length)} حواله‌ی جدا ساخته شد.`);
+      const res = await postJson("/api/sales-dispatches",
+        { tenantId: ctx.tenantId, salesRequestId: requestId, dispatchCode: `D-${Date.now()}` });
+      if (!res.ok) setActionErr(actionError(res.status));
+      else {
+        // سفارشِ دوانباره دو حواله می‌سازد — پشتیبان باید بداند، وگرنه دنبالِ حواله‌ی
+        // دومی می‌گردد که فکر می‌کند ساخته نشده.
+        const ids = (res.data as { dispatchIds?: string[] }).dispatchIds ?? [];
+        if (ids.length > 1)
+          setNote(`این سفارش از ${num(ids.length)} انبار تأمین می‌شود، پس ${num(ids.length)} حواله‌ی جدا ساخته شد.`);
       }
       await load(ctx);
     } finally { setPending(null); }
   }
 
-  async function advance(dispatchId: string, toStatus: string) {
-    if (!ctx) return;
-    setPending(dispatchId + toStatus);
-    try {
-      await fetch(`/api/sales-dispatches/${dispatchId}/status`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, toStatus }),
-      });
-      await load(ctx);
-    } finally { setPending(null); }
-  }
+  const advance = (dispatchId: string, toStatus: string) =>
+    act(dispatchId + toStatus, `/api/sales-dispatches/${dispatchId}/status`, { tenantId: ctx!.tenantId, toStatus });
 
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
@@ -189,6 +159,11 @@ export default function StaffPage() {
         <div className="banner banner--error" role="alert">
           <Icon name="alert" />
           <span>{loadErr} فهرست‌های زیر ناقص یا خالی‌اند — به «چیزی نیست» اعتماد نکن.</span>
+        </div>
+      )}
+      {actionErr && (
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>{actionErr}</span>
         </div>
       )}
       {note && (

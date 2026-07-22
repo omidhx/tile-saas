@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
 import NavMenu from "../../NavMenu";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDate } from "@/lib/date";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
@@ -41,6 +41,8 @@ export default function IncomingPage() {
   const [msg, setMsg] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [arriving, setArriving] = useState<string | null>(null); // کارتی که در حالتِ «شماره بچ» است
+  const [batch, setBatch] = useState("");
 
   const load = useCallback(async (tenantId: string) => {
     const [i, cat, w] = await Promise.all([
@@ -77,24 +79,20 @@ export default function IncomingPage() {
     } finally { setPending(null); }
   }
 
-  async function act(id: string, action: "arrive" | "confirm" | "cancel") {
+  async function act(id: string, action: "arrive" | "confirm" | "cancel", batchNumber?: string) {
     if (!ctx) return;
-    const batchNumber = action === "arrive"
-      ? window.prompt("شماره بچ (اختیاری) — خالی بگذارید اگر ندارد:") ?? ""
-      : undefined;
-    setPending(id + action);
+    setPending(id + action); setMsg("");
     try {
-      const res = await fetch("/api/incoming", {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, id, action, batchNumber }),
-      });
-      if (res.ok && action === "arrive") {
-        const d = await res.json().catch(() => ({}));
+      const res = await postJson("/api/incoming",
+        { tenantId: ctx.tenantId, id, action, batchNumber }, "PATCH");
+      if (!res.ok) { setMsg(actionError(res.status)); await load(ctx.tenantId); return; }
+      if (action === "arrive") {
+        const d = res.data as { offers?: number; notified?: number };
         // اثرِ رسیدن صریح گفته می‌شود: پشتیبان باید بداند چند نفر از صف نوبت گرفتند
         setMsg(`موجودی وارد شد.${d.offers ? ` ${n(d.offers)} نوبت از صف انتظار پر شد.` : ""}`
           + `${d.notified ? ` ${n(d.notified)} اعلان «موجود شد» صف شد.` : ""}`);
-      } else if (res.ok) setMsg("انجام شد.");
-      else setMsg("انجام نشد.");
+        setArriving(null); setBatch("");
+      } else setMsg("انجام شد.");
       await load(ctx.tenantId);
     } finally { setPending(null); }
   }
@@ -186,22 +184,35 @@ export default function IncomingPage() {
             {" · "}{SOURCE_FA[i.source] ?? i.source}
           </div>
           {i.note && <div className="subtle">{i.note}</div>}
-          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
-            <button className="primary" onClick={() => act(i.id, "arrive")}
-                    aria-busy={pending === i.id + "arrive"} disabled={pending === i.id + "arrive"}>
-              {pending === i.id + "arrive" && <span className="spinner" aria-hidden="true" />}رسید
-            </button>
-            {i.status === "planned" && (
-              <button className="ghost" onClick={() => act(i.id, "confirm")}
-                      aria-busy={pending === i.id + "confirm"} disabled={pending === i.id + "confirm"}>
-                قطعی شد
+
+          {arriving === i.id ? (
+            // ورودیِ بچ درون‌کارت، به‌جای window.prompt: هم‌استایل، موبایل‌پسند، و
+            // «خالی» با «لغو» اشتباه نمی‌شود (prompt هر دو را "" می‌داد).
+            <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
+              <label htmlFor={`batch-${i.id}`} className="sr-only">شماره بچ برای {i.name}</label>
+              <input id={`batch-${i.id}`} value={batch} onChange={(e) => setBatch(e.target.value)}
+                     placeholder="شماره بچ (اختیاری)" style={{ maxWidth: 200 }} autoFocus />
+              <button className="primary" onClick={() => act(i.id, "arrive", batch.trim() || undefined)}
+                      aria-busy={pending === i.id + "arrive"} disabled={pending === i.id + "arrive"}>
+                {pending === i.id + "arrive" && <span className="spinner" aria-hidden="true" />}تأیید رسیدن
               </button>
-            )}
-            <button className="danger" onClick={() => act(i.id, "cancel")}
-                    aria-busy={pending === i.id + "cancel"} disabled={pending === i.id + "cancel"}>
-              لغو
-            </button>
-          </div>
+              <button className="ghost" onClick={() => { setArriving(null); setBatch(""); }}>انصراف</button>
+            </div>
+          ) : (
+            <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
+              <button className="primary" onClick={() => { setArriving(i.id); setBatch(""); }}>رسید</button>
+              {i.status === "planned" && (
+                <button className="ghost" onClick={() => act(i.id, "confirm")}
+                        aria-busy={pending === i.id + "confirm"} disabled={pending === i.id + "confirm"}>
+                  قطعی شد
+                </button>
+              )}
+              <button className="danger" onClick={() => act(i.id, "cancel")}
+                      aria-busy={pending === i.id + "cancel"} disabled={pending === i.id + "cancel"}>
+                لغو
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </main>

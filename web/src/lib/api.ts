@@ -24,3 +24,33 @@ export function loadError(status: number): string {
   if (status === 401) return "نشست منقضی شده — دوباره وارد شو.";
   return `بارگذاری ناموفق (${status}).`;
 }
+
+/**
+ * نوشتنِ JSON که شکست را **قورت نمی‌دهد**. مکملِ `getJson` برای POST/PATCH/DELETE.
+ *
+ * چرا لازم است: عملیاتِ نوشتنِ staff (تأیید، لغو، حواله) اگر ۴۰۹/۴۰۳ بخورد و فقط
+ * `load()` صدا زده شود، رزرو **هنوز آنجاست** — پشتیبان دوباره کلیک می‌کند، باز هیچ،
+ * و نمی‌فهمد چرا. شکستِ عملیاتِ پول نباید خاموش باشد.
+ */
+export async function postJson(
+  url: string, body: unknown, method: "POST" | "PATCH" | "DELETE" | "PUT" = "POST",
+): Promise<Loaded<unknown>> {
+  try {
+    const res = await fetch(url, {
+      method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) return { ok: false, status: res.status };
+    return { ok: true, data: await res.json().catch(() => ({})) };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
+
+/** پیام فارسیِ خطای عملیات (نوشتن). ۴۰۹ جدا چون «تعارض» است نه «شکست». */
+export function actionError(status: number): string {
+  if (status === 0) return "ارتباط با سرور برقرار نشد.";
+  if (status === 409) return "این مورد همین حالا تغییر کرد (شاید منقضی/تأیید شد). فهرست به‌روز شد.";
+  if (status === 403) return "اجازه‌ی این کار را نداری.";
+  if (status === 401) return "نشست منقضی شده — دوباره وارد شو.";
+  return `انجام نشد (خطای ${status}).`;
+}
