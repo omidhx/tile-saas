@@ -33,6 +33,10 @@ export default function CatalogPage() {
   const [subFor, setSubFor] = useState<string | null>(null);
   const [subPick, setSubPick] = useState("");
   const [subNote, setSubNote] = useState("");
+  const [subQuery, setSubQuery] = useState(""); // جستجوی محصول در انتخابِ جایگزین
+  // کدام کارت درحالِ ویرایش است + مقادیرِ فرمِ ویرایش (کد و sku ویرایش نمی‌شوند — کلیدِ تطبیق‌اند)
+  const [editFor, setEditFor] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", color: "", glaze: "", punch: "", body: "" });
 
   // فرمِ محصولِ جدید — عکس همین‌جا انتخاب می‌شود، نه در بخشِ جدا
   const [form, setForm] = useState({ name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", imageUrl: "" });
@@ -84,6 +88,23 @@ export default function CatalogPage() {
     const res = await postJson("/api/products", { tenantId: ctx.tenantId, productId, imageUrl }, "PATCH");
     if (!res.ok) setMsg(actionError(res.status));
     else await load(ctx.tenantId);
+    setPending(null);
+  }
+
+  function startEdit(p: Product) {
+    setEditFor(p.id);
+    setEditForm({ name: p.name, color: p.color ?? "", glaze: p.glaze ?? "", punch: p.punch ?? "", body: p.body ?? "" });
+    setSubFor(null); // یک بخشِ بازِ کارت کافی است
+    setMsg("");
+  }
+
+  async function saveEdit(productId: string) {
+    if (!ctx || !editForm.name.trim()) return;
+    setPending("edit" + productId); setMsg("");
+    // کد و sku عمداً فرستاده نمی‌شوند — کلیدِ تطبیقِ اکسل/موجودی‌اند و در بک‌اند هم دست‌نخورده می‌مانند
+    const res = await postJson("/api/products", { tenantId: ctx.tenantId, productId, ...editForm }, "PATCH");
+    if (!res.ok) setMsg(actionError(res.status));
+    else { setEditFor(null); setMsg("محصول ویرایش شد."); await load(ctx.tenantId); }
     setPending(null);
   }
 
@@ -144,8 +165,9 @@ export default function CatalogPage() {
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
       {msg && (
-        <div className={`banner banner--${msg.includes("ساخته شد") ? "ok" : "error"}`} role="status">
-          <Icon name={msg.includes("ساخته شد") ? "check" : "alert"} /><span>{msg}</span>
+        // پیامِ موفق با «محصول …» شروع می‌شود؛ هیچ پیامِ خطایی این‌طور شروع نمی‌شود
+        <div className={`banner banner--${msg.startsWith("محصول") ? "ok" : "error"}`} role="status">
+          <Icon name={msg.startsWith("محصول") ? "check" : "alert"} /><span>{msg}</span>
         </div>
       )}
 
@@ -251,14 +273,46 @@ export default function CatalogPage() {
                       if (url) await setImage(p.id, url);
                     }} />
                 </label>
+                <button className="ghost" onClick={() => (editFor === p.id ? setEditFor(null) : startEdit(p))}>
+                  {editFor === p.id ? "بستن ویرایش" : "ویرایش"}
+                </button>
                 {p.variantId && (
                   <button className="ghost"
-                    onClick={() => { setSubFor(subFor === p.variantId ? null : p.variantId); setSubPick(""); setSubNote(""); }}>
+                    onClick={() => { setSubFor(subFor === p.variantId ? null : p.variantId); setSubPick(""); setSubNote(""); setSubQuery(""); }}>
                     جایگزین‌ها ({money(subs.filter((s) => s.variantId === p.variantId).length)})
                   </button>
                 )}
                 {pending === p.id && <span className="spinner" aria-hidden="true" />}
               </div>
+
+              {/* ویرایشِ ویژگی‌ها — کد و sku نمایشی و قفل، چون کلیدِ تطبیقِ اکسل/موجودی‌اند */}
+              {editFor === p.id && (
+                <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+                  <div className="grid2">
+                    <div><label htmlFor={`en-${p.id}`}>نام *</label>
+                      <input id={`en-${p.id}`} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
+                    <div><label>کد <span className="subtle">(قفل)</span></label>
+                      <input value={p.code} disabled aria-label="کد (غیرقابل ویرایش)" /></div>
+                    <div><label>sku <span className="subtle">(قفل)</span></label>
+                      <input value={p.sku ?? ""} disabled aria-label="sku (غیرقابل ویرایش)" /></div>
+                    <div><label htmlFor={`ec-${p.id}`}>رنگ</label>
+                      <input id={`ec-${p.id}`} value={editForm.color} onChange={(e) => setEditForm({ ...editForm, color: e.target.value })} /></div>
+                    <div><label htmlFor={`eg-${p.id}`}>لعاب</label>
+                      <input id={`eg-${p.id}`} value={editForm.glaze} onChange={(e) => setEditForm({ ...editForm, glaze: e.target.value })} /></div>
+                    <div><label htmlFor={`ep-${p.id}`}>پانچ</label>
+                      <input id={`ep-${p.id}`} value={editForm.punch} onChange={(e) => setEditForm({ ...editForm, punch: e.target.value })} /></div>
+                    <div><label htmlFor={`eb-${p.id}`}>بدنه</label>
+                      <input id={`eb-${p.id}`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })} /></div>
+                  </div>
+                  <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+                    <button className="primary" disabled={pending === "edit" + p.id || !editForm.name.trim()}
+                      onClick={() => saveEdit(p.id)}>
+                      {pending === "edit" + p.id && <span className="spinner" aria-hidden="true" />}ذخیره
+                    </button>
+                    <button className="ghost" onClick={() => setEditFor(null)}>انصراف</button>
+                  </div>
+                </div>
+              )}
 
               {/* مدیریتِ جایگزینِ همین محصول — همان‌جا، نه صفحه‌ی جدا (جایگزین per-product است) */}
               {p.variantId && subFor === p.variantId && (
@@ -274,18 +328,26 @@ export default function CatalogPage() {
                         onClick={() => removeSub(s.id)}>حذف</button>
                     </div>
                   ))}
-                  <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-2)" }}>
-                    <select value={subPick} onChange={(e) => setSubPick(e.target.value)} aria-label="کالای جایگزین" style={{ maxWidth: 240 }}>
-                      <option value="">انتخاب جایگزین…</option>
-                      {products.filter((o) => o.variantId && o.variantId !== p.variantId
-                        && !subs.some((s) => s.variantId === p.variantId && s.substituteVariantId === o.variantId))
-                        .map((o) => <option key={o.variantId} value={o.variantId!}>{o.name} ({o.code})</option>)}
-                    </select>
-                    <input value={subNote} onChange={(e) => setSubNote(e.target.value)}
-                      placeholder="توضیح (اختیاری)" style={{ maxWidth: 200 }} aria-label="توضیح جایگزین" />
-                    <button className="primary" disabled={pending === "sub" + p.variantId || !subPick}
-                      onClick={() => addSub(p.variantId!)}>افزودن جایگزین</button>
-                  </div>
+                  {(() => {
+                    // نامزدهای جایگزین: هر محصولِ دیگری که هنوز جایگزین نشده، فیلترشده با جستجوی نام/کد
+                    const cands = products.filter((o) => o.variantId && o.variantId !== p.variantId
+                      && !subs.some((s) => s.variantId === p.variantId && s.substituteVariantId === o.variantId)
+                      && matches(subQuery, [o.name, o.code]));
+                    return (
+                      <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-2)" }}>
+                        <input type="search" value={subQuery} onChange={(e) => setSubQuery(e.target.value)}
+                          placeholder="جستجوی نام یا کد…" aria-label="جستجوی جایگزین" style={{ maxWidth: 180 }} />
+                        <select value={subPick} onChange={(e) => setSubPick(e.target.value)} aria-label="کالای جایگزین" style={{ maxWidth: 240 }}>
+                          <option value="">{cands.length ? "انتخاب جایگزین…" : "موردی یافت نشد"}</option>
+                          {cands.map((o) => <option key={o.variantId} value={o.variantId!}>{o.name} ({o.code})</option>)}
+                        </select>
+                        <input value={subNote} onChange={(e) => setSubNote(e.target.value)}
+                          placeholder="توضیح (اختیاری)" style={{ maxWidth: 200 }} aria-label="توضیح جایگزین" />
+                        <button className="primary" disabled={pending === "sub" + p.variantId || !subPick}
+                          onClick={() => addSub(p.variantId!)}>افزودن جایگزین</button>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
