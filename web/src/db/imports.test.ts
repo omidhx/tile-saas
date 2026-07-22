@@ -148,3 +148,35 @@ test("رشته‌ی خالی در ستونِ عکس هم پاک نمی‌کند 
   });
   assert.equal(await productImage(), "https://cdn/keep2.jpg");
 });
+
+// --- v2 ساختِ خودکارِ محصول از import ---
+
+test("skuِ ناموجود با ستونِ نام → محصولِ جدید ساخته می‌شود", async () => {
+  await applySnapshot({
+    tenantId: T, uploaderUserId: U, idempotencyKey: "auto-1", scope: { type: "tenant" },
+    rows: [{ sku: "NEW-1", warehouseCode: "A", batchNumber: "B1", onHand: 40,
+             name: "تسلا طوسی", color: "طوسی", glaze: "مات" }],
+  });
+  const [p] = await sql<{ name: string; color: string; glaze: string }[]>`
+    SELECT p.name, p.color, p.glaze FROM product p
+    JOIN product_variant pv ON pv.product_id = p.id WHERE pv.sku = 'NEW-1'`;
+  assert.equal(p.name, "تسلا طوسی");
+  assert.equal(p.color, "طوسی");
+  assert.equal(p.glaze, "مات");
+  const bal = await sql`SELECT b.on_hand_qty_boxes FROM inventory_balance b
+    JOIN inventory_lot l ON l.id = b.lot_id JOIN product_variant pv ON pv.id = l.variant_id
+    WHERE pv.sku = 'NEW-1'`;
+  assert.equal(Number((bal[0] as {on_hand_qty_boxes:number}).on_hand_qty_boxes), 40, "موجودی هم ست شد");
+});
+
+test("🔴 skuِ ناموجود بدونِ نام → خطا، نه محصولِ بی‌نام", async () => {
+  const res = await applySnapshot({
+    tenantId: T, uploaderUserId: U, idempotencyKey: "auto-2", scope: { type: "tenant" },
+    rows: [{ sku: "GHOST-1", warehouseCode: "A", batchNumber: "B1", onHand: 10 }],  // بدون name
+  });
+  assert.equal(res.applied, 0);
+  assert.ok(res.errors.some((e) => e.reason === "unknown_sku_or_warehouse"),
+    "بدونِ نام نباید محصولِ بی‌نام ساخته شود — احتمالاً sku اشتباه است");
+  const ghost = await sql`SELECT 1 FROM product_variant WHERE sku = 'GHOST-1'`;
+  assert.equal(ghost.length, 0, "هیچ محصولی نباید ساخته شده باشد");
+});

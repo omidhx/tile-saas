@@ -137,8 +137,9 @@ CREATE TABLE product (
     code      TEXT NOT NULL,
     name      TEXT NOT NULL,
     color     TEXT,
-    glaze     TEXT,
-    punch     TEXT,
+    glaze     TEXT,   -- لعاب: مات/ترانس
+    punch     TEXT,   -- پانچ: تخت/رستیک-…
+    body      TEXT,   -- بدنه: سفید/قرمز (v2، مثل کاتالوگِ صنعتی)
     image_url TEXT,
     brand_id  UUID,     -- بخش ۷.۵: فعلاً product-level، nullable و آماده‌ی مهاجرت به Lot
     PRIMARY KEY (id),

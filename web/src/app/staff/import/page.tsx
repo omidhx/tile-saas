@@ -11,7 +11,7 @@ const n = (v: number) => v.toLocaleString("fa-IR");
 
 type Ctx = { tenantId: string; tenantName: string };
 type Wh = { id: string; name: string; code: string };
-type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number; imageUrl: string | null };
+type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number; imageUrl: string | null; name: string | null; color: string | null; glaze: string | null; punch: string | null; body: string | null };
 type Result = { applied: number; zeroed: number; deduped: boolean; errors: { row: number | null; reason: string; detail?: string }[] };
 
 // انتخابِ ستون بر اساس نام هدر (fa/en، case-insensitive)
@@ -73,6 +73,12 @@ export default function ImportPage() {
         caliberCode: s(pick(o, ["caliber", "کالیبر"])),
         onHand: Math.trunc(Number(pick(o, ["on_hand", "onhand", "موجودی", "قابل‌سفارش", "count", "qty"]) ?? 0)),
         imageUrl: s(pick(o, ["image", "عکس", "image_url", "تصویر", "img"])),
+        // v2 ساختِ خودکار: اگر ستونِ نام بود و sku ناموجود، محصول ساخته می‌شود
+        name: s(pick(o, ["name", "نام", "محصول", "title"])),
+        color: s(pick(o, ["color", "رنگ"])),
+        glaze: s(pick(o, ["glaze", "لعاب"])),
+        punch: s(pick(o, ["punch", "پانچ"])),
+        body: s(pick(o, ["body", "بدنه"])),
       }));
       const parsed = all.filter((r) => r.sku && r.warehouseCode);
       // ردیف‌های بدونِ sku/انبار بی‌سروصدا کنار گذاشته می‌شدند. در یک snapshot این

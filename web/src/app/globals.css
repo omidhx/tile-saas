@@ -372,6 +372,10 @@ main.wide { max-width: 1200px; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb--empty { display: flex; align-items: center; justify-content: center; color: var(--text-subtle); cursor: default; }
 
+/* شبکه‌ی دوستونیِ فرمِ محصول — روی موبایل یک‌ستونه */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--sp-3); }
+@media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
+
 /* دکمه‌ی آپلودِ فایل که مثل بقیه‌ی دکمه‌ها به‌نظر می‌رسد (input file بی‌ریخت است) */
 .btn-file {
   display: inline-flex; align-items: center; justify-content: center;

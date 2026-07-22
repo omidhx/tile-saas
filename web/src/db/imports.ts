@@ -9,6 +9,10 @@ export type SnapshotRow = {
   /** v2 کاتالوگ تصویری: URLِ عکسِ محصول، اختیاری. اگر بود، عکسِ **محصول** (نه lot)
    *  آپدیت می‌شود؛ اگر ستونش در فایل نبود، عکسِ قبلی دست‌نخورده می‌ماند. */
   imageUrl?: string | null;
+  /** v2 ساختِ خودکارِ محصول: اگر sku ناموجود بود **و** نام آمده باشد، محصول ساخته
+   *  می‌شود. بدونِ نام، همان خطای unknown_sku می‌ماند — محصولِ بی‌نام نمی‌سازیم. */
+  name?: string | null;
+  color?: string | null; glaze?: string | null; punch?: string | null; body?: string | null;
 };
 export type ImportScope =
   | { type: "tenant" }
@@ -80,11 +84,29 @@ export async function applySnapshot(params: {
       };
       if (!Number.isInteger(row.onHand) || row.onHand < 0) { err("bad_on_hand", String(row.onHand)); continue; }
 
-      const [variant] = await tx<{ id: string; product_id: string; brand_id: string | null }[]>`
+      let [variant] = await tx<{ id: string; product_id: string; brand_id: string | null }[]>`
         SELECT pv.id, pv.product_id, p.brand_id FROM product_variant pv JOIN product p ON p.id = pv.product_id
         WHERE pv.tenant_id = ${tenantId} AND pv.sku = ${row.sku}`;
       const [wh] = await tx<{ id: string }[]>`
         SELECT id FROM warehouse WHERE tenant_id = ${tenantId} AND code = ${row.warehouseCode}`;
+
+      // ساختِ خودکارِ محصول: فقط اگر sku ناموجود ولی نام آمده. بدونِ نام، خطا —
+      // چون محصولِ بی‌نام در فهرست بی‌معنی است و بیشتر نشانه‌ی sku اشتباه است.
+      if (!variant && wh && row.name && row.name.trim()) {
+        // کدِ محصول از sku (فایلِ موجودی ستونِ کدِ جدا ندارد؛ sku شناسه‌ی یکتاست).
+        const [p] = await tx<{ id: string }[]>`
+          INSERT INTO product (tenant_id, code, name, color, glaze, punch, body, image_url)
+          VALUES (${tenantId}, ${row.sku.trim()}, ${row.name.trim()},
+                  ${row.color?.trim() || null}, ${row.glaze?.trim() || null},
+                  ${row.punch?.trim() || null}, ${row.body?.trim() || null}, ${row.imageUrl?.trim() || null})
+          ON CONFLICT (tenant_id, code) DO UPDATE SET name = product.name
+          RETURNING id`;
+        [variant] = await tx<{ id: string; product_id: string; brand_id: string | null }[]>`
+          INSERT INTO product_variant (tenant_id, product_id, sku)
+          VALUES (${tenantId}, ${p.id}, ${row.sku})
+          RETURNING id, product_id, NULL::uuid AS brand_id`;
+      }
+
       if (!variant || !wh) { err("unknown_sku_or_warehouse", `${row.sku}/${row.warehouseCode}`); continue; }
 
       // در scope هست؟
