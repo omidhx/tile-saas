@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import {
-  createCatalog, listCatalogs, setCatalogActive, deleteCatalog, getPublicCatalog,
+  createCatalog, updateCatalog, listCatalogs, setCatalogActive, deleteCatalog, getPublicCatalog,
 } from "./sharedCatalog";
+
+// کمک‌کننده: variantIds → آیتم بدونِ قیمت
+const noPrice = (...ids: string[]) => ids.map((variantId) => ({ variantId, customerPrice: null }));
 
 /**
  * کاتالوگ سفارشی. چیزی که تست‌ها باید ثابت کنند «کار می‌کند» نیست — **امن است**:
@@ -43,16 +46,58 @@ after(async () => { await sql.end(); });
 beforeEach(async () => { await sql`DELETE FROM shared_catalog WHERE tenant_id = ${T}`; });
 
 test("ساخت + فهرست: تعدادِ آیتم درست است", async () => {
-  await createCatalog({ tenantId: T, agentAccountId: A1, title: "پیشنهاد لابی", variantIds: [V1, V2], token: "tok-1" });
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "پیشنهاد لابی", items: noPrice(V1, V2), token: "tok-1" });
   const list = await listCatalogs(T, A1);
   assert.equal(list.length, 1);
-  assert.equal(list[0].itemCount, 2);
+  assert.equal(list[0].items.length, 2);
   assert.equal(list[0].token, "tok-1");
   assert.equal(list[0].isActive, true);
 });
 
+test("قیمتِ فروشِ مشتری: در فهرست و نمای عمومی می‌آید؛ null یعنی بدونِ قیمت", async () => {
+  await createCatalog({
+    tenantId: T, agentAccountId: A1, title: "قیمت‌دار", token: "tok-p",
+    items: [{ variantId: V1, customerPrice: 6_500_000 }, { variantId: V2, customerPrice: null }],
+  });
+  // در فهرستِ نماینده
+  const [c] = await listCatalogs(T, A1);
+  const byV = Object.fromEntries(c.items.map((i) => [i.variantId, i.customerPrice]));
+  assert.equal(byV[V1], 6_500_000, "عدد، نه رشته‌ی bigint");
+  assert.equal(byV[V2], null);
+  // در نمای عمومی
+  const pub = await getPublicCatalog({ slug: "nem", token: "tok-p" });
+  assert.ok(pub);
+  const prices = pub.items.map((i) => i.customerPrice).sort((a, b) => (a ?? 0) - (b ?? 0));
+  assert.deepEqual(prices, [null, 6_500_000]);
+});
+
+test("ویرایش: عنوان و آیتم‌ها جای‌گزین می‌شوند، token دست‌نخورده می‌ماند", async () => {
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "قبلی", items: noPrice(V1), token: "tok-e" });
+  const [{ id }] = await sql<{ id: string }[]>`SELECT id FROM shared_catalog WHERE token = 'tok-e'`;
+
+  await updateCatalog({
+    tenantId: T, agentAccountId: A1, id, title: "جدید",
+    items: [{ variantId: V2, customerPrice: 900_000 }],
+  });
+  const [c] = await listCatalogs(T, A1);
+  assert.equal(c.title, "جدید");
+  assert.equal(c.token, "tok-e", "token عوض نمی‌شود تا لینک معتبر بماند");
+  assert.equal(c.items.length, 1);
+  assert.equal(c.items[0].variantId, V2);
+  assert.equal(c.items[0].customerPrice, 900_000);
+});
+
+test("🔴 امنیت: نماینده‌ی دیگر نمی‌تواند کاتالوگِ من را ویرایش کند", async () => {
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "مالِ A1", items: noPrice(V1), token: "tok-e2" });
+  const [{ id }] = await sql<{ id: string }[]>`SELECT id FROM shared_catalog WHERE token = 'tok-e2'`;
+  await updateCatalog({ tenantId: T, agentAccountId: A2, id, title: "دستکاری", items: noPrice(V2) });
+  const [c] = await listCatalogs(T, A1);
+  assert.equal(c.title, "مالِ A1", "بی‌اثر");
+  assert.equal(c.items[0].variantId, V1, "آیتم‌ها دست‌نخورده");
+});
+
 test("نمای عمومی با slug+token: آیتم‌ها + موجود/ناموجودِ درست، بدونِ قیمت", async () => {
-  await createCatalog({ tenantId: T, agentAccountId: A1, title: "کاتالوگ", variantIds: [V1, V2], token: "tok-2" });
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "کاتالوگ", items: noPrice(V1, V2), token: "tok-2" });
   const pub = await getPublicCatalog({ slug: "nem", token: "tok-2" });
   assert.ok(pub);
   assert.equal(pub.title, "کاتالوگ");
@@ -65,19 +110,19 @@ test("نمای عمومی با slug+token: آیتم‌ها + موجود/نامو
 });
 
 test("🔴 امنیت: token با slugِ اشتباه → null (token مالِ tenant دیگر بی‌فایده است)", async () => {
-  await createCatalog({ tenantId: T, agentAccountId: A1, title: "x", variantIds: [V1], token: "tok-3" });
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "x", items: noPrice(V1), token: "tok-3" });
   assert.equal(await getPublicCatalog({ slug: "ناموجود", token: "tok-3" }), null);
 });
 
 test("🔴 امنیت: لینکِ باطل‌شده → null", async () => {
-  await createCatalog({ tenantId: T, agentAccountId: A1, title: "x", variantIds: [V1], token: "tok-4" });
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "x", items: noPrice(V1), token: "tok-4" });
   const [{ id }] = await sql<{ id: string }[]>`SELECT id FROM shared_catalog WHERE token = 'tok-4'`;
   await setCatalogActive({ tenantId: T, agentAccountId: A1, id, isActive: false });
   assert.equal(await getPublicCatalog({ slug: "nem", token: "tok-4" }), null);
 });
 
 test("🔴 امنیت: نماینده‌ی دیگر نمی‌تواند کاتالوگِ من را باطل یا حذف کند", async () => {
-  await createCatalog({ tenantId: T, agentAccountId: A1, title: "مالِ A1", variantIds: [V1], token: "tok-5" });
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "مالِ A1", items: noPrice(V1), token: "tok-5" });
   const [{ id }] = await sql<{ id: string }[]>`SELECT id FROM shared_catalog WHERE token = 'tok-5'`;
 
   // A2 تلاش می‌کند باطل کند — نباید اثر کند

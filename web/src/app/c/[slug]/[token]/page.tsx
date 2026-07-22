@@ -49,13 +49,18 @@ export default async function PublicCatalogPage(
                   {[it.color, it.glaze, it.punch, it.body].filter(Boolean).join(" · ")}
                 </div>
               )}
+              {it.customerPrice != null && (
+                <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
+                  <span className="metric">{it.customerPrice.toLocaleString("fa-IR")}</span> ریال
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
 
       <p className="muted" style={{ marginTop: "var(--sp-5)", textAlign: "center" }}>
-        برای قیمت و ثبتِ سفارش با نماینده‌ی خود تماس بگیرید.
+        برای ثبتِ سفارش با نماینده‌ی خود تماس بگیرید.
       </p>
     </main>
   );

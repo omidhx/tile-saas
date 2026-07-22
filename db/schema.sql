@@ -652,11 +652,14 @@ CREATE TABLE shared_catalog (
 CREATE INDEX idx_shared_catalog_agent ON shared_catalog (tenant_id, agent_account_id, created_at DESC);
 
 CREATE TABLE shared_catalog_item (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
-    catalog_id  UUID NOT NULL,
-    variant_id  UUID NOT NULL,
-    sort_order  INT NOT NULL DEFAULT 0,
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id      UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    catalog_id     UUID NOT NULL,
+    variant_id     UUID NOT NULL,
+    -- قیمتِ فروشِ اختیاری که نماینده برای مشتری می‌گذارد (IRR). NULL = قیمت نشان نده.
+    -- این «قیمتِ منِ» نماینده نیست — عددی است که خودش برای مشتری تعیین می‌کند.
+    customer_price BIGINT CHECK (customer_price >= 0),
+    sort_order     INT NOT NULL DEFAULT 0,
     UNIQUE (catalog_id, variant_id),         -- یک محصول دوبار در یک کاتالوگ نیاید
     FOREIGN KEY (tenant_id, catalog_id) REFERENCES shared_catalog   (tenant_id, id) ON DELETE CASCADE,
     FOREIGN KEY (tenant_id, variant_id) REFERENCES product_variant  (tenant_id, id) ON DELETE CASCADE

@@ -19,7 +19,7 @@ tenant ──< agent_account ──< agent_account_user (FK به membership: ک�
    ├─ customer ─→ sales_dispatch.customer_id  (نام روی حواله snapshot می‌ماند)      (v2)
    ├─ waitlist_entry (صف انتظار) ; product_substitute (جایگزین، جهت‌دار)            (v2)
    ├─ incoming_stock (موجودی در راه — **هرگز وارد available نمی‌شود**)              (v2)
-   ├─ shared_catalog ──< shared_catalog_item (کاتالوگِ عمومیِ نماینده؛ token در URL) (v2)
+   ├─ shared_catalog ──< shared_catalog_item (token در URL؛ customer_price اختیاری)  (v2)
    ├─ import_template ; import_batch (scope: tenant/warehouse/brand) ──< import_row
    └─ notification_outbox ; stock_alert ; audit_log (old/new JSONB)
 
