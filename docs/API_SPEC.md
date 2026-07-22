@@ -123,6 +123,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/substitutes` | staff | تعریفِ کالای جایگزین |
 | `/api/products` | staff | مدیریتِ محصول: فهرست (با قیمتِ پایه/جایگزین)، `POST` ساخت، `PATCH` عکس یا ویرایشِ ویژگی‌ها (کد/sku قفل) |
 | `/api/upload` | staff | آپلودِ عکس (multipart) → URL برمی‌گرداند |
+| `/api/shared-catalog` | agent | کاتالوگِ سفارشیِ نماینده: فهرست/ساخت/باطل‌کردن/حذف. صفحه‌ی عمومیِ مشتری در `/c/<slug>/<token>` (بدونِ لاگین، فقط عکس/مشخصات/موجود، بدونِ قیمت) |
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
 | `/api/reports` | staff | گزارش‌های مدیریتی |

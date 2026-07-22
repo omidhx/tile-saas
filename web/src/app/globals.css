@@ -456,6 +456,35 @@ main.wide { max-width: 1200px; }
   }
 }
 
+/* --- کاتالوگ عمومیِ مشتری ------------------------------------------------- */
+/* گرید تصویرمحور: خودش را با عرض تطبیق می‌دهد؛ روی موبایل یک‌ستونه می‌شود. */
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-4);
+}
+.catalog-img {
+  width: 100%; aspect-ratio: 1 / 1; object-fit: cover;
+  border-radius: var(--radius-sm); background: var(--surface-sunken);
+}
+.catalog-img--empty {
+  display: block;
+  border: 1px dashed var(--line-strong);
+}
+
+/* فهرستِ انتخابِ محصول در سازنده‌ی کاتالوگ: اسکرول‌شونده تا فرم بلند نشود */
+.pick-list {
+  max-height: 320px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: var(--sp-1);
+}
+.pick-row {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: 0; padding: var(--sp-2); border-radius: var(--radius-sm);
+  cursor: pointer; font-weight: 400; color: var(--text);
+}
+.pick-row:hover { background: var(--surface-sunken); }
+
 /* --- موبایل --------------------------------------------------------------- */
 /* نماینده و انباردار بیشتر با گوشی کار می‌کنند تا دسکتاپ. */
 @media (max-width: 480px) {

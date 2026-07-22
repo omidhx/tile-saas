@@ -628,6 +628,41 @@ CREATE TABLE audit_log (
 );
 
 -- ---------------------------------------------------------------------------
+-- v2 «کاتالوگ سفارشی برای مشتری» (spec ۱۲)
+-- ---------------------------------------------------------------------------
+-- نماینده زیرمجموعه‌ای از محصول‌ها را انتخاب می‌کند و یک لینکِ عمومیِ توکن‌دار برای
+-- مشتریِ نهایی‌اش می‌فرستد. مشتری بدونِ لاگین فقط عکس + مشخصات + موجود/ناموجود
+-- می‌بیند — نه قیمت (قیمتِ نماینده نباید نشت کند)، نه عددِ دقیقِ موجودی.
+--
+-- دسترسیِ عمومی: صفحه‌ی مشتری نشستی ندارد، پس RLSِ tenant کمکی نمی‌کند. URL شاملِ
+-- slugِ tenant است (عمومی، نه راز) تا سرور tenant را از آن پیدا و withTenant را ست کند؛
+-- «token» ظرفیتِ دسترسیِ غیرقابل‌حدس است. با is_active می‌شود لینک را بدونِ حذف باطل کرد.
+CREATE TABLE shared_catalog (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    agent_account_id UUID NOT NULL,
+    title            TEXT NOT NULL,
+    token            TEXT NOT NULL UNIQUE,   -- در URL؛ غیرقابل‌حدس (crypto random سمتِ اپ)
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, id),                  -- هدفِ composite FK
+    FOREIGN KEY (tenant_id, agent_account_id)
+        REFERENCES agent_account (tenant_id, id) ON DELETE CASCADE
+);
+CREATE INDEX idx_shared_catalog_agent ON shared_catalog (tenant_id, agent_account_id, created_at DESC);
+
+CREATE TABLE shared_catalog_item (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id   UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    catalog_id  UUID NOT NULL,
+    variant_id  UUID NOT NULL,
+    sort_order  INT NOT NULL DEFAULT 0,
+    UNIQUE (catalog_id, variant_id),         -- یک محصول دوبار در یک کاتالوگ نیاید
+    FOREIGN KEY (tenant_id, catalog_id) REFERENCES shared_catalog   (tenant_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id, variant_id) REFERENCES product_variant  (tenant_id, id) ON DELETE CASCADE
+);
+
+-- ---------------------------------------------------------------------------
 -- ۵.۱۰ ایندکس‌ها
 -- ---------------------------------------------------------------------------
 

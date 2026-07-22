@@ -19,11 +19,14 @@ tenant ──< agent_account ──< agent_account_user (FK به membership: ک�
    ├─ customer ─→ sales_dispatch.customer_id  (نام روی حواله snapshot می‌ماند)      (v2)
    ├─ waitlist_entry (صف انتظار) ; product_substitute (جایگزین، جهت‌دار)            (v2)
    ├─ incoming_stock (موجودی در راه — **هرگز وارد available نمی‌شود**)              (v2)
+   ├─ shared_catalog ──< shared_catalog_item (کاتالوگِ عمومیِ نماینده؛ token در URL) (v2)
    ├─ import_template ; import_batch (scope: tenant/warehouse/brand) ──< import_row
    └─ notification_outbox ; stock_alert ; audit_log (old/new JSONB)
 
 app_user.session_epoch  ──  نسخه‌ی نشست؛ هر تغییر/بازیابیِ رمز یکی جلو می‌بردش
 password_reset          ──  کدِ یک‌بارمصرفِ بازیابی (hash می‌شود، نه خودِ کد)
+shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL شاملِ slug است تا tenant پیدا و RLS ست شود
+                            (صفحه‌ی مشتری نشست ندارد). is_active=false = لینکِ باطل، بدونِ حذف.
 ```
 
 ## قواعدی که در DDL کد شده‌اند (نه فقط قرارداد)
