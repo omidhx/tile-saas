@@ -45,6 +45,7 @@
 ## ۲. اجرای اپ
 
 - [ ] `npm ci && npm run build && npm run start` پشت PM2/systemd.
+- [ ] ⚠️ **عکس‌های کاتالوگ در `web/public/uploads/` روی دیسک ذخیره می‌شوند** (کاتالوگ تصویری). این پوشه باید روی یک **volume جدا از کدِ دیپلوی‌شونده** باشد (symlink یا bind-mount)، وگرنه هر `npm run build`/دیپلوی عکس‌ها را پاک می‌کند. در git هم ignore شده. اگر عکس‌ها فقط با URLِ خارجی می‌آیند (ستونِ عکسِ اکسل)، این مورد بی‌اثر است.
 - [ ] ⚠️ **rate limiter در حافظه‌ی همان پروسه است.** با PM2 cluster یا چند instance، سقف در تعداد پروسه‌ها ضرب می‌شود. یا **تک-instance** اجرا کن، یا limiter را به Postgres/Redis منتقل کن (`src/auth/rateLimit.ts`، upgrade path داخلش نوشته شده).
 - [ ] دو cron:
   ```

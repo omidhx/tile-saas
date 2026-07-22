@@ -121,6 +121,8 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/prices` | staff | قیمت‌گذاری (تغییر در `audit_log` ثبت می‌شود) |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
 | `/api/substitutes` | staff | تعریفِ کالای جایگزین |
+| `/api/products` | staff | فهرست + تنظیمِ عکسِ محصول (کاتالوگ تصویری) |
+| `/api/upload` | staff | آپلودِ عکس (multipart) → URL برمی‌گرداند |
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
 | `/api/reports` | staff | گزارش‌های مدیریتی |

@@ -36,6 +36,7 @@ const GROUPS: Group[] = [
       { href: "/staff/prices", label: "قیمت‌گذاری" },
       { href: "/staff/auto-approve", label: "تأیید خودکار" },
       { href: "/staff/substitutes", label: "کالای جایگزین" },
+      { href: "/staff/catalog", label: "کاتالوگ تصویری" },
     ],
   },
   {

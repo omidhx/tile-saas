@@ -11,7 +11,7 @@ const n = (v: number) => v.toLocaleString("fa-IR");
 
 type Ctx = { tenantId: string; tenantName: string };
 type Wh = { id: string; name: string; code: string };
-type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number };
+type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number; imageUrl: string | null };
 type Result = { applied: number; zeroed: number; deduped: boolean; errors: { row: number | null; reason: string; detail?: string }[] };
 
 // انتخابِ ستون بر اساس نام هدر (fa/en، case-insensitive)
@@ -72,6 +72,7 @@ export default function ImportPage() {
         shadeCode: s(pick(o, ["shade", "شید"])),
         caliberCode: s(pick(o, ["caliber", "کالیبر"])),
         onHand: Math.trunc(Number(pick(o, ["on_hand", "onhand", "موجودی", "قابل‌سفارش", "count", "qty"]) ?? 0)),
+        imageUrl: s(pick(o, ["image", "عکس", "image_url", "تصویر", "img"])),
       }));
       const parsed = all.filter((r) => r.sku && r.warehouseCode);
       // ردیف‌های بدونِ sku/انبار بی‌سروصدا کنار گذاشته می‌شدند. در یک snapshot این

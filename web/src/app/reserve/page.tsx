@@ -15,6 +15,7 @@ type Lot = {
   available: number; boxes_per_pallet: number | null; sqcm_per_box: number | null;
   unitPrice: number | null;
   warehouse_id: string; warehouse_name: string;
+  image_url: string | null; color: string | null; glaze: string | null; punch: string | null;
 };
 
 type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
@@ -45,6 +46,7 @@ export default function ReservePage() {
   const [queuePending, setQueuePending] = useState<string | null>(null);
   const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
   const [query, setQuery] = useState("");
+  const [preview, setPreview] = useState<Lot | null>(null); // مودالِ عکسِ بزرگ
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
   const [loadErr, setLoadErr] = useState("");
@@ -119,6 +121,14 @@ export default function ReservePage() {
 
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
   useEffect(() => { if (ctx) { setCart({}); loadLots(ctx); } }, [ctx, loadLots]);
+
+  // Esc مودال را می‌بندد — دسترسی‌پذیریِ پایه برای هر دیالوگ
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreview(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preview]);
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));
@@ -272,27 +282,35 @@ export default function ReservePage() {
           : null;
         return (
           <div className="card" key={l.lot_id}>
-            <div className="row">
-              <strong>{l.name}</strong>
-              {/* انبار به‌صورت badge، نه یک خطِ متنیِ دیگر: در فهرستِ بلند باید
-                  با یک نگاه دیده شود، چون تعیین می‌کند بار از کجا برداشته می‌شود. */}
-              <span className="badge"><Icon name="warehouse" size={13} />{l.warehouse_name}</span>
-            </div>
-            <div className="subtle">{l.code}{l.grade ? ` — درجه ${l.grade}` : ""}
-              {l.shade_code ? ` · شید ${l.shade_code}` : ""}{l.caliber_code ? ` · کالیبر ${l.caliber_code}` : ""}
-            </div>
-
-            <div className="row row--start" style={{ marginTop: "var(--sp-2)", gap: "var(--sp-4)" }}>
-              <span>
-                <span className="metric">{money(l.available)}</span> <span className="muted">کارتن قابل‌سفارش</span>
-                {pallets ? <span className="subtle"> ({pallets})</span> : null}
-                {meters ? <span className="subtle"> · {meters} متر</span> : null}
-              </span>
-            </div>
-            <div className="muted">
-              {l.unitPrice !== null
-                ? <>قیمت من: <span className="metric">{money(l.unitPrice)}</span> ریال / کارتن</>
-                : "قیمتی برای شما ثبت نشده"}
+            {/* عکس thumbnail کنارِ اطلاعات، نه تمام‌عرض: کارتِ سفارش است نه ویترینِ
+                محض، و ورودیِ تعداد نباید زیرِ عکسِ بزرگ گم شود. کلیک → مودالِ بزرگ. */}
+            <div className="lot-head">
+              {l.image_url && (
+                <button className="thumb" onClick={() => setPreview(l)} aria-label={`تصویر ${l.name}`}>
+                  <img src={l.image_url} alt={l.name} loading="lazy" />
+                </button>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row">
+                  <strong>{l.name}</strong>
+                  <span className="badge"><Icon name="warehouse" size={13} />{l.warehouse_name}</span>
+                </div>
+                <div className="subtle">{l.code}{l.grade ? ` — درجه ${l.grade}` : ""}
+                  {l.shade_code ? ` · شید ${l.shade_code}` : ""}{l.caliber_code ? ` · کالیبر ${l.caliber_code}` : ""}
+                </div>
+                <div className="row row--start" style={{ marginTop: "var(--sp-2)", gap: "var(--sp-4)" }}>
+                  <span>
+                    <span className="metric">{money(l.available)}</span> <span className="muted">کارتن قابل‌سفارش</span>
+                    {pallets ? <span className="subtle"> ({pallets})</span> : null}
+                    {meters ? <span className="subtle"> · {meters} متر</span> : null}
+                  </span>
+                </div>
+                <div className="muted">
+                  {l.unitPrice !== null
+                    ? <>قیمت من: <span className="metric">{money(l.unitPrice)}</span> ریال / کارتن</>
+                    : "قیمتی برای شما ثبت نشده"}
+                </div>
+              </div>
             </div>
 
             <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
@@ -469,6 +487,41 @@ export default function ReservePage() {
             );
           })}
         </>
+      )}
+
+      {/* مودالِ جزئیاتِ محصول: عکسِ بزرگ + ویژگی‌ها. کلیک روی پس‌زمینه یا Esc می‌بندد. */}
+      {preview && (
+        <div className="modal-backdrop" onClick={() => setPreview(null)} role="dialog" aria-modal="true"
+             aria-label={`جزئیات ${preview.name}`}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="row">
+              <strong>{preview.name}</strong>
+              <button className="ghost" onClick={() => setPreview(null)} aria-label="بستن">✕</button>
+            </div>
+            {preview.image_url && (
+              <img src={preview.image_url} alt={preview.name} className="modal-img" />
+            )}
+            <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
+              <div className="row"><span className="muted">کد</span><span className="num">{preview.code}</span></div>
+              {preview.color && <div className="row"><span className="muted">رنگ</span><span>{preview.color}</span></div>}
+              {preview.glaze && <div className="row"><span className="muted">لعاب</span><span>{preview.glaze}</span></div>}
+              {preview.punch && <div className="row"><span className="muted">پانچ</span><span>{preview.punch}</span></div>}
+              {preview.grade && <div className="row"><span className="muted">درجه</span><span>{preview.grade}</span></div>}
+              {preview.shade_code && <div className="row"><span className="muted">شید</span><span>{preview.shade_code}</span></div>}
+              {preview.caliber_code && <div className="row"><span className="muted">کالیبر</span><span>{preview.caliber_code}</span></div>}
+              <div className="row">
+                <span className="muted">قابل‌سفارش</span>
+                <span className="metric">{money(preview.available)} کارتن</span>
+              </div>
+              {preview.unitPrice !== null && (
+                <div className="row">
+                  <span className="muted">قیمت من</span>
+                  <span className="metric">{money(preview.unitPrice)} ریال / کارتن</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

@@ -6,6 +6,9 @@ export type SnapshotRow = {
   sku: string; warehouseCode: string;
   batchNumber?: string | null; shadeCode?: string | null; caliberCode?: string | null;
   onHand: number;
+  /** v2 کاتالوگ تصویری: URLِ عکسِ محصول، اختیاری. اگر بود، عکسِ **محصول** (نه lot)
+   *  آپدیت می‌شود؛ اگر ستونش در فایل نبود، عکسِ قبلی دست‌نخورده می‌ماند. */
+  imageUrl?: string | null;
 };
 export type ImportScope =
   | { type: "tenant" }
@@ -77,8 +80,8 @@ export async function applySnapshot(params: {
       };
       if (!Number.isInteger(row.onHand) || row.onHand < 0) { err("bad_on_hand", String(row.onHand)); continue; }
 
-      const [variant] = await tx<{ id: string; brand_id: string | null }[]>`
-        SELECT pv.id, p.brand_id FROM product_variant pv JOIN product p ON p.id = pv.product_id
+      const [variant] = await tx<{ id: string; product_id: string; brand_id: string | null }[]>`
+        SELECT pv.id, pv.product_id, p.brand_id FROM product_variant pv JOIN product p ON p.id = pv.product_id
         WHERE pv.tenant_id = ${tenantId} AND pv.sku = ${row.sku}`;
       const [wh] = await tx<{ id: string }[]>`
         SELECT id FROM warehouse WHERE tenant_id = ${tenantId} AND code = ${row.warehouseCode}`;
@@ -87,6 +90,11 @@ export async function applySnapshot(params: {
       // در scope هست؟
       if (scope.type === "warehouse" && wh.id !== scope.warehouseId) { err("out_of_scope", row.warehouseCode); continue; }
       if (scope.type === "brand" && variant.brand_id !== scope.brandId) { err("out_of_scope", row.sku); continue; }
+
+      // v2 کاتالوگ تصویری: اگر ستونِ عکس در این ردیف بود، عکسِ محصول را آپدیت کن.
+      // فقط وقتی مقدار دارد — ردیفِ بدونِ ستونِ عکس نباید عکسِ قبلی را پاک کند.
+      if (row.imageUrl && row.imageUrl.trim())
+        await tx`UPDATE product SET image_url = ${row.imageUrl.trim()} WHERE id = ${variant.product_id} AND tenant_id = ${tenantId}`;
 
       // تطبیقِ Lot با کلیدِ طبیعی (NULL-safe). نبود → ساختِ Lot جدید + balance صفر.
       let [lot] = await tx<{ id: string }[]>`

@@ -361,6 +361,48 @@ a { color: var(--ring); }
 /* پوسته‌ی صفحاتِ پهن: پنل پشتیبان از ۹۰۰px بازتر است چون دوستونه است */
 main.wide { max-width: 1200px; }
 
+/* --- کاتالوگ تصویری (v2) -------------------------------------------------- */
+/* سرِ کارت: عکسِ thumbnail کنارِ اطلاعات. روی موبایل عکس بالا می‌رود. */
+.lot-head { display: flex; gap: var(--sp-3); align-items: flex-start; }
+.thumb {
+  flex: none; width: 88px; height: 88px; padding: 0; border-radius: var(--radius-sm);
+  overflow: hidden; border: 1px solid var(--line); background: var(--surface-sunken);
+  cursor: zoom-in; min-height: 0;  /* لغو min-height دکمه‌ها */
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb--empty { display: flex; align-items: center; justify-content: center; color: var(--text-subtle); cursor: default; }
+
+/* دکمه‌ی آپلودِ فایل که مثل بقیه‌ی دکمه‌ها به‌نظر می‌رسد (input file بی‌ریخت است) */
+.btn-file {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: .55rem 1rem; border-radius: var(--radius-sm);
+  background: var(--primary); color: var(--on-primary);
+  font-weight: 500; cursor: pointer; font-size: 1rem;
+}
+.btn-file:hover { background: var(--primary-hover); }
+@media (max-width: 480px) {
+  .lot-head { flex-direction: column; }
+  .thumb { width: 100%; height: 180px; }
+}
+
+/* مودالِ جزئیات */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(15, 23, 42, .55);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-4);
+}
+.modal {
+  background: var(--surface); border-radius: var(--radius);
+  padding: var(--sp-4); box-shadow: var(--shadow-md);
+  width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto;
+}
+.modal-img {
+  width: 100%; border-radius: var(--radius-sm); margin-top: var(--sp-3);
+  border: 1px solid var(--line);
+}
+.modal .row { padding: var(--sp-1) 0; }
+
 /* --- پوسته‌ی ورود --------------------------------------------------------- */
 /* تنها صفحه‌ای که محتوایش کم است، پس وسطِ صفحه می‌نشیند نه چسبیده به بالا. */
 .auth-shell {

@@ -114,3 +114,37 @@ test("idempotency: کلید تکراری → deduped، بدون اعمال دو�
   assert.equal(res.applied, 0);
   assert.equal(await onHand(LA1), 80, "نباید دوباره اعمال شه (هنوز ۸۰)");
 });
+
+// --- v2 کاتالوگ تصویری: عکس در import ---
+
+const productImage = async () =>
+  (await sql<{ image_url: string | null }[]>`SELECT image_url FROM product WHERE code = 'P1'`)[0].image_url;
+
+test("ستونِ عکس در import، عکسِ محصول را آپدیت می‌کند", async () => {
+  await applySnapshot({
+    tenantId: T, uploaderUserId: U, idempotencyKey: "img-1", scope: { type: "warehouse", warehouseId: WB },
+    rows: [{ sku: "S1", warehouseCode: "B", batchNumber: "B1", onHand: 10, imageUrl: "https://cdn/tesla.jpg" }],
+  });
+  assert.equal(await productImage(), "https://cdn/tesla.jpg");
+});
+
+test("🔴 ردیفِ بدونِ ستونِ عکس، عکسِ قبلی را پاک نمی‌کند", async () => {
+  // اول عکس بگذار
+  await sql`UPDATE product SET image_url = 'https://cdn/keep.jpg' WHERE code = 'P1'`;
+  // import بدونِ imageUrl (مثل فایلی که ستونِ عکس ندارد)
+  await applySnapshot({
+    tenantId: T, uploaderUserId: U, idempotencyKey: "img-2", scope: { type: "warehouse", warehouseId: WB },
+    rows: [{ sku: "S1", warehouseCode: "B", batchNumber: "B1", onHand: 10 }],
+  });
+  assert.equal(await productImage(), "https://cdn/keep.jpg",
+    "سکوت در فایل نباید عکس را پاک کند — وگرنه هر import بدونِ ستونِ عکس، همه را خالی می‌کرد");
+});
+
+test("رشته‌ی خالی در ستونِ عکس هم پاک نمی‌کند (فقط مقدارِ واقعی آپدیت می‌کند)", async () => {
+  await sql`UPDATE product SET image_url = 'https://cdn/keep2.jpg' WHERE code = 'P1'`;
+  await applySnapshot({
+    tenantId: T, uploaderUserId: U, idempotencyKey: "img-3", scope: { type: "warehouse", warehouseId: WB },
+    rows: [{ sku: "S1", warehouseCode: "B", batchNumber: "B1", onHand: 10, imageUrl: "  " }],
+  });
+  assert.equal(await productImage(), "https://cdn/keep2.jpg");
+});
