@@ -10,26 +10,43 @@ import { matches } from "@/lib/search";
 type Product = {
   id: string; name: string; code: string;
   imageUrl: string | null; color: string | null; glaze: string | null;
-  punch: string | null; body: string | null; sku: string | null; hasStock: boolean;
+  punch: string | null; body: string | null; sku: string | null;
+  variantId: string | null; hasStock: boolean; basePrice: number | null;
 };
+type Sub = {
+  id: string; variantId: string; substituteVariantId: string;
+  substituteName: string; substituteCode: string; note: string | null;
+};
+
+const money = (v: number) => v.toLocaleString("fa-IR");
 
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
   const [products, setProducts] = useState<Product[]>([]);
+  const [subs, setSubs] = useState<Sub[]>([]);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [msg, setMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
+  // کدام کارت بازِ «مدیریت جایگزین» است، و انتخابِ درحال‌افزودن
+  const [subFor, setSubFor] = useState<string | null>(null);
+  const [subPick, setSubPick] = useState("");
+  const [subNote, setSubNote] = useState("");
 
   // فرمِ محصولِ جدید — عکس همین‌جا انتخاب می‌شود، نه در بخشِ جدا
   const [form, setForm] = useState({ name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", imageUrl: "" });
   const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async (tenantId: string) => {
-    const res = await getJson<{ products: Product[] }>(`/api/products?tenantId=${tenantId}`);
-    if (res.ok) { setProducts(res.data.products); setLoadErr(""); }
-    else setLoadErr(loadError(res.status));
+    const [p, s] = await Promise.all([
+      getJson<{ products: Product[] }>(`/api/products?tenantId=${tenantId}`),
+      getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`),
+    ]);
+    if (p.ok) setProducts(p.data.products);
+    if (s.ok) setSubs(s.data.items);
+    const failed = [p, s].find((x) => !x.ok);
+    setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
 
@@ -70,6 +87,25 @@ export default function CatalogPage() {
     setPending(null);
   }
 
+  async function addSub(variantId: string) {
+    if (!ctx || !subPick) return;
+    setPending("sub" + variantId); setMsg("");
+    const res = await postJson("/api/substitutes",
+      { tenantId: ctx.tenantId, variantId, substituteVariantId: subPick, note: subNote });
+    if (!res.ok) setMsg(actionError(res.status));
+    else { setSubPick(""); setSubNote(""); await load(ctx.tenantId); }
+    setPending(null);
+  }
+
+  async function removeSub(id: string) {
+    if (!ctx) return;
+    setPending("subdel" + id); setMsg("");
+    const res = await postJson("/api/substitutes", { tenantId: ctx.tenantId, id }, "DELETE");
+    if (!res.ok) setMsg(actionError(res.status));
+    else await load(ctx.tenantId);
+    setPending(null);
+  }
+
   if (state === "none")
     return (
       <main>
@@ -99,7 +135,8 @@ export default function CatalogPage() {
         <span>
           محصول را همین‌جا بسازید (با عکس)، یا دسته‌جمعی از فایلِ اکسلِ ورودِ موجودی —
           اگر ستونِ <strong>نام</strong> در فایل باشد، محصولِ ناموجود خودکار ساخته می‌شود.
-          عکسِ هر محصول به نماینده در صفحه‌ی سفارش نشان داده می‌شود.
+          عکس و <strong>جایگزین</strong>ِ هر محصول همین‌جا مدیریت می‌شود؛ قیمت فقط
+          نمایش داده می‌شود چون به <strong>لیستِ قیمت</strong> وابسته است (ویرایش در صفحه‌ی قیمت‌گذاری).
           {" "}<span className="num">{withImage.toLocaleString("fa-IR")}</span> از{" "}
           <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
         </span>
@@ -190,6 +227,16 @@ export default function CatalogPage() {
                 {[p.color, p.glaze, p.punch, p.body].filter(Boolean).join(" · ") || "بدون ویژگی"}
                 {p.sku ? ` · sku: ${p.sku}` : ""}
               </div>
+
+              {/* قیمت فقط نمایشی — ویرایش در صفحه‌ی قیمت‌گذاری، چون per-(محصول×لیست) است */}
+              <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
+                {p.basePrice !== null
+                  ? <>قیمتِ پایه: <span className="metric">{money(p.basePrice)}</span> ریال / کارتن</>
+                  : <span className="subtle">قیمتی ثبت نشده</span>}
+                {" · "}
+                <Link href="/staff/prices" className="subtle">ویرایش قیمت ←</Link>
+              </div>
+
               <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
                 <label className="btn-file">
                   {p.imageUrl ? "تغییر عکس" : "افزودن عکس"}
@@ -204,8 +251,43 @@ export default function CatalogPage() {
                       if (url) await setImage(p.id, url);
                     }} />
                 </label>
+                {p.variantId && (
+                  <button className="ghost"
+                    onClick={() => { setSubFor(subFor === p.variantId ? null : p.variantId); setSubPick(""); setSubNote(""); }}>
+                    جایگزین‌ها ({money(subs.filter((s) => s.variantId === p.variantId).length)})
+                  </button>
+                )}
                 {pending === p.id && <span className="spinner" aria-hidden="true" />}
               </div>
+
+              {/* مدیریتِ جایگزینِ همین محصول — همان‌جا، نه صفحه‌ی جدا (جایگزین per-product است) */}
+              {p.variantId && subFor === p.variantId && (
+                <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+                  <div className="subtle" style={{ marginBottom: "var(--sp-2)" }}>
+                    اگر <strong>{p.name}</strong> نبود، این‌ها پیشنهاد می‌شوند (فقط موجودها به نماینده می‌روند):
+                  </div>
+                  {subs.filter((s) => s.variantId === p.variantId).map((s) => (
+                    <div className="row" key={s.id} style={{ marginBottom: "var(--sp-1)" }}>
+                      <span>{s.substituteName} <span className="subtle num">{s.substituteCode}</span>
+                        {s.note ? <span className="subtle"> — {s.note}</span> : null}</span>
+                      <button className="danger" disabled={pending === "subdel" + s.id}
+                        onClick={() => removeSub(s.id)}>حذف</button>
+                    </div>
+                  ))}
+                  <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-2)" }}>
+                    <select value={subPick} onChange={(e) => setSubPick(e.target.value)} aria-label="کالای جایگزین" style={{ maxWidth: 240 }}>
+                      <option value="">انتخاب جایگزین…</option>
+                      {products.filter((o) => o.variantId && o.variantId !== p.variantId
+                        && !subs.some((s) => s.variantId === p.variantId && s.substituteVariantId === o.variantId))
+                        .map((o) => <option key={o.variantId} value={o.variantId!}>{o.name} ({o.code})</option>)}
+                    </select>
+                    <input value={subNote} onChange={(e) => setSubNote(e.target.value)}
+                      placeholder="توضیح (اختیاری)" style={{ maxWidth: 200 }} aria-label="توضیح جایگزین" />
+                    <button className="primary" disabled={pending === "sub" + p.variantId || !subPick}
+                      onClick={() => addSub(p.variantId!)}>افزودن جایگزین</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

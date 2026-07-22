@@ -70,3 +70,19 @@ test("تنظیم و حذفِ عکس", async () => {
   await setProductImage({ tenantId: T, productId: r.id, imageUrl: null });
   assert.equal((await listProducts(T))[0].imageUrl, null);
 });
+
+test("basePrice از اولین لیستِ قیمت می‌آید (نمایشی، نه ویرایش)", async () => {
+  const r = await createProduct(T, { name: "قیمت‌دار", code: "PR1", sku: "PR1-A" });
+  assert.ok(r.ok);
+  // بدونِ لیست قیمت، basePrice باید null باشد
+  assert.equal((await listProducts(T)).find((p) => p.code === "PR1")!.basePrice, null);
+
+  // یک لیست + قیمت
+  const [pl] = await sql<{ id: string }[]>`INSERT INTO price_list (tenant_id,name) VALUES (${T},'پایه') RETURNING id`;
+  const [v] = await sql<{ id: string }[]>`SELECT id FROM product_variant WHERE sku = 'PR1-A'`;
+  await sql`INSERT INTO price_list_item (tenant_id,price_list_id,variant_id,price) VALUES (${T},${pl.id},${v.id},7500000)`;
+
+  const row = (await listProducts(T)).find((p) => p.code === "PR1")!;
+  assert.equal(row.basePrice, 7_500_000, "عدد، نه رشته‌ی bigint");
+  assert.equal(typeof row.basePrice, "number");
+});

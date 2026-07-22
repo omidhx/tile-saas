@@ -15,20 +15,36 @@ export type ProductRow = {
   punch: string | null; body: string | null;
   /** sku اولین variant — برای ورودِ موجودیِ اکسل لازم است (تطبیق با همین). */
   sku: string | null;
+  /** variantِ اول — برای مدیریتِ جایگزینِ همین محصول لازم است. */
+  variantId: string | null;
   /** آیا اصلاً موجودی/lot دارد؟ محصولِ تازه‌ساخته هنوز موجودی ندارد. */
   hasStock: boolean;
+  /** قیمت در لیستِ پایه (اولین لیست) — فقط **نمایشی**؛ ویرایش در صفحه‌ی قیمت‌گذاری.
+   *  چند-لیست بودن یعنی «قیمتِ محصول» یکتا نیست، پس اینجا فقط لیستِ پایه را نشان می‌دهیم. */
+  basePrice: number | null;
 };
 
 export function listProducts(tenantId: string) {
-  return withTenant(tenantId, (tx) => tx<ProductRow[]>`
-    SELECT p.id, p.name, p.code, p.image_url AS "imageUrl",
-           p.color, p.glaze, p.punch, p.body,
-           (SELECT pv.sku FROM product_variant pv
-            WHERE pv.product_id = p.id ORDER BY pv.sku LIMIT 1) AS sku,
-           EXISTS (SELECT 1 FROM product_variant pv
-                   JOIN inventory_lot l ON l.variant_id = pv.id
-                   WHERE pv.product_id = p.id) AS "hasStock"
-    FROM product p WHERE p.tenant_id = ${tenantId} ORDER BY p.name`);
+  return withTenant(tenantId, async (tx) => {
+    const rows = await tx<(Omit<ProductRow, "basePrice"> & { basePrice: string | null })[]>`
+      SELECT p.id, p.name, p.code, p.image_url AS "imageUrl",
+             p.color, p.glaze, p.punch, p.body,
+             v.id AS "variantId", v.sku,
+             EXISTS (SELECT 1 FROM inventory_lot l WHERE l.variant_id = v.id) AS "hasStock",
+             -- قیمت از **اولین** لیستِ قیمتِ tenant (لیستِ پایه). فقط نمایشی.
+             (SELECT pli.price FROM price_list_item pli
+              JOIN price_list pl ON pl.id = pli.price_list_id
+              WHERE pli.variant_id = v.id AND pl.tenant_id = ${tenantId}
+              ORDER BY pl.name LIMIT 1) AS "basePrice"
+      FROM product p
+      -- variantِ اول (بیشترِ محصولات یک variant دارند)
+      LEFT JOIN LATERAL (
+        SELECT pv.id, pv.sku FROM product_variant pv
+        WHERE pv.product_id = p.id ORDER BY pv.sku LIMIT 1
+      ) v ON TRUE
+      WHERE p.tenant_id = ${tenantId} ORDER BY p.name`;
+    return rows.map((r) => ({ ...r, basePrice: r.basePrice == null ? null : Number(r.basePrice) }));
+  });
 }
 
 type Attrs = {
