@@ -29,6 +29,8 @@ export async function GET(req: Request) {
       warehouse_id: string; warehouse_name: string;
       image_url: string | null; color: string | null; glaze: string | null;
       punch: string | null; body: string | null;
+      size: string | null; thickness: string | null; usage_area: string | null; description: string | null;
+      images: { id: string; url: string }[];
     }[]>`
       SELECT a.lot_id, l.variant_id, p.name, p.code, pv.grade, l.shade_code, l.caliber_code,
              a.available_qty_boxes AS available,
@@ -38,7 +40,12 @@ export async function GET(req: Request) {
              -- bin_location عمداً نمی‌آید — برای نماینده نویز است (spec ۱۱.۴).
              l.warehouse_id, w.name AS warehouse_name,
              -- v2 کاتالوگ تصویری: عکس + ویژگی‌های محصول برای کارت و مودال
-             p.image_url, p.color, p.glaze, p.punch, p.body
+             p.image_url, p.color, p.glaze, p.punch, p.body,
+             p.size, p.thickness, p.usage_area, p.description,
+             COALESCE((
+               SELECT json_agg(json_build_object('id', pi.id, 'url', pi.url) ORDER BY pi.sort_order, pi.id)
+               FROM product_image pi WHERE pi.product_id = p.id
+             ), '[]'::json) AS images
       FROM v_lot_availability a
       JOIN inventory_lot l    ON l.id = a.lot_id
       JOIN warehouse w        ON w.id = l.warehouse_id

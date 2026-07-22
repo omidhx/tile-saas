@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { addProductImageTx } from "./products";
 import { enqueueRestockNotifications } from "./alerts";
 import { advanceWaitlist } from "./waitlist";
 
@@ -95,10 +96,10 @@ export async function applySnapshot(params: {
       if (!variant && wh && row.name && row.name.trim()) {
         // کدِ محصول از sku (فایلِ موجودی ستونِ کدِ جدا ندارد؛ sku شناسه‌ی یکتاست).
         const [p] = await tx<{ id: string }[]>`
-          INSERT INTO product (tenant_id, code, name, color, glaze, punch, body, image_url)
+          INSERT INTO product (tenant_id, code, name, color, glaze, punch, body)
           VALUES (${tenantId}, ${row.sku.trim()}, ${row.name.trim()},
                   ${row.color?.trim() || null}, ${row.glaze?.trim() || null},
-                  ${row.punch?.trim() || null}, ${row.body?.trim() || null}, ${row.imageUrl?.trim() || null})
+                  ${row.punch?.trim() || null}, ${row.body?.trim() || null})
           ON CONFLICT (tenant_id, code) DO UPDATE SET name = product.name
           RETURNING id`;
         [variant] = await tx<{ id: string; product_id: string; brand_id: string | null }[]>`
@@ -113,10 +114,10 @@ export async function applySnapshot(params: {
       if (scope.type === "warehouse" && wh.id !== scope.warehouseId) { err("out_of_scope", row.warehouseCode); continue; }
       if (scope.type === "brand" && variant.brand_id !== scope.brandId) { err("out_of_scope", row.sku); continue; }
 
-      // v2 کاتالوگ تصویری: اگر ستونِ عکس در این ردیف بود، عکسِ محصول را آپدیت کن.
-      // فقط وقتی مقدار دارد — ردیفِ بدونِ ستونِ عکس نباید عکسِ قبلی را پاک کند.
+      // v2 کاتالوگ تصویری: اگر ستونِ عکس بود، به گالریِ محصول اضافه کن (idempotent).
+      // فقط وقتی مقدار دارد — ردیفِ بدونِ ستونِ عکس نباید چیزی را پاک کند.
       if (row.imageUrl && row.imageUrl.trim())
-        await tx`UPDATE product SET image_url = ${row.imageUrl.trim()} WHERE id = ${variant.product_id} AND tenant_id = ${tenantId}`;
+        await addProductImageTx(tx, tenantId, variant.product_id, row.imageUrl.trim());
 
       // تطبیقِ Lot با کلیدِ طبیعی (NULL-safe). نبود → ساختِ Lot جدید + balance صفر.
       let [lot] = await tx<{ id: string }[]>`

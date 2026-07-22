@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
-import { createProduct, listProducts, updateProduct, setProductImage } from "./products";
+import { createProduct, listProducts, updateProduct, addProductImage, removeProductImage, setPrimaryImage } from "./products";
 
 /**
  * مدیریت محصول. قاعده‌ای که مهم است: ساختِ محصول باید هم‌زمان یک variant بسازد،
@@ -62,13 +62,55 @@ test("ویرایشِ ویژگی‌ها، sku و کد را دست نمی‌زند
   assert.equal(p.code, "E1", "کد نباید عوض شود — کلیدِ تطبیق است");
 });
 
-test("تنظیم و حذفِ عکس", async () => {
-  const r = await createProduct(T, { name: "P", code: "P1", sku: "P1-A" });
+test("گالری: افزودن چند عکس، عکسِ اصلی = تامنیل (image_url)، تعیینِ اصلی و حذف", async () => {
+  const r = await createProduct(T, { name: "P", code: "P1", sku: "P1-A", imageUrl: "https://cdn/a.jpg" });
   assert.ok(r.ok);
-  await setProductImage({ tenantId: T, productId: r.id, imageUrl: "https://cdn/x.jpg" });
-  assert.equal((await listProducts(T))[0].imageUrl, "https://cdn/x.jpg");
-  await setProductImage({ tenantId: T, productId: r.id, imageUrl: null });
-  assert.equal((await listProducts(T))[0].imageUrl, null);
+  // عکسِ اولِ سازنده → گالری + کَشِ اصلی
+  let p = (await listProducts(T))[0];
+  assert.equal(p.imageUrl, "https://cdn/a.jpg", "image_url = عکسِ اصلی");
+  assert.equal(p.images.length, 1);
+
+  await addProductImage({ tenantId: T, productId: r.id, url: "https://cdn/b.jpg" });
+  p = (await listProducts(T))[0];
+  assert.equal(p.images.length, 2);
+  assert.equal(p.imageUrl, "https://cdn/a.jpg", "اصلی هنوز a است");
+
+  // b را اصلی کن → تامنیل عوض می‌شود
+  const b = p.images.find((i) => i.url === "https://cdn/b.jpg")!;
+  await setPrimaryImage({ tenantId: T, imageId: b.id });
+  p = (await listProducts(T))[0];
+  assert.equal(p.imageUrl, "https://cdn/b.jpg", "اصلی حالا b");
+  assert.equal(p.images[0].url, "https://cdn/b.jpg", "اولِ گالری = اصلی");
+
+  // حذفِ اصلی → عکسِ بعدی خودکار اصلی
+  await removeProductImage({ tenantId: T, imageId: b.id });
+  p = (await listProducts(T))[0];
+  assert.equal(p.images.length, 1);
+  assert.equal(p.imageUrl, "https://cdn/a.jpg", "بعدِ حذفِ اصلی، a اصلی شد");
+
+  // افزودنِ تکراری بی‌اثر است (idempotent)
+  await addProductImage({ tenantId: T, productId: r.id, url: "https://cdn/a.jpg" });
+  assert.equal((await listProducts(T))[0].images.length, 1);
+
+  // حذفِ آخری → بدونِ عکس
+  await removeProductImage({ tenantId: T, imageId: (await listProducts(T))[0].images[0].id });
+  p = (await listProducts(T))[0];
+  assert.equal(p.images.length, 0);
+  assert.equal(p.imageUrl, null, "گالریِ خالی → تامنیلِ null");
+});
+
+test("ویرایشِ فیلدهای اطلاعاتِ بیشتر (ابعاد/ضخامت/کاربری/توضیحات)", async () => {
+  const r = await createProduct(T, { name: "P", code: "P2", sku: "P2-A", size: "۶۰×۶۰", description: "کاشیِ کف" });
+  assert.ok(r.ok);
+  let p = (await listProducts(T)).find((x) => x.code === "P2")!;
+  assert.equal(p.size, "۶۰×۶۰");
+  assert.equal(p.description, "کاشیِ کف");
+  await updateProduct({ tenantId: T, productId: r.id, thickness: "۹ میلی‌متر", usageArea: "کف/دیوار", size: "" });
+  p = (await listProducts(T)).find((x) => x.code === "P2")!;
+  assert.equal(p.thickness, "۹ میلی‌متر");
+  assert.equal(p.usageArea, "کف/دیوار");
+  assert.equal(p.size, null, "رشته‌ی خالی → null");
+  assert.equal(p.description, "کاشیِ کف", "توضیحات دست‌نخورده چون undefined بود");
 });
 
 test("basePrice از اولین لیستِ قیمت می‌آید (نمایشی، نه ویرایش)", async () => {

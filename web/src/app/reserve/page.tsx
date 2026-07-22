@@ -17,6 +17,8 @@ type Lot = {
   warehouse_id: string; warehouse_name: string;
   image_url: string | null; color: string | null; glaze: string | null;
   punch: string | null; body: string | null;
+  size: string | null; thickness: string | null; usage_area: string | null; description: string | null;
+  images: { id: string; url: string }[];
 };
 
 type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
@@ -50,7 +52,9 @@ export default function ReservePage() {
   // فیلترِ ساخت‌یافته بر ویژگی‌ها؛ "" = بی‌قید. مقدارها از خودِ اقلامِ موجود ساخته می‌شوند.
   const [attr, setAttr] = useState<{ color: string; glaze: string; punch: string; body: string }>(
     { color: "", glaze: "", punch: "", body: "" });
-  const [preview, setPreview] = useState<Lot | null>(null); // مودالِ عکسِ بزرگ
+  const [preview, setPreview] = useState<Lot | null>(null); // مودالِ جزئیات + گالری
+  const [galleryIdx, setGalleryIdx] = useState(0);
+  const openPreview = (l: Lot) => { setPreview(l); setGalleryIdx(0); };
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
   const [loadErr, setLoadErr] = useState("");
@@ -312,14 +316,17 @@ export default function ReservePage() {
             {/* عکس thumbnail کنارِ اطلاعات، نه تمام‌عرض: کارتِ سفارش است نه ویترینِ
                 محض، و ورودیِ تعداد نباید زیرِ عکسِ بزرگ گم شود. کلیک → مودالِ بزرگ. */}
             <div className="lot-head">
-              {l.image_url && (
-                <button className="thumb" onClick={() => setPreview(l)} aria-label={`تصویر ${l.name}`}>
-                  <img src={l.image_url} alt={l.name} loading="lazy" />
-                </button>
-              )}
+              {/* تامنیل همیشه هست و کلیک‌پذیر — حتی بدونِ عکس — تا پاپ‌آپِ جزئیات باز شود */}
+              <button className={l.image_url ? "thumb" : "thumb thumb--empty"} onClick={() => openPreview(l)}
+                      aria-label={`جزئیاتِ ${l.name}`}>
+                {l.image_url
+                  ? <img src={l.image_url} alt={l.name} loading="lazy" />
+                  : <Icon name="info" size={20} />}
+              </button>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row">
-                  <strong>{l.name}</strong>
+                  {/* نام کلیک‌پذیر است: کلیک روی محصول = پاپ‌آپِ جزئیات */}
+                  <button className="link-plain" onClick={() => openPreview(l)}><strong>{l.name}</strong></button>
                   <span className="badge"><Icon name="warehouse" size={13} />{l.warehouse_name}</span>
                 </div>
                 <div className="subtle">{l.code}{l.grade ? ` — درجه ${l.grade}` : ""}
@@ -516,8 +523,12 @@ export default function ReservePage() {
         </>
       )}
 
-      {/* مودالِ جزئیاتِ محصول: عکسِ بزرگ + ویژگی‌ها. کلیک روی پس‌زمینه یا Esc می‌بندد. */}
-      {preview && (
+      {/* مودالِ جزئیاتِ محصول: گالری + ویژگی‌ها + توضیحات. کلیک روی پس‌زمینه یا Esc می‌بندد. */}
+      {preview && (() => {
+        const gallery = preview.images.length ? preview.images.map((i) => i.url)
+          : preview.image_url ? [preview.image_url] : [];
+        const main = gallery[galleryIdx] ?? gallery[0];
+        return (
         <div className="modal-backdrop" onClick={() => setPreview(null)} role="dialog" aria-modal="true"
              aria-label={`جزئیات ${preview.name}`}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -525,8 +536,16 @@ export default function ReservePage() {
               <strong>{preview.name}</strong>
               <button className="ghost" onClick={() => setPreview(null)} aria-label="بستن">✕</button>
             </div>
-            {preview.image_url && (
-              <img src={preview.image_url} alt={preview.name} className="modal-img" />
+            {main && <img src={main} alt={preview.name} className="modal-img" />}
+            {gallery.length > 1 && (
+              <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
+                {gallery.map((u, i) => (
+                  <button key={i} className={`gallery-item ${i === galleryIdx ? "gallery-item--primary" : ""}`}
+                          onClick={() => setGalleryIdx(i)} aria-label={`عکس ${i + 1}`}>
+                    <img src={u} alt="" loading="lazy" />
+                  </button>
+                ))}
+              </div>
             )}
             <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
               <div className="row"><span className="muted">کد</span><span className="num">{preview.code}</span></div>
@@ -534,6 +553,9 @@ export default function ReservePage() {
               {preview.glaze && <div className="row"><span className="muted">لعاب</span><span>{preview.glaze}</span></div>}
               {preview.punch && <div className="row"><span className="muted">پانچ</span><span>{preview.punch}</span></div>}
               {preview.body && <div className="row"><span className="muted">بدنه</span><span>{preview.body}</span></div>}
+              {preview.size && <div className="row"><span className="muted">ابعاد</span><span>{preview.size}</span></div>}
+              {preview.thickness && <div className="row"><span className="muted">ضخامت</span><span>{preview.thickness}</span></div>}
+              {preview.usage_area && <div className="row"><span className="muted">کاربری</span><span>{preview.usage_area}</span></div>}
               {preview.grade && <div className="row"><span className="muted">درجه</span><span>{preview.grade}</span></div>}
               {preview.shade_code && <div className="row"><span className="muted">شید</span><span>{preview.shade_code}</span></div>}
               {preview.caliber_code && <div className="row"><span className="muted">کالیبر</span><span>{preview.caliber_code}</span></div>}
@@ -548,9 +570,16 @@ export default function ReservePage() {
                 </div>
               )}
             </div>
+            {preview.description && (
+              <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+                <div className="muted" style={{ marginBottom: "var(--sp-1)" }}>توضیحات</div>
+                <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{preview.description}</p>
+              </div>
+            )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </main>
   );
 }

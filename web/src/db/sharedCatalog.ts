@@ -12,7 +12,7 @@ import { sql, withTenant } from "./client";
 export type CatalogItemInput = { variantId: string; customerPrice: number | null };
 
 export type CatalogRow = {
-  id: string; title: string; token: string; isActive: boolean;
+  id: string; title: string; token: string; isActive: boolean; showDetails: boolean;
   items: CatalogItemInput[]; createdAt: string;
 };
 
@@ -20,6 +20,9 @@ export type PublicItem = {
   name: string; code: string; imageUrl: string | null;
   color: string | null; glaze: string | null; punch: string | null; body: string | null;
   inStock: boolean; customerPrice: number | null;
+  images: { id: string; url: string }[];
+  /** فیلدهای «اطلاعاتِ بیشتر» — فقط وقتی نماینده showDetails را روشن کرده باشد، وگرنه null. */
+  size: string | null; thickness: string | null; usageArea: string | null; description: string | null;
 };
 
 /** slugِ tenant برای ساختِ لینکِ اشتراک (/c/<slug>/<token>). جدولِ tenant RLS ندارد. */
@@ -38,7 +41,7 @@ export function listPickableVariants(tenantId: string) {
 
 export function listCatalogs(tenantId: string, agentAccountId: string) {
   return withTenant(tenantId, (tx) => tx<CatalogRow[]>`
-    SELECT c.id, c.title, c.token, c.is_active AS "isActive", c.created_at AS "createdAt",
+    SELECT c.id, c.title, c.token, c.is_active AS "isActive", c.show_details AS "showDetails", c.created_at AS "createdAt",
            COALESCE((
              SELECT json_agg(json_build_object(
                       'variantId', i.variant_id, 'customerPrice', i.customer_price) ORDER BY i.sort_order)
@@ -65,11 +68,12 @@ async function insertItems(
 /** کاتالوگِ جدید + آیتم‌هایش. token را لایه‌ی API می‌سازد (crypto). */
 export async function createCatalog(p: {
   tenantId: string; agentAccountId: string; title: string; items: CatalogItemInput[]; token: string;
+  showDetails?: boolean;
 }): Promise<{ id: string }> {
   return withTenant(p.tenantId, async (tx) => {
     const [c] = await tx<{ id: string }[]>`
-      INSERT INTO shared_catalog (tenant_id, agent_account_id, title, token)
-      VALUES (${p.tenantId}, ${p.agentAccountId}, ${p.title.trim()}, ${p.token})
+      INSERT INTO shared_catalog (tenant_id, agent_account_id, title, token, show_details)
+      VALUES (${p.tenantId}, ${p.agentAccountId}, ${p.title.trim()}, ${p.token}, ${p.showDetails ?? false})
       RETURNING id`;
     await insertItems(tx, p.tenantId, c.id, p.items);
     return { id: c.id };
@@ -83,6 +87,7 @@ export async function createCatalog(p: {
  */
 export async function updateCatalog(p: {
   tenantId: string; agentAccountId: string; id: string; title: string; items: CatalogItemInput[];
+  showDetails?: boolean;
 }) {
   await withTenant(p.tenantId, async (tx) => {
     const [own] = await tx`
@@ -90,7 +95,7 @@ export async function updateCatalog(p: {
       WHERE id = ${p.id} AND tenant_id = ${p.tenantId} AND agent_account_id = ${p.agentAccountId}`;
     if (!own) return; // نماینده‌ی دیگر: بی‌اثر
     await tx`
-      UPDATE shared_catalog SET title = ${p.title.trim()}
+      UPDATE shared_catalog SET title = ${p.title.trim()}, show_details = ${p.showDetails ?? false}
       WHERE id = ${p.id} AND tenant_id = ${p.tenantId} AND agent_account_id = ${p.agentAccountId}`;
     await tx`DELETE FROM shared_catalog_item WHERE catalog_id = ${p.id} AND tenant_id = ${p.tenantId}`;
     await insertItems(tx, p.tenantId, p.id, p.items);
@@ -125,13 +130,18 @@ export async function getPublicCatalog(p: { slug: string; token: string }) {
     SELECT id, name FROM tenant WHERE slug = ${p.slug} AND is_active = true`;
   if (!t) return null;
   return withTenant(t.id, async (tx) => {
-    const [cat] = await tx<{ id: string; title: string }[]>`
-      SELECT id, title FROM shared_catalog
+    const [cat] = await tx<{ id: string; title: string; showDetails: boolean }[]>`
+      SELECT id, title, show_details AS "showDetails" FROM shared_catalog
       WHERE token = ${p.token} AND is_active = true AND tenant_id = ${t.id}`;
     if (!cat) return null;
     const rows = await tx<(Omit<PublicItem, "customerPrice"> & { customerPrice: string | null })[]>`
       SELECT p.name, p.code, p.image_url AS "imageUrl", p.color, p.glaze, p.punch, p.body,
+             p.size, p.thickness, p.usage_area AS "usageArea", p.description,
              ci.customer_price AS "customerPrice",
+             COALESCE((
+               SELECT json_agg(json_build_object('id', pi.id, 'url', pi.url) ORDER BY pi.sort_order, pi.id)
+               FROM product_image pi WHERE pi.product_id = p.id
+             ), '[]'::json) AS images,
              EXISTS (
                SELECT 1 FROM v_lot_availability a
                JOIN inventory_lot l ON l.id = a.lot_id
@@ -142,8 +152,15 @@ export async function getPublicCatalog(p: { slug: string; token: string }) {
       JOIN product p          ON p.id = pv.product_id
       WHERE ci.catalog_id = ${cat.id}
       ORDER BY ci.sort_order, p.name`;
-    // customer_price بیگ‌اینت است و رشته برمی‌گردد → عدد. NULL = قیمت نشان نده.
-    const items = rows.map((r) => ({ ...r, customerPrice: r.customerPrice == null ? null : Number(r.customerPrice) }));
-    return { tenantName: t.name, title: cat.title, items };
+    const items = rows.map((r) => ({
+      ...r,
+      customerPrice: r.customerPrice == null ? null : Number(r.customerPrice),
+      // فیلدهای اطلاعاتِ بیشتر فقط اگر نماینده opt-in کرده باشد به مشتری می‌روند.
+      size: cat.showDetails ? r.size : null,
+      thickness: cat.showDetails ? r.thickness : null,
+      usageArea: cat.showDetails ? r.usageArea : null,
+      description: cat.showDetails ? r.description : null,
+    }));
+    return { tenantName: t.name, title: cat.title, showDetails: cat.showDetails, items };
   });
 }

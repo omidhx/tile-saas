@@ -54,6 +54,27 @@ test("ساخت + فهرست: تعدادِ آیتم درست است", async () =>
   assert.equal(list[0].isActive, true);
 });
 
+test("showDetails: توضیحاتِ اضافه فقط با opt-in به مشتری می‌رود؛ گالری همیشه", async () => {
+  await sql`UPDATE product SET description = 'کاشیِ کف', size = '۶۰×۶۰' WHERE tenant_id = ${T} AND code = 'P'`;
+  await sql`INSERT INTO product_image (tenant_id, product_id, url)
+            SELECT ${T}, id, 'https://cdn/x.jpg' FROM product WHERE tenant_id = ${T} AND code = 'P'
+            ON CONFLICT DO NOTHING`;
+
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "بدون", items: noPrice(V1), token: "tok-sd1" });
+  let pub = await getPublicCatalog({ slug: "nem", token: "tok-sd1" });
+  assert.ok(pub);
+  assert.equal(pub.showDetails, false);
+  assert.equal(pub.items[0].description, null, "بدونِ opt-in، توضیحات به مشتری نمی‌رود");
+  assert.equal(pub.items[0].size, null);
+  assert.ok(pub.items[0].images.length >= 1, "گالری همیشه می‌آید، مستقل از showDetails");
+
+  await createCatalog({ tenantId: T, agentAccountId: A1, title: "با", items: noPrice(V1), token: "tok-sd2", showDetails: true });
+  pub = await getPublicCatalog({ slug: "nem", token: "tok-sd2" });
+  assert.ok(pub);
+  assert.equal(pub.items[0].description, "کاشیِ کف");
+  assert.equal(pub.items[0].size, "۶۰×۶۰");
+});
+
 test("قیمتِ فروشِ مشتری: در فهرست و نمای عمومی می‌آید؛ null یعنی بدونِ قیمت", async () => {
   await createCatalog({
     tenantId: T, agentAccountId: A1, title: "قیمت‌دار", token: "tok-p",

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
-import { listProducts, setProductImage, createProduct, updateProduct } from "@/db/products";
+import { listProducts, createProduct, updateProduct } from "@/db/products";
+
+/** ویژگی‌های اختیاریِ متنی از بدنه؛ رشته یا null (خالی → null در لایه‌ی db). */
+const optStr = (v: unknown) => (v === undefined ? undefined : typeof v === "string" ? v : null);
 
 async function staffCtx(tenantId: unknown) {
   const userId = await currentUserId();
@@ -29,48 +32,35 @@ export async function POST(req: Request) {
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { name, code, sku, color, glaze, punch, body: bodyType, imageUrl } = body ?? {};
+  const { name, code, sku, color, glaze, punch, body: bodyType } = body ?? {};
   if (typeof name !== "string" || typeof code !== "string" || typeof sku !== "string")
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   const r = await createProduct(c.tenantId, {
     name, code, sku,
-    color: typeof color === "string" ? color : null,
-    glaze: typeof glaze === "string" ? glaze : null,
-    punch: typeof punch === "string" ? punch : null,
-    body: typeof bodyType === "string" ? bodyType : null,
-    imageUrl: typeof imageUrl === "string" ? imageUrl : null,
+    color: optStr(color) ?? null, glaze: optStr(glaze) ?? null,
+    punch: optStr(punch) ?? null, body: optStr(bodyType) ?? null,
+    size: optStr(body?.size) ?? null, thickness: optStr(body?.thickness) ?? null,
+    usageArea: optStr(body?.usageArea) ?? null, description: optStr(body?.description) ?? null,
+    imageUrl: typeof body?.imageUrl === "string" ? body.imageUrl : null,
   });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "missing" ? 400 : 409 });
   return NextResponse.json({ id: r.id }, { status: 201 });
 }
 
-/**
- * PATCH — دو کار بسته به body:
- *   { productId, imageUrl }              → تنظیم/حذفِ عکس (null = حذف)
- *   { productId, name/color/glaze/... }  → ویرایشِ ویژگی‌ها
- */
+/** PATCH — ویرایشِ ویژگی‌های محصول (عکس‌ها از راهِ /api/product-images). */
 export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
   if (typeof body?.productId !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
 
-  // فقط عکس؟ (imageUrl صریح آمده، حتی اگر null)
-  if ("imageUrl" in body && !("name" in body || "color" in body || "glaze" in body || "punch" in body || "body" in body)) {
-    if (body.imageUrl !== null && typeof body.imageUrl !== "string")
-      return NextResponse.json({ error: "invalid" }, { status: 400 });
-    await setProductImage({ tenantId: c.tenantId, productId: body.productId, imageUrl: body.imageUrl || null });
-    return NextResponse.json({ ok: true });
-  }
-
   await updateProduct({
     tenantId: c.tenantId, productId: body.productId,
     name: typeof body.name === "string" ? body.name : undefined,
-    color: body.color === undefined ? undefined : (typeof body.color === "string" ? body.color : null),
-    glaze: body.glaze === undefined ? undefined : (typeof body.glaze === "string" ? body.glaze : null),
-    punch: body.punch === undefined ? undefined : (typeof body.punch === "string" ? body.punch : null),
-    body: body.body === undefined ? undefined : (typeof body.body === "string" ? body.body : null),
+    color: optStr(body.color), glaze: optStr(body.glaze), punch: optStr(body.punch), body: optStr(body.body),
+    size: optStr(body.size), thickness: optStr(body.thickness),
+    usageArea: optStr(body.usageArea), description: optStr(body.description),
   });
   return NextResponse.json({ ok: true });
 }

@@ -97,11 +97,33 @@ INSERT INTO product_substitute(tenant_id, variant_id, substitute_variant_id, not
    'a2222222-2222-2222-2222-222222222223',   -- کاشی سفید مات (موجود)
    'هم‌رده و موجود — رنگ روشن، مناسب همان کاربری');
 
+-- v2 گالری + اطلاعاتِ بیشتر: چند عکس و فیلدهای اختیاری روی محصولات تا فیچر دیده شود.
+-- (تصاویرِ placeholder؛ در تولید آپلودِ واقعی.) image_url کَشِ عکسِ اصلی است، دستی برابرِ اولین.
+INSERT INTO product_image(tenant_id, product_id, url, sort_order) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111111', 'https://picsum.photos/seed/gb1/600', 0),
+  ('11111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111111', 'https://picsum.photos/seed/gb2/600', 1),
+  ('11111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111111', 'https://picsum.photos/seed/gb3/600', 2),
+  ('11111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111112', 'https://picsum.photos/seed/ks1/600', 0),
+  ('11111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111112', 'https://picsum.photos/seed/ks2/600', 1),
+  ('11111111-1111-1111-1111-111111111111', 'a1111111-1111-1111-1111-111111111114', 'https://picsum.photos/seed/ts1/600', 0);
+
+UPDATE product SET image_url = 'https://picsum.photos/seed/gb1/600' WHERE tenant_id = '11111111-1111-1111-1111-111111111111' AND code = 'GB-6060';
+UPDATE product SET image_url = 'https://picsum.photos/seed/ks1/600' WHERE tenant_id = '11111111-1111-1111-1111-111111111111' AND code = 'KS-3060';
+UPDATE product SET image_url = 'https://picsum.photos/seed/ts1/600' WHERE tenant_id = '11111111-1111-1111-1111-111111111111' AND code = 'TS-4040';
+
+UPDATE product SET size = '۶۰×۶۰', thickness = '۹ میلی‌متر', usage_area = 'کف / دیوار / نما',
+  description = 'گرانیتِ پرسلانیِ براق؛ مناسبِ کفِ پرتردد و نمای داخلی. مقاومِ سایش و ضدِلک.'
+  WHERE tenant_id = '11111111-1111-1111-1111-111111111111' AND code = 'GB-6060';
+UPDATE product SET size = '۳۰×۶۰', thickness = '۸ میلی‌متر', usage_area = 'دیوار',
+  description = 'کاشیِ دیواریِ مات با رنگِ روشن و یکدست؛ مناسبِ آشپزخانه و سرویس.'
+  WHERE tenant_id = '11111111-1111-1111-1111-111111111111' AND code = 'KS-3060';
+
 -- کاتالوگ سفارشیِ نمونه: نماینده چند محصول را برای مشتری به اشتراک گذاشته.
+-- show_details=true تا توضیحاتِ کامل هم به مشتری نشان داده شود (opt-inِ نماینده).
 -- token خواناست فقط برای دمو؛ در تولید crypto random است. لینک: /c/nemoone/demo-catalog-token
-INSERT INTO shared_catalog(id, tenant_id, agent_account_id, title, token) VALUES
+INSERT INTO shared_catalog(id, tenant_id, agent_account_id, title, token, show_details) VALUES
   ('a6666666-6666-6666-6666-666666666666', '11111111-1111-1111-1111-111111111111',
-   'a5555555-5555-5555-5555-555555555555', 'پیشنهاد برای پروژه‌ی لابی', 'demo-catalog-token');
+   'a5555555-5555-5555-5555-555555555555', 'پیشنهاد برای پروژه‌ی لابی', 'demo-catalog-token', true);
 -- قیمتِ فروشِ مشتری روی دو تا، سومی بدونِ قیمت (تا هر دو حالت در دمو دیده شود)
 INSERT INTO shared_catalog_item(tenant_id, catalog_id, variant_id, customer_price, sort_order) VALUES
   ('11111111-1111-1111-1111-111111111111', 'a6666666-6666-6666-6666-666666666666', 'a2222222-2222-2222-2222-222222222222', 9800000, 0),  -- گرانیت مشکی (موجود)

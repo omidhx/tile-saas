@@ -140,13 +140,30 @@ CREATE TABLE product (
     glaze     TEXT,   -- لعاب: مات/ترانس
     punch     TEXT,   -- پانچ: تخت/رستیک-…
     body      TEXT,   -- بدنه: سفید/قرمز (v2، مثل کاتالوگِ صنعتی)
-    image_url TEXT,
+    -- فیلدهای اختیاریِ «اطلاعاتِ بیشتر» (v2): در فرمِ مدیریت محصول در بخشِ جمع‌شو
+    size        TEXT,   -- ابعاد: ۶۰×۶۰
+    thickness   TEXT,   -- ضخامت: ۹ میلی‌متر
+    usage_area  TEXT,   -- کاربری: کف/دیوار/نما ("usage" کلمه‌ی حساسِ SQL نیست ولی صریح‌تر است)
+    description TEXT,    -- توضیحاتِ متنِ آزاد
+    image_url TEXT,     -- کَشِ عکسِ اصلی (= اولین product_image)؛ برای تامنیل در همه‌ی خواندن‌ها
     brand_id  UUID,     -- بخش ۷.۵: فعلاً product-level، nullable و آماده‌ی مهاجرت به Lot
     PRIMARY KEY (id),
     UNIQUE (tenant_id, code),
     UNIQUE (tenant_id, id),
     FOREIGN KEY (tenant_id, brand_id) REFERENCES brand(tenant_id, id)
 );
+
+-- گالریِ تصاویرِ محصول (v2). عکسِ اصلی = کمترین sort_order؛ همان در product.image_url
+-- کَش می‌شود تا تامنیل همه‌جا بدونِ join خوانده شود. ترتیب = sort_order.
+CREATE TABLE product_image (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id  UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL,
+    url        TEXT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (tenant_id, product_id) REFERENCES product (tenant_id, id) ON DELETE CASCADE
+);
+CREATE INDEX idx_product_image ON product_image (tenant_id, product_id, sort_order);
 
 CREATE TABLE product_variant (
     id              UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -644,6 +661,9 @@ CREATE TABLE shared_catalog (
     title            TEXT NOT NULL,
     token            TEXT NOT NULL UNIQUE,   -- در URL؛ غیرقابل‌حدس (crypto random سمتِ اپ)
     is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    -- opt-inِ نماینده: توضیحاتِ کاملِ محصول (متن/ابعاد/…) به مشتری نشان داده شود یا نه.
+    -- گالری و مشخصاتِ پایه همیشه؛ این فقط توضیحاتِ اضافه را گِیت می‌کند.
+    show_details     BOOLEAN NOT NULL DEFAULT FALSE,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, id),                  -- هدفِ composite FK
     FOREIGN KEY (tenant_id, agent_account_id)

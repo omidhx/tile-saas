@@ -9,6 +9,7 @@ app_user (سراسری) ──< tenant_membership >── tenant
 tenant ──< agent_account ──< agent_account_user (FK به membership: کاربر باید عضو tenant باشه)
    │
    ├─ brand ──< product ──< product_variant ──< inventory_lot ──1:1─ inventory_balance
+   │              └──< product_image (گالری؛ اصلی = کمترین sort_order، کَش در product.image_url) (v2)
    │                                              │                     (on_hand/allocated/blocked)
    │                                              └──< inventory_transaction (لجر append-only)
    │

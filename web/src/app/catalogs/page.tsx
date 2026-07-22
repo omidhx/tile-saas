@@ -9,7 +9,7 @@ import Icon from "../Icon";
 import { matches, normalize } from "@/lib/search";
 
 type Item = { variantId: string; customerPrice: number | null };
-type Catalog = { id: string; title: string; token: string; isActive: boolean; items: Item[]; createdAt: string };
+type Catalog = { id: string; title: string; token: string; isActive: boolean; showDetails: boolean; items: Item[]; createdAt: string };
 type Product = { id: string; name: string; code: string };
 type Picked = { variantId: string; price: string };
 
@@ -36,6 +36,7 @@ export default function CatalogsPage() {
   const [title, setTitle] = useState("");
   const [picked, setPicked] = useState<Picked[]>([]);
   const [query, setQuery] = useState("");
+  const [showDetails, setShowDetails] = useState(false); // توضیحاتِ کامل به مشتری نشان داده شود؟
 
   const load = useCallback(async (c: Ctx) => {
     const res = await getJson<{ catalogs: Catalog[]; products: Product[]; slug: string | null }>(
@@ -66,10 +67,11 @@ export default function CatalogsPage() {
     setPicked((s) => s.map((p) => p.variantId === id ? { ...p, price } : p));
   }
 
-  function resetForm() { setEditingId(null); setTitle(""); setPicked([]); setQuery(""); }
+  function resetForm() { setEditingId(null); setTitle(""); setPicked([]); setQuery(""); setShowDetails(false); }
   function startEdit(c: Catalog) {
     setEditingId(c.id);
     setTitle(c.title);
+    setShowDetails(c.showDetails);
     setPicked(c.items.map((i) => ({ variantId: i.variantId, price: i.customerPrice == null ? "" : String(i.customerPrice) })));
     setQuery(""); setMsg(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -81,9 +83,9 @@ export default function CatalogsPage() {
     setPending("save"); setMsg(null);
     const res = editingId
       ? await postJson("/api/shared-catalog",
-          { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, id: editingId, title, items }, "PATCH")
+          { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, id: editingId, title, items, showDetails }, "PATCH")
       : await postJson("/api/shared-catalog",
-          { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, title, items });
+          { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, title, items, showDetails });
     setPending(null);
     if (!res.ok) { setMsg({ kind: "err", text: actionError(res.status) }); return; }
     const wasEdit = !!editingId;
@@ -187,6 +189,12 @@ export default function CatalogsPage() {
             );
           })}
         </div>
+
+        <label className="row row--start" style={{ marginTop: "var(--sp-3)", cursor: "pointer", gap: "var(--sp-2)", justifyContent: "flex-start" }}>
+          <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.target.checked)}
+                 style={{ width: "auto", minHeight: 0 }} />
+          <span>توضیحاتِ کامل (ابعاد، ضخامت، کاربری، متن) هم به مشتری نشان داده شود</span>
+        </label>
 
         <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-4)" }}>
           <button className="primary" onClick={save} aria-busy={pending === "save"}

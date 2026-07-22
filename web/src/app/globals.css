@@ -471,6 +471,57 @@ main.wide { max-width: 1200px; }
   display: block;
   border: 1px dashed var(--line-strong);
 }
+/* کارتِ کلیک‌پذیرِ کاتالوگِ مشتری: ریستِ استایلِ دکمه، کشیده به عرضِ کامل */
+button.catalog-card {
+  display: block; width: 100%; text-align: start; cursor: pointer;
+  min-height: 0; font: inherit; color: inherit;
+}
+button.catalog-card:hover { border-color: var(--slate-400); }
+
+/* --- گالریِ مدیریتِ محصول ------------------------------------------------- */
+.gallery { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.gallery-item {
+  position: relative; width: 72px; height: 72px; border-radius: var(--radius-sm);
+  overflow: hidden; border: 1px solid var(--line-strong);
+}
+.gallery-item--primary { border: 2px solid var(--accent); }
+.gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+/* نسخه‌ی دکمه‌ای (مثلاً تعویضِ عکسِ اصلی در مودال): ریستِ استایلِ پیش‌فرضِ دکمه */
+button.gallery-item { padding: 0; background: none; min-height: 0; cursor: pointer; }
+/* دکمه‌ای که مثلِ متنِ ساده دیده می‌شود — نامِ محصولِ کلیک‌پذیر */
+.link-plain {
+  background: none; border: none; padding: 0; min-height: 0;
+  color: inherit; cursor: pointer; text-align: start; font: inherit;
+}
+.link-plain:hover { color: var(--accent); }
+.gallery-badge {
+  position: absolute; inset-inline-start: 0; inset-block-end: 0;
+  background: var(--accent); color: #fff; font-size: .6rem; padding: 1px 4px;
+  border-start-end-radius: var(--radius-sm);
+}
+.gallery-star, .gallery-del {
+  position: absolute; width: 20px; height: 20px; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; font-size: .8rem; line-height: 1;
+  background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+}
+.gallery-star { inset-block-start: 2px; inset-inline-start: 2px; }
+.gallery-del  { inset-block-start: 2px; inset-inline-end: 2px; }
+.gallery-star:hover:not(:disabled) { background: var(--accent); }
+.gallery-del:hover:not(:disabled)  { background: var(--danger); }
+.gallery-add {
+  width: 72px; height: 72px; flex-direction: column; gap: 2px;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+  color: var(--text-muted); background: var(--surface-sunken);
+}
+
+/* بخشِ جمع‌شوِ «اطلاعاتِ بیشتر» در فرمِ محصول */
+.more-info { margin-top: var(--sp-3); border-top: 1px solid var(--line); padding-top: var(--sp-2); }
+.more-info > summary {
+  cursor: pointer; font-size: .85rem; color: var(--text-muted);
+  padding: var(--sp-1) 0; user-select: none;
+}
+.more-info > summary:hover { color: var(--text); }
 
 /* فهرستِ انتخابِ محصول در سازنده‌ی کاتالوگ: اسکرول‌شونده تا فرم بلند نشود */
 .pick-list {

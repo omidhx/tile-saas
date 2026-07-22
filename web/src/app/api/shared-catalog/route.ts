@@ -62,6 +62,7 @@ export async function POST(req: Request) {
   const token = randomBytes(18).toString("base64url");
   const { id } = await createCatalog({
     tenantId: c.tenantId, agentAccountId: c.agentAccountId, title, items, token,
+    showDetails: body?.showDetails === true,
   });
   return NextResponse.json({ id, token }, { status: 201 });
 }
@@ -82,7 +83,10 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "missing_title" }, { status: 400 });
     const items = parseItems(body.items);
     if (!items) return NextResponse.json({ error: "no_items" }, { status: 400 });
-    await updateCatalog({ tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: body.id, title: body.title, items });
+    await updateCatalog({
+      tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: body.id, title: body.title, items,
+      showDetails: body.showDetails === true,
+    });
     return NextResponse.json({ ok: true });
   }
 

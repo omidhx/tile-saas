@@ -1,4 +1,5 @@
 import { getPublicCatalog } from "@/db/sharedCatalog";
+import CatalogView from "./CatalogView";
 
 // صفحه‌ی عمومیِ کاتالوگ برای مشتریِ نهایی — بدونِ لاگین. Server Component: مستقیم از
 // DB می‌خواند، هیچ API عمومی‌ای باز نمی‌شود و هیچ JSِ کلاینتی لازم نیست. قیمت و عددِ
@@ -28,36 +29,9 @@ export default async function PublicCatalogPage(
         <p className="muted" style={{ margin: 0 }}>{data.tenantName}</p>
       </div>
 
-      {data.items.length === 0 && <p className="empty">این کاتالوگ فعلاً محصولی ندارد.</p>}
-
-      <div className="catalog-grid">
-        {data.items.map((it) => (
-          <div className="card" key={it.code} style={{ margin: 0 }}>
-            {it.imageUrl
-              ? <img src={it.imageUrl} alt={it.name} loading="lazy" className="catalog-img" />
-              : <div className="catalog-img catalog-img--empty" aria-hidden="true" />}
-            <div style={{ marginTop: "var(--sp-2)" }}>
-              <div className="row">
-                <strong>{it.name}</strong>
-                <span className={`badge ${it.inStock ? "badge--ok" : "badge--warn"}`}>
-                  {it.inStock ? "موجود" : "ناموجود"}
-                </span>
-              </div>
-              <div className="subtle num">{it.code}</div>
-              {[it.color, it.glaze, it.punch, it.body].filter(Boolean).length > 0 && (
-                <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>
-                  {[it.color, it.glaze, it.punch, it.body].filter(Boolean).join(" · ")}
-                </div>
-              )}
-              {it.customerPrice != null && (
-                <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
-                  <span className="metric">{it.customerPrice.toLocaleString("fa-IR")}</span> ریال / مترمربع
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+      {data.items.length === 0
+        ? <p className="empty">این کاتالوگ فعلاً محصولی ندارد.</p>
+        : <CatalogView items={data.items} />}
 
       <p className="muted" style={{ marginTop: "var(--sp-5)", textAlign: "center" }}>
         برای ثبتِ سفارش با نماینده‌ی خود تماس بگیرید.
