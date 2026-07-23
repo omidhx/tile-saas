@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import MessageBanner from "../../MessageBanner";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -81,11 +82,7 @@ export default function AutoApprovePage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {saved && (
-        <div className={`banner banner--${saved.includes("نامعتبر") || saved.includes("نشد") ? "error" : "ok"}`} role="status">
-          <Icon name={saved.includes("نامعتبر") || saved.includes("نشد") ? "alert" : "check"} /><span>{saved}</span>
-        </div>
-      )}
+      <MessageBanner msg={saved} />
 
       {s && !loadErr && (
         <>

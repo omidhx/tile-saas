@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import MessageBanner from "../../MessageBanner";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -132,11 +133,7 @@ export default function SubstitutesPage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {msg && (
-        <div className={`banner banner--${msg === "ثبت شد." ? "ok" : "error"}`} role="status">
-          <Icon name={msg === "ثبت شد." ? "check" : "alert"} /><span>{msg}</span>
-        </div>
-      )}
+      <MessageBanner msg={msg} />
 
       <h2>افزودن جایگزین</h2>
       <div className="card">

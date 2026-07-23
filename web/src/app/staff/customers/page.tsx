@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import MessageBanner from "../../MessageBanner";
 import NavMenu from "../../NavMenu";
 import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -145,14 +146,7 @@ export default function CustomersPage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {msg && (() => {
-        const isErr = msg.includes("نشد") || msg.includes("نداری") || msg.includes("منقضی");
-        return (
-          <div className={`banner banner--${isErr ? "error" : "ok"}`} role="status">
-            <Icon name={isErr ? "alert" : "check"} /><span>{msg}</span>
-          </div>
-        );
-      })()}
+      <MessageBanner msg={msg} />
 
       <h2>ثبت مشتری</h2>
       <div className="card">
