@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
@@ -52,9 +52,13 @@ export default function ReservePage() {
   // فیلترِ ساخت‌یافته بر ویژگی‌ها؛ "" = بی‌قید. مقدارها از خودِ اقلامِ موجود ساخته می‌شوند.
   const [attr, setAttr] = useState<{ color: string; glaze: string; punch: string; body: string }>(
     { color: "", glaze: "", punch: "", body: "" });
-  const [preview, setPreview] = useState<Lot | null>(null); // مودالِ جزئیات + گالری
+  // مودالِ جزئیات + گالری — فقط شناسه نگه‌داشته می‌شود، نه خودِ آبجکت؛ وگرنه اگر
+  // lots در پس‌زمینه رفرش شود (مثلاً بعدِ یک عملیاتِ دیگر)، مودال داده‌ی کهنه نشان می‌دهد.
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [galleryIdx, setGalleryIdx] = useState(0);
-  const openPreview = (l: Lot) => { setPreview(l); setGalleryIdx(0); };
+  const openPreview = (l: Lot) => { setPreviewId(l.lot_id); setGalleryIdx(0); };
+  const preview = lots.find((l) => l.lot_id === previewId) ?? null;
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
   const [loadErr, setLoadErr] = useState("");
@@ -87,44 +91,39 @@ export default function ReservePage() {
 
   async function toggleAlert(variantId: string, on: boolean) {
     if (!ctx) return;
-    setAlertPending(variantId);
-    try {
-      await fetch("/api/alerts", {
-        method: on ? "POST" : "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }),
-      });
-      await loadLots(ctx);
-    } finally { setAlertPending(null); }
+    setAlertPending(variantId); setMsg(null);
+    // اگر ۴۰۳/۵۰۰ بخورد و بی‌سروصدا رد شود، دکمه هیچ‌کاری نکرده به‌نظر می‌رسد —
+    // نتیجه باید چک شود، نه اینکه فقط reload بی‌قیدوشرط بزنیم (همان تله‌ای که
+    // در پنل پشتیبان قبلاً پیدا شد).
+    const res = await postJson("/api/alerts",
+      { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }, on ? "POST" : "DELETE");
+    if (!res.ok) setMsg({ kind: "err", text: actionError(res.status) });
+    else await loadLots(ctx);
+    setAlertPending(null);
   }
 
   async function joinQueue(variantId: string) {
     if (!ctx) return;
     const quantityBoxes = Number(queueQty[variantId]);
     if (!Number.isInteger(quantityBoxes) || quantityBoxes <= 0) return;
-    setQueuePending(variantId);
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId, quantityBoxes }),
-      });
-      setMsg(res.ok
-        ? { kind: "ok", text: "در صف قرار گرفتی. به‌محض آزاد شدن موجودی، همان تعداد برایت رزرو می‌شود." }
-        : { kind: "err", text: "ثبت نوبت انجام نشد." });
-      if (res.ok) await loadLots(ctx);
-    } finally { setQueuePending(null); }
+    setQueuePending(variantId); setMsg(null);
+    const res = await postJson("/api/waitlist",
+      { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId, quantityBoxes });
+    if (res.ok) {
+      setMsg({ kind: "ok", text: "در صف قرار گرفتی. به‌محض آزاد شدن موجودی، همان تعداد برایت رزرو می‌شود." });
+      await loadLots(ctx);
+    } else setMsg({ kind: "err", text: actionError(res.status) });
+    setQueuePending(null);
   }
 
   async function leaveQueue(variantId: string) {
     if (!ctx) return;
-    setQueuePending(variantId);
-    try {
-      await fetch("/api/waitlist", {
-        method: "DELETE", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }),
-      });
-      await loadLots(ctx);
-    } finally { setQueuePending(null); }
+    setQueuePending(variantId); setMsg(null);
+    const res = await postJson("/api/waitlist",
+      { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }, "DELETE");
+    if (!res.ok) setMsg({ kind: "err", text: actionError(res.status) });
+    else await loadLots(ctx);
+    setQueuePending(null);
   }
 
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
@@ -132,11 +131,14 @@ export default function ReservePage() {
 
   // Esc مودال را می‌بندد — دسترسی‌پذیریِ پایه برای هر دیالوگ
   useEffect(() => {
-    if (!preview) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreview(null); };
+    if (!previewId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreviewId(null); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [preview]);
+  }, [previewId]);
+
+  // فوکوس روی دکمه‌ی بستن، همان الگویِ NavMenu — کاربرِ کیبورد مجبور نیست کورکورانه Tab بزند
+  useEffect(() => { if (previewId) closeBtnRef.current?.focus(); }, [previewId]);
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));
@@ -253,6 +255,13 @@ export default function ReservePage() {
           <Icon name="alert" /><span>{loadErr} فهرست ناقص است.</span>
         </div>
       )}
+      {/* یک جایِ ثابت برای همه‌ی پیام‌ها — چه از دکمه‌ی ثبت باشد چه از «خبرم کن»/نوبت
+          که پایینِ صفحه‌اند؛ اگر پیام همان‌جا پایین بماند، بدونِ اسکرول دیده نمی‌شود. */}
+      {msg && (
+        <div className={`banner banner--${msg.kind === "ok" ? "ok" : "error"}`} role="status">
+          <Icon name={msg.kind === "ok" ? "check" : "alert"} /><span>{msg.text}</span>
+        </div>
+      )}
       {loaded && !loadErr && lots.length === 0 && <p className="empty">فعلاً کالای قابل‌سفارشی نیست.</p>}
 
       {/* جستجو/فیلتر (spec ۱۱.۲) — فقط وقتی فهرست به‌اندازه‌ای هست که ارزش داشته باشد.
@@ -280,7 +289,12 @@ export default function ReservePage() {
             ) : null,
           )}
           {(query || whFilter || attrActive) && (
-            <span className="subtle">{money(visibleLots.length)} از {money(lots.length)}</span>
+            <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
+              <span className="subtle">{money(visibleLots.length)} از {money(lots.length)}</span>
+              <button className="ghost" onClick={() => { setQuery(""); setWhFilter(""); setAttr({ color: "", glaze: "", punch: "", body: "" }); }}>
+                پاک‌کردنِ فیلترها
+              </button>
+            </span>
           )}
         </div>
       )}
@@ -349,19 +363,18 @@ export default function ReservePage() {
 
             <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
               <label htmlFor={`qty-${l.lot_id}`} className="sr-only">تعداد کارتن برای {l.name} در {l.warehouse_name}</label>
-              <input id={`qty-${l.lot_id}`} type="number" min={0} max={l.available} placeholder="تعداد کارتن"
+              <input id={`qty-${l.lot_id}`} type="number" min={0} max={l.available} step={1} placeholder="تعداد کارتن"
                      value={cart[l.lot_id] ?? ""} style={{ maxWidth: 150 }}
-                     onChange={(e) => setCart((c) => ({ ...c, [l.lot_id]: Math.max(0, Math.min(l.available, Number(e.target.value) || 0)) }))} />
+                     onChange={(e) => {
+                       // کارتن عددِ صحیح است — بک‌اند اعشار را رد می‌کند (خطای مبهمِ «ثبت نشد»)،
+                       // پس همین‌جا floor می‌شود تا اصلاً چنین مقداری ساخته نشود.
+                       const n = Math.floor(Number(e.target.value) || 0);
+                       setCart((c) => ({ ...c, [l.lot_id]: Math.max(0, Math.min(l.available, n)) }));
+                     }} />
             </div>
           </div>
         );
       })}
-
-      {msg && (
-        <div className={`banner banner--${msg.kind === "ok" ? "ok" : "error"}`} role="status">
-          <Icon name={msg.kind === "ok" ? "check" : "alert"} /><span>{msg.text}</span>
-        </div>
-      )}
 
       {items.length > 0 && (
         <div className="card card--raised" style={{ position: "sticky", bottom: "var(--sp-3)" }}>
@@ -529,12 +542,12 @@ export default function ReservePage() {
           : preview.image_url ? [preview.image_url] : [];
         const main = gallery[galleryIdx] ?? gallery[0];
         return (
-        <div className="modal-backdrop" onClick={() => setPreview(null)} role="dialog" aria-modal="true"
+        <div className="modal-backdrop" onClick={() => setPreviewId(null)} role="dialog" aria-modal="true"
              aria-label={`جزئیات ${preview.name}`}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="row">
               <strong>{preview.name}</strong>
-              <button className="ghost" onClick={() => setPreview(null)} aria-label="بستن">✕</button>
+              <button ref={closeBtnRef} className="ghost" onClick={() => setPreviewId(null)} aria-label="بستن">✕</button>
             </div>
             {main && <img src={main} alt={preview.name} className="modal-img" />}
             {gallery.length > 1 && (
