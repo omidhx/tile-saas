@@ -41,8 +41,15 @@ export default function ReportsPage() {
 
   useEffect(() => { if (ctx && !inverted) load(ctx.tenantId, from, to); }, [ctx, from, to, load, inverted]);
 
-  if (state === "none") return <main><p className="err" role="alert">این بخش فقط برای پشتیبان است.</p></main>;
-  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
+  if (state === "none")
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
+  if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   const totalValue = rep?.agents.reduce((s, a) => s + a.value, 0) ?? 0;
   const totalBoxes = rep?.topProducts.reduce((s, p) => s + p.boxes, 0) ?? 0;

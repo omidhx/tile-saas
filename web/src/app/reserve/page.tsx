@@ -370,7 +370,10 @@ export default function ReservePage() {
               اسکرولِ طولانیِ select پیدا نکردنِ مقدار آزاردهنده نشود. */}
           {([["color", "رنگ"], ["glaze", "لعاب"], ["punch", "پانچ"], ["body", "بدنه"]] as const).map(([k, lbl]) => {
             if (attrOpts[k].length <= 1) return null;
-            const opts = attrOpts[k].filter((v) => matches(attrSearch[k], [v]));
+            // مقدارِ الان‌انتخاب‌شده همیشه در گزینه‌ها می‌ماند، حتی اگر جستجو ردش کند —
+            // وگرنه select بصری‌اش به «همه‌ی...» برمی‌گردد ولی فیلتر همچنان فعال می‌ماند:
+            // state و UI ناهماهنگ می‌شوند و کاربر فکر می‌کند فیلتر پاک شده.
+            const opts = attrOpts[k].filter((v) => v === attr[k] || matches(attrSearch[k], [v]));
             return (
               <span key={k} className="row row--start" style={{ gap: ".3rem", flexWrap: "wrap" }}>
                 {attrOpts[k].length > 8 && (

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PublicItem } from "@/db/sharedCatalog";
 
 // نمای کاتالوگِ مشتری: گرید + پاپ‌آپِ گالری/جزئیات. کلاینت چون کلیک و مودال لازم دارد.
@@ -8,6 +8,7 @@ const money = (v: number) => v.toLocaleString("fa-IR");
 export default function CatalogView({ items }: { items: PublicItem[] }) {
   const [open, setOpen] = useState<PublicItem | null>(null);
   const [idx, setIdx] = useState(0);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
   const show = (it: PublicItem) => { setOpen(it); setIdx(0); };
 
   useEffect(() => {
@@ -16,6 +17,10 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  // فوکوس روی دکمه‌ی بستن — همان الگویِ /reserve و NavMenu؛ این صفحه را مشتریِ
+  // بدونِ‌لاگین هم می‌بیند، پس دسترسی‌پذیریِ کیبورد اینجا مهم‌تر هم هست.
+  useEffect(() => { if (open) closeBtnRef.current?.focus(); }, [open]);
 
   const gallery = (it: PublicItem) => it.images.length ? it.images.map((i) => i.url) : it.imageUrl ? [it.imageUrl] : [];
   const specs = (it: PublicItem) => [it.color, it.glaze, it.punch, it.body].filter(Boolean).join(" · ");
@@ -55,7 +60,7 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <div className="row">
                 <strong>{open.name}</strong>
-                <button className="ghost" onClick={() => setOpen(null)} aria-label="بستن">✕</button>
+                <button ref={closeBtnRef} className="ghost" onClick={() => setOpen(null)} aria-label="بستن">✕</button>
               </div>
               {main && <img src={main} alt={open.name} className="modal-img" />}
               {g.length > 1 && (

@@ -128,7 +128,17 @@ export default function IncomingPage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {msg && <div className="banner banner--ok" role="status"><Icon name="check" /><span>{msg}</span></div>}
+      {msg && (() => {
+        // پیام‌های خطا (شکستِ add یا actionError) قبلاً همیشه سبز/«موفق» نشان داده می‌شدند —
+        // یعنی «اجازه‌ی این کار را نداری.» با تیکِ سبز دیده می‌شد. اینجا همان تشخیصِ
+        // متنیِ بقیه‌ی صفحات (مثلِ staff/customers) استفاده می‌شود.
+        const isErr = msg.includes("نشد") || msg.includes("نداری") || msg.includes("منقضی");
+        return (
+          <div className={`banner banner--${isErr ? "error" : "ok"}`} role="status">
+            <Icon name={isErr ? "alert" : "check"} /><span>{msg}</span>
+          </div>
+        );
+      })()}
 
       <h2>ثبت محموله</h2>
       <div className="card">

@@ -68,13 +68,15 @@ export default function SubstitutesPage() {
     if (!edit) return;
     const i = items.find((x) => x.id === edit.id);
     if (!i) return;
-    if (await upsert(i.variantId, i.substituteVariantId, edit.note, "note" + edit.id)) setEdit(null);
+    if (await upsert(i.variantId, i.substituteVariantId, edit.note, "note" + edit.id)) {
+      setEdit(null); setMsg("ثبت شد.");
+    }
   }
 
   async function addInGroup(variantId: string) {
     if (!addTo) return;
     if (await upsert(variantId, addTo, addNote, "g" + variantId)) {
-      setAddTo(""); setAddNote(""); setAddQuery(""); setAddFor(null);
+      setAddTo(""); setAddNote(""); setAddQuery(""); setAddFor(null); setMsg("ثبت شد.");
     }
   }
 

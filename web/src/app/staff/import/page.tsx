@@ -1,15 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import Icon from "../../Icon";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
+import { useContexts } from "@/lib/useContexts";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 
-type Ctx = { tenantId: string; tenantName: string };
 type Wh = { id: string; name: string; code: string };
 type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number; imageUrl: string | null; name: string | null; color: string | null; glaze: string | null; punch: string | null; body: string | null };
 type Result = { applied: number; zeroed: number; deduped: boolean; errors: { row: number | null; reason: string; detail?: string }[] };
@@ -22,8 +21,7 @@ const pick = (o: Record<string, unknown>, names: string[]) => {
 const s = (v: unknown) => (v == null || String(v).trim() === "" ? null : String(v).trim());
 
 export default function ImportPage() {
-  const router = useRouter();
-  const [ctx, setCtx] = useState<Ctx | null>(null);
+  const { ctx, state } = useContexts("staff");
   const [warehouses, setWarehouses] = useState<Wh[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [fileName, setFileName] = useState("");
@@ -35,27 +33,18 @@ export default function ImportPage() {
   const [err, setErr] = useState("");
   const [skipped, setSkipped] = useState(0);
   const [whErr, setWhErr] = useState("");
-  const [noAccess, setNoAccess] = useState(false);
 
   useEffect(() => {
+    if (!ctx) return;
     (async () => {
-      const res = await fetch("/api/me");
-      if (res.status === 401) { router.push("/login"); return; }
-      const { contexts } = await res.json();
-      const staffCtx = contexts?.find((c: { role?: string }) => c.role === "staff" || c.role === "admin") ?? contexts?.[0];
-      // بدونِ این، صفحه برای همیشه روی «در حال بارگذاری…» می‌ماند و کاربر
-      // نمی‌فهمد چرا — همان هنگی که قبلاً در پنل پشتیبان بود.
-      if (!staffCtx) { setNoAccess(true); return; }
-      setCtx(staffCtx);
-
-      const w = await getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${staffCtx.tenantId}`);
+      const w = await getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${ctx.tenantId}`);
       // شکستِ خاموش اینجا فقط آزاردهنده نیست، **خطرناک** است: کاربری که نمی‌تواند
       // انبار انتخاب کند طبیعتاً دامنه را روی «کل کارخانه» می‌گذارد تا جلو برود —
       // یعنی همان گزینه‌ای که موجودیِ همه‌ی انبارها را صفر می‌کند.
       if (w.ok) setWarehouses(w.data.warehouses);
       else setWhErr(loadError(w.status));
     })();
-  }, [router]);
+  }, [ctx]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     setErr(""); setResult(null); setSkipped(0);
@@ -109,7 +98,7 @@ export default function ImportPage() {
     } finally { setPending(false); }
   }
 
-  if (noAccess)
+  if (state === "none")
     return (
       <main>
         <div className="banner banner--error" role="alert">

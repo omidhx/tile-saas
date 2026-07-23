@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
+import { useContexts, type Ctx } from "@/lib/useContexts";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import NavMenu from "../NavMenu";
@@ -11,7 +11,6 @@ const num = (v: number) => v.toLocaleString("fa-IR");
 /** معادلِ اعشاری (پالت/مترمربع) — برای دو رقمِ اعشار کافی، نه عددِ صحیح مثلِ کارتن. */
 const numUnit = (v: number) => v.toLocaleString("fa-IR", { maximumFractionDigits: 2 });
 
-type Ctx = { tenantId: string; tenantName: string };
 type ResvItem = {
   name: string; code: string; quantityBoxes: number;
   /** برای نمایشِ معادلِ پالت/مترمربع کنارِ عددِ کارتن — بسته‌بندی مشخصه‌ی ثابتِ محصول است. */
@@ -42,8 +41,7 @@ const BO_FA: Record<string, string> = {
 };
 
 export default function StaffPage() {
-  const router = useRouter();
-  const [ctx, setCtx] = useState<Ctx | null>(null);
+  const { ctx, state } = useContexts("staff");
   const [pendingResvs, setPendingResvs] = useState<Resv[]>([]);
   const [reqs, setReqs] = useState<Req[]>([]);
   const [disps, setDisps] = useState<Disp[]>([]);
@@ -81,10 +79,12 @@ export default function StaffPage() {
   }, []);
 
   /** هر عملِ نوشتن از این عبور می‌کند: شکست را صریح نشان می‌دهد، نه اینکه فقط
-   *  load() صدا بزند و رزروِ تأییدنشده را همان‌جا بگذارد. */
+   *  load() صدا بزند و رزروِ تأییدنشده را همان‌جا بگذارد. note هم اینجا پاک
+   *  می‌شود — وگرنه پیامِ موفقیتِ یک عملِ قبلی (مثلاً «۲ حواله ساخته شد») روی
+   *  عملِ کاملاً نامرتبطِ بعدی هم می‌ماند. */
   async function act(key: string, url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
     if (!ctx) return false;
-    setPending(key); setActionErr("");
+    setPending(key); setActionErr(""); setNote("");
     try {
       const res = await postJson(url, body, method);
       if (!res.ok) { setActionErr(actionError(res.status)); }
@@ -112,21 +112,11 @@ export default function StaffPage() {
   const approve = (reservationId: string) =>
     act("approve" + reservationId, `/api/reservations/${reservationId}/approve`, { tenantId: ctx!.tenantId });
 
-  useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/me");
-      if (res.status === 401) { router.push("/login"); return; }
-      const { contexts } = await res.json();
-      const staffCtx = contexts?.find((c: { role?: string }) => c.role === "staff" || c.role === "admin") ?? contexts?.[0];
-      if (!staffCtx) return;
-      setCtx(staffCtx);
-      load(staffCtx);
-    })();
-  }, [router, load]);
+  useEffect(() => { if (ctx) load(ctx); }, [ctx, load]);
 
   async function makeDispatch(requestId: string) {
     if (!ctx) return;
-    setPending(requestId); setActionErr("");
+    setPending(requestId); setActionErr(""); setNote("");
     try {
       const res = await postJson("/api/sales-dispatches",
         { tenantId: ctx.tenantId, salesRequestId: requestId, dispatchCode: `D-${Date.now()}` });
@@ -145,6 +135,14 @@ export default function StaffPage() {
   const advance = (dispatchId: string, toStatus: string) =>
     act(dispatchId + toStatus, `/api/sales-dispatches/${dispatchId}/status`, { tenantId: ctx!.tenantId, toStatus });
 
+  if (state === "none")
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
