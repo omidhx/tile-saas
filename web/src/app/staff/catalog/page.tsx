@@ -41,6 +41,34 @@ function parsePackNum(s: string): { ok: true; value: number | null } | { ok: fal
   return Number.isFinite(n) && n > 0 ? { ok: true, value: n } : { ok: false };
 }
 
+/**
+ * انتخابِ سریع از مقدارهایی که قبلاً برای همین فیلد (رنگ/سایز/...) در محصولاتِ
+ * دیگر وارد شده — تا پشتیبان دوباره تایپ نکند. هیچ ذخیره‌ی جداگانه‌ای لازم نیست:
+ * «ذخیره‌شدن» یعنی همان مقدار الان روی یک محصول نشسته، پس از همان لیستِ
+ * محصولات مشتق می‌شود. اگر لیست بلند شد (>۸)، یک کادرِ جستجو هم اضافه می‌شود.
+ */
+function QuickPick({ label, options, onPick }: { label: string; options: string[]; onPick: (v: string) => void }) {
+  const [q, setQ] = useState("");
+  if (options.length === 0) return null;
+  const visible = options.filter((o) => matches(q, [o]));
+  return (
+    <div style={{ marginTop: "var(--sp-1)" }}>
+      {options.length > 8 && (
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
+               placeholder={`جستجو در ${label}‌های قبلی…`} aria-label={`جستجو در ${label}‌های ثبت‌شده`}
+               style={{ marginBottom: "var(--sp-1)", maxWidth: 220 }} />
+      )}
+      <div className="row row--start" style={{ flexWrap: "wrap", gap: ".3rem", justifyContent: "flex-start" }}>
+        {visible.length === 0
+          ? <span className="subtle">موردی یافت نشد.</span>
+          : visible.map((o) => (
+              <button key={o} type="button" className="chip" onClick={() => onPick(o)}>{o}</button>
+            ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
   const [products, setProducts] = useState<Product[]>([]);
@@ -189,6 +217,29 @@ export default function CatalogPage() {
   const withImage = products.filter((p) => p.imageUrl).length;
   const ready = form.name.trim() && form.code.trim() && form.sku.trim();
 
+  // مقدارهای یکتای هر فیلدِ توصیفی، از خودِ محصولاتِ موجود — پایه‌ی QuickPick
+  type AttrKey = "color" | "glaze" | "punch" | "body" | "size" | "thickness" | "usageArea";
+  const distinctVal = (key: AttrKey) =>
+    [...new Set(products.map((p) => p[key]).filter((v): v is string => !!v))].sort();
+
+  // فیلدهای رنگ/لعاب/پانچ/بدنه + QuickPick — در فرمِ ساخت و ویرایش مشترک‌اند
+  const attrFields = (v: typeof EMPTY_EDIT, set: (patch: Partial<typeof EMPTY_EDIT>) => void, key: string) => (
+    <div className="grid2">
+      <div><label htmlFor={`cl-${key}`}>رنگ</label>
+        <input id={`cl-${key}`} value={v.color} onChange={(e) => set({ color: e.target.value })} placeholder="طوسی" />
+        <QuickPick label="رنگ" options={distinctVal("color")} onPick={(val) => set({ color: val })} /></div>
+      <div><label htmlFor={`gl-${key}`}>لعاب</label>
+        <input id={`gl-${key}`} value={v.glaze} onChange={(e) => set({ glaze: e.target.value })} placeholder="مات / ترانس" />
+        <QuickPick label="لعاب" options={distinctVal("glaze")} onPick={(val) => set({ glaze: val })} /></div>
+      <div><label htmlFor={`pn-${key}`}>پانچ</label>
+        <input id={`pn-${key}`} value={v.punch} onChange={(e) => set({ punch: e.target.value })} placeholder="تخت / رستیک" />
+        <QuickPick label="پانچ" options={distinctVal("punch")} onPick={(val) => set({ punch: val })} /></div>
+      <div><label htmlFor={`bd-${key}`}>بدنه</label>
+        <input id={`bd-${key}`} value={v.body} onChange={(e) => set({ body: e.target.value })} placeholder="سفید / قرمز" />
+        <QuickPick label="بدنه" options={distinctVal("body")} onPick={(val) => set({ body: val })} /></div>
+    </div>
+  );
+
   // فیلدهای «اطلاعاتِ بیشتر» — در فرمِ ساخت و ویرایش مشترک‌اند
   const moreFields = (v: typeof EMPTY_EDIT, set: (patch: Partial<typeof EMPTY_EDIT>) => void, key: string) => {
     // پیش‌نمایشِ زنده‌ی فرمول — فقط وقتی حداقل یکی از دو مقدار معتبر باشد
@@ -205,11 +256,14 @@ export default function CatalogPage() {
         <summary>اطلاعاتِ بیشتر (اختیاری) — ابعاد، ضخامت، کاربری، بسته‌بندی، توضیحات</summary>
         <div className="grid2" style={{ marginTop: "var(--sp-2)" }}>
           <div><label htmlFor={`sz-${key}`}>ابعاد</label>
-            <input id={`sz-${key}`} value={v.size} onChange={(e) => set({ size: e.target.value })} placeholder="۶۰×۶۰" /></div>
+            <input id={`sz-${key}`} value={v.size} onChange={(e) => set({ size: e.target.value })} placeholder="۶۰×۶۰" />
+            <QuickPick label="ابعاد" options={distinctVal("size")} onPick={(val) => set({ size: val })} /></div>
           <div><label htmlFor={`th-${key}`}>ضخامت</label>
-            <input id={`th-${key}`} value={v.thickness} onChange={(e) => set({ thickness: e.target.value })} placeholder="۹ میلی‌متر" /></div>
+            <input id={`th-${key}`} value={v.thickness} onChange={(e) => set({ thickness: e.target.value })} placeholder="۹ میلی‌متر" />
+            <QuickPick label="ضخامت" options={distinctVal("thickness")} onPick={(val) => set({ thickness: val })} /></div>
           <div><label htmlFor={`ua-${key}`}>کاربری</label>
-            <input id={`ua-${key}`} value={v.usageArea} onChange={(e) => set({ usageArea: e.target.value })} placeholder="کف / دیوار / نما" /></div>
+            <input id={`ua-${key}`} value={v.usageArea} onChange={(e) => set({ usageArea: e.target.value })} placeholder="کف / دیوار / نما" />
+            <QuickPick label="کاربری" options={distinctVal("usageArea")} onPick={(val) => set({ usageArea: val })} /></div>
         </div>
 
         {/* بسته‌بندی: پایه‌ی فرمولِ تبدیلِ کارتن⇄پالت⇄مترمربع که نماینده در سفارش می‌بیند.
@@ -293,17 +347,10 @@ export default function CatalogPage() {
                 <input id="pc" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="TS-6060" /></div>
               <div><label htmlFor="ps">sku * <span className="subtle">(کلیدِ تطبیق با اکسل)</span></label>
                 <input id="ps" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="TS-6060-A" /></div>
-              <div><label htmlFor="pcl">رنگ</label>
-                <input id="pcl" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} placeholder="طوسی" /></div>
-              <div><label htmlFor="pg">لعاب</label>
-                <input id="pg" value={form.glaze} onChange={(e) => setForm({ ...form, glaze: e.target.value })} placeholder="مات / ترانس" /></div>
-              <div><label htmlFor="pp">پانچ</label>
-                <input id="pp" value={form.punch} onChange={(e) => setForm({ ...form, punch: e.target.value })} placeholder="تخت / رستیک" /></div>
-              <div><label htmlFor="pb">بدنه</label>
-                <input id="pb" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} placeholder="سفید / قرمز" /></div>
               <div><label htmlFor="pu">یا URL عکس اصلی</label>
                 <input id="pu" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://…" /></div>
             </div>
+            {attrFields(form, (patch) => setForm((s) => ({ ...s, ...patch })), "new")}
             {moreFields(form, (patch) => setForm((s) => ({ ...s, ...patch })), "new")}
             <button className="primary" onClick={createProduct} aria-busy={pending === "create"}
               disabled={pending === "create" || !ready}
@@ -434,15 +481,8 @@ export default function CatalogPage() {
                       <input value={p.code} disabled aria-label="کد (غیرقابل ویرایش)" /></div>
                     <div><label>sku <span className="subtle">(قفل)</span></label>
                       <input value={p.sku ?? ""} disabled aria-label="sku (غیرقابل ویرایش)" /></div>
-                    <div><label htmlFor={`ec-${p.id}`}>رنگ</label>
-                      <input id={`ec-${p.id}`} value={editForm.color} onChange={(e) => setEditForm({ ...editForm, color: e.target.value })} /></div>
-                    <div><label htmlFor={`eg-${p.id}`}>لعاب</label>
-                      <input id={`eg-${p.id}`} value={editForm.glaze} onChange={(e) => setEditForm({ ...editForm, glaze: e.target.value })} /></div>
-                    <div><label htmlFor={`ep-${p.id}`}>پانچ</label>
-                      <input id={`ep-${p.id}`} value={editForm.punch} onChange={(e) => setEditForm({ ...editForm, punch: e.target.value })} /></div>
-                    <div><label htmlFor={`eb-${p.id}`}>بدنه</label>
-                      <input id={`eb-${p.id}`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })} /></div>
                   </div>
+                  {attrFields(editForm, (patch) => setEditForm((s) => ({ ...s, ...patch })), p.id)}
                   {moreFields(editForm, (patch) => setEditForm((s) => ({ ...s, ...patch })), p.id)}
                   <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
                     <button className="primary" disabled={pending === "edit" + p.id || !editForm.name.trim()}

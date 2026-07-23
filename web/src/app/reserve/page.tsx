@@ -136,6 +136,9 @@ export default function ReservePage() {
   // فیلترِ ساخت‌یافته بر ویژگی‌ها؛ "" = بی‌قید. مقدارها از خودِ اقلامِ موجود ساخته می‌شوند.
   const [attr, setAttr] = useState<{ color: string; glaze: string; punch: string; body: string }>(
     { color: "", glaze: "", punch: "", body: "" });
+  // جستجو در گزینه‌های هر فیلتر — فقط وقتی گزینه‌ها زیاد شوند نشان داده می‌شود (پایین‌تر)
+  const [attrSearch, setAttrSearch] = useState<{ color: string; glaze: string; punch: string; body: string }>(
+    { color: "", glaze: "", punch: "", body: "" });
   // مودالِ جزئیات + گالری — فقط شناسه نگه‌داشته می‌شود، نه خودِ آبجکت؛ وگرنه اگر
   // lots در پس‌زمینه رفرش شود (مثلاً بعدِ یک عملیاتِ دیگر)، مودال داده‌ی کهنه نشان می‌دهد.
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -362,20 +365,36 @@ export default function ReservePage() {
               {warehouses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           )}
-          {/* فیلترِ ساخت‌یافته بر ویژگی — هرکدام فقط اگر ۲ مقدار یا بیشتر داشته باشد */}
-          {([["color", "رنگ"], ["glaze", "لعاب"], ["punch", "پانچ"], ["body", "بدنه"]] as const).map(([k, lbl]) =>
-            attrOpts[k].length > 1 ? (
-              <select key={k} aria-label={`فیلتر ${lbl}`} value={attr[k]}
-                      onChange={(e) => setAttr((a) => ({ ...a, [k]: e.target.value }))} style={{ maxWidth: 160 }}>
-                <option value="">همه‌ی {lbl}‌ها</option>
-                {attrOpts[k].map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            ) : null,
-          )}
+          {/* فیلترِ ساخت‌یافته بر ویژگی — هرکدام فقط اگر ۲ مقدار یا بیشتر داشته باشد.
+              اگر گزینه‌ها زیاد شدند (>۸)، یک کادرِ جستجو هم بالای آن می‌آید تا با
+              اسکرولِ طولانیِ select پیدا نکردنِ مقدار آزاردهنده نشود. */}
+          {([["color", "رنگ"], ["glaze", "لعاب"], ["punch", "پانچ"], ["body", "بدنه"]] as const).map(([k, lbl]) => {
+            if (attrOpts[k].length <= 1) return null;
+            const opts = attrOpts[k].filter((v) => matches(attrSearch[k], [v]));
+            return (
+              <span key={k} className="row row--start" style={{ gap: ".3rem", flexWrap: "wrap" }}>
+                {attrOpts[k].length > 8 && (
+                  <input type="search" value={attrSearch[k]}
+                         onChange={(e) => setAttrSearch((s) => ({ ...s, [k]: e.target.value }))}
+                         placeholder={`جستجوی ${lbl}…`} aria-label={`جستجو در گزینه‌های ${lbl}`}
+                         style={{ maxWidth: 120 }} />
+                )}
+                <select aria-label={`فیلتر ${lbl}`} value={attr[k]}
+                        onChange={(e) => setAttr((a) => ({ ...a, [k]: e.target.value }))} style={{ maxWidth: 160 }}>
+                  <option value="">همه‌ی {lbl}‌ها</option>
+                  {opts.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </span>
+            );
+          })}
           {(query || whFilter || attrActive) && (
             <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
               <span className="subtle">{money(visibleLots.length)} از {money(lots.length)}</span>
-              <button className="ghost" onClick={() => { setQuery(""); setWhFilter(""); setAttr({ color: "", glaze: "", punch: "", body: "" }); }}>
+              <button className="ghost" onClick={() => {
+                setQuery(""); setWhFilter("");
+                setAttr({ color: "", glaze: "", punch: "", body: "" });
+                setAttrSearch({ color: "", glaze: "", punch: "", body: "" });
+              }}>
                 پاک‌کردنِ فیلترها
               </button>
             </span>
