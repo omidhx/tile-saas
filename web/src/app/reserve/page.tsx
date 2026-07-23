@@ -7,7 +7,7 @@ import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import { formatJalaliDate } from "@/lib/date";
-import { matches } from "@/lib/search";
+import { matches, normalize } from "@/lib/search";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -33,6 +33,90 @@ type Substitute = {
 
 // پول در دیتابیس عددِ صحیح است؛ اعشار/جداکننده فقط همین‌جا در لایه‌ی UI (قانون #۷)
 const money = (v: number) => v.toLocaleString("fa-IR");
+const fmtUnit = (n: number) => n.toLocaleString("fa-IR", { maximumFractionDigits: 2 });
+
+type Unit = "box" | "pallet" | "sqm";
+
+/**
+ * ورودیِ تعداد با انتخابِ واحد (کارتن/پالت/مترمربع). بسته‌بندی مشخصه‌ی ثابتِ
+ * کارخانه است (پشتیبان در مدیریتِ محصول تنظیمش می‌کند)، پس اینجا فقط تبدیل
+ * می‌شود — نه چیزی که نماینده هر بار حدس بزند.
+ *
+ * منبعِ حقیقت همیشه `value` (کارتن، در cart) است؛ `text` فقط بازنمودِ محلیِ
+ * واحدِ انتخاب‌شده است تا کاربر بتواند اعشار تایپ کند بدونِ فرمت‌شدنِ هر keystroke.
+ * اگر تبدیل به سقفِ موجودی بخورد، متن با معادلِ واقعی جایگزین می‌شود — وگرنه
+ * عددِ نمایش‌داده‌شده با آنچه واقعاً رزرو می‌شود فرق می‌کرد.
+ */
+function QtyPicker({
+  id, label, max, boxesPerPallet, sqcmPerBox, value, onChange,
+}: {
+  id: string; label: string; max: number;
+  boxesPerPallet: number | null; sqcmPerBox: number | null;
+  value: number; onChange: (boxes: number) => void;
+}) {
+  const [unit, setUnit] = useState<Unit>("box");
+  const [text, setText] = useState(value > 0 ? String(value) : "");
+  const hasFactor = boxesPerPallet != null || sqcmPerBox != null;
+
+  // بعدِ صفرشدنِ سبد از بیرون (مثلاً ثبتِ موفقِ سفارش)، ورودیِ محلی هم پاک شود
+  useEffect(() => { if (value === 0) setText(""); }, [value]);
+
+  function toBoxes(n: number, u: Unit): number {
+    if (u === "box") return Math.floor(n);
+    if (u === "pallet") return Math.ceil(n * (boxesPerPallet ?? 0));
+    return Math.ceil((n * 10000) / (sqcmPerBox || 1));
+  }
+
+  function commit(raw: string, u: Unit) {
+    setText(raw);
+    const n = Number(normalize(raw).replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) { onChange(0); return; }
+    const boxes = toBoxes(n, u);
+    const clamped = Math.max(0, Math.min(max, boxes));
+    onChange(clamped);
+    if (clamped !== boxes) {
+      // به سقفِ موجودی خورد — متن باید معادلِ واقعیِ رزروشده را نشان دهد، نه عددِ خام‌تایپ‌شده
+      if (u === "box") setText(String(clamped));
+      else if (u === "pallet") setText(fmtUnit(clamped / (boxesPerPallet ?? 1)));
+      else setText(fmtUnit((clamped * (sqcmPerBox ?? 0)) / 10000));
+    }
+  }
+
+  function switchUnit(u: Unit) {
+    setUnit(u);
+    if (value <= 0) { setText(""); return; }
+    if (u === "box") setText(String(value));
+    else if (u === "pallet") setText(fmtUnit(value / (boxesPerPallet ?? 1)));
+    else setText(fmtUnit((value * (sqcmPerBox ?? 0)) / 10000));
+  }
+
+  const placeholder = unit === "box" ? "تعداد کارتن" : unit === "pallet" ? "تعداد پالت" : "متراژ (مترمربع)";
+
+  return (
+    <div style={{ marginTop: "var(--sp-3)" }}>
+      <div className="row row--start" style={{ flexWrap: "wrap" }}>
+        <label htmlFor={id} className="sr-only">{label}</label>
+        <input id={id} type="text" inputMode="decimal" placeholder={placeholder}
+               value={text} style={{ maxWidth: 130 }}
+               onChange={(e) => commit(e.target.value, unit)} />
+        {hasFactor ? (
+          <select aria-label="واحدِ ورود" value={unit} onChange={(e) => switchUnit(e.target.value as Unit)} style={{ maxWidth: 110 }}>
+            <option value="box">کارتن</option>
+            {boxesPerPallet != null && <option value="pallet">پالت</option>}
+            {sqcmPerBox != null && <option value="sqm">مترمربع</option>}
+          </select>
+        ) : <span className="subtle">کارتن</span>}
+      </div>
+      {value > 0 && hasFactor && (
+        <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>
+          معادل: {money(value)} کارتن
+          {boxesPerPallet != null && ` · ${fmtUnit(value / boxesPerPallet)} پالت`}
+          {sqcmPerBox != null && ` · ${fmtUnit((value * sqcmPerBox) / 10000)} مترمربع`}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ReservePage() {
   const { contexts, ctx, state, select } = useContexts("agent");
@@ -361,17 +445,10 @@ export default function ReservePage() {
               </div>
             </div>
 
-            <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
-              <label htmlFor={`qty-${l.lot_id}`} className="sr-only">تعداد کارتن برای {l.name} در {l.warehouse_name}</label>
-              <input id={`qty-${l.lot_id}`} type="number" min={0} max={l.available} step={1} placeholder="تعداد کارتن"
-                     value={cart[l.lot_id] ?? ""} style={{ maxWidth: 150 }}
-                     onChange={(e) => {
-                       // کارتن عددِ صحیح است — بک‌اند اعشار را رد می‌کند (خطای مبهمِ «ثبت نشد»)،
-                       // پس همین‌جا floor می‌شود تا اصلاً چنین مقداری ساخته نشود.
-                       const n = Math.floor(Number(e.target.value) || 0);
-                       setCart((c) => ({ ...c, [l.lot_id]: Math.max(0, Math.min(l.available, n)) }));
-                     }} />
-            </div>
+            <QtyPicker id={`qty-${l.lot_id}`} label={`تعداد برای ${l.name} در ${l.warehouse_name}`}
+                       max={l.available} boxesPerPallet={l.boxes_per_pallet} sqcmPerBox={l.sqcm_per_box}
+                       value={cart[l.lot_id] ?? 0}
+                       onChange={(boxes) => setCart((c) => ({ ...c, [l.lot_id]: boxes }))} />
           </div>
         );
       })}

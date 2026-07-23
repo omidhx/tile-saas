@@ -32,7 +32,11 @@ export async function GET(req: Request) {
         CASE WHEN r.status = 'active' AND r.expires_at <= now() THEN 'expired' ELSE r.status END AS status,
         r.expires_at AS "expiresAt", aa.legal_name AS "agentName",
         COALESCE(json_agg(json_build_object(
-          'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes
+          'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes,
+          -- برای پنلِ پشتیبان: معادلِ پالت/مترمربع کنارِ عددِ کارتن (spec تبدیلِ واحد).
+          -- override رویِ خودِ Lot اگر باشد ارجح است، هم‌راستا با کوئریِ /api/lots.
+          'boxesPerPallet', COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet),
+          'sqcmPerBox', pv.sqcm_per_box
         )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items
       FROM reservation r
       JOIN agent_account aa ON aa.id = r.agent_account_id

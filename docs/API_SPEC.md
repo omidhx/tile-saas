@@ -121,7 +121,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/prices` | staff | قیمت‌گذاری (تغییر در `audit_log` ثبت می‌شود) |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
 | `/api/substitutes` | staff | تعریفِ کالای جایگزین |
-| `/api/products` | staff | مدیریتِ محصول: فهرست (با قیمت/گالری/فیلدهای بیشتر)، `POST` ساخت، `PATCH` ویرایشِ ویژگی‌ها (کد/sku قفل؛ عکس‌ها در `/api/product-images`) |
+| `/api/products` | staff | مدیریتِ محصول: فهرست (با قیمت/گالری/فیلدهای بیشتر/بسته‌بندی)، `POST` ساخت، `PATCH` ویرایشِ ویژگی‌ها + بسته‌بندیِ variant اول (`boxesPerPallet`/`sqcmPerBox`، برای فرمولِ تبدیلِ کارتن⇄پالت⇄مترمربع در `/reserve`؛ کد/sku قفل؛ عکس‌ها در `/api/product-images`) |
 | `/api/upload` | staff | آپلودِ عکس (multipart) → URL برمی‌گرداند |
 | `/api/product-images` | staff | گالریِ محصول: `POST` افزودن، `PATCH` اصلی‌کردن، `DELETE` حذف |
 | `/api/shared-catalog` | agent | کاتالوگِ سفارشیِ نماینده: فهرست/ساخت/باطل‌کردن/حذف. صفحه‌ی عمومیِ مشتری در `/c/<slug>/<token>` (بدونِ لاگین، فقط عکس/مشخصات/موجود، بدونِ قیمت) |

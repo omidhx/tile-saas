@@ -113,6 +113,25 @@ test("ویرایشِ فیلدهای اطلاعاتِ بیشتر (ابعاد/ضخ
   assert.equal(p.description, "کاشیِ کف", "توضیحات دست‌نخورده چون undefined بود");
 });
 
+test("بسته‌بندی: در ساخت ثبت می‌شود؛ در ویرایش فقط با variantId عوض می‌شود", async () => {
+  const r = await createProduct(T, { name: "P", code: "P3", sku: "P3-A", boxesPerPallet: 48, sqcmPerBox: 3600 });
+  assert.ok(r.ok);
+  let p = (await listProducts(T)).find((x) => x.code === "P3")!;
+  assert.equal(p.boxesPerPallet, 48);
+  assert.equal(p.sqcmPerBox, 3600);
+
+  // بدونِ variantId، آپدیت بسته‌بندی نادیده گرفته می‌شود — نه خطا، فقط بی‌اثر
+  await updateProduct({ tenantId: T, productId: r.id, boxesPerPallet: 96 });
+  p = (await listProducts(T)).find((x) => x.code === "P3")!;
+  assert.equal(p.boxesPerPallet, 48, "بدونِ variantId دست‌نخورده می‌ماند");
+
+  // با variantId درست عوض می‌شود
+  await updateProduct({ tenantId: T, productId: r.id, variantId: p.variantId!, boxesPerPallet: 96, sqcmPerBox: null });
+  p = (await listProducts(T)).find((x) => x.code === "P3")!;
+  assert.equal(p.boxesPerPallet, 96);
+  assert.equal(p.sqcmPerBox, null, "null صریح یعنی پاک‌کردن");
+});
+
 test("basePrice از اولین لیستِ قیمت می‌آید (نمایشی، نه ویرایش)", async () => {
   const r = await createProduct(T, { name: "قیمت‌دار", code: "PR1", sku: "PR1-A" });
   assert.ok(r.ok);

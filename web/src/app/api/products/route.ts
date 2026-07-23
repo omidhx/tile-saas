@@ -6,6 +6,18 @@ import { listProducts, createProduct, updateProduct } from "@/db/products";
 /** ویژگی‌های اختیاریِ متنی از بدنه؛ رشته یا null (خالی → null در لایه‌ی db). */
 const optStr = (v: unknown) => (v === undefined ? undefined : typeof v === "string" ? v : null);
 
+/**
+ * عددِ صحیحِ مثبتِ اختیاری (بسته‌بندی): undefined=دست‌نزن، null/""=پاک‌کن، وگرنه
+ * باید عددِ صحیحِ مثبت باشد — چون CHECK(> 0) در schema هست و رد نکردنش اینجا
+ * یعنی خطای خامِ SQL به‌جای پیامِ روشن.
+ */
+function optPosInt(v: unknown): { ok: true; value: number | null | undefined } | { ok: false } {
+  if (v === undefined) return { ok: true, value: undefined };
+  if (v === null || v === "") return { ok: true, value: null };
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? { ok: true, value: n } : { ok: false };
+}
+
 async function staffCtx(tenantId: unknown) {
   const userId = await currentUserId();
   if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
@@ -36,6 +48,10 @@ export async function POST(req: Request) {
   if (typeof name !== "string" || typeof code !== "string" || typeof sku !== "string")
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
+  const bpp = optPosInt(body?.boxesPerPallet);
+  const spb = optPosInt(body?.sqcmPerBox);
+  if (!bpp.ok || !spb.ok) return NextResponse.json({ error: "invalid_packaging" }, { status: 400 });
+
   const r = await createProduct(c.tenantId, {
     name, code, sku,
     color: optStr(color) ?? null, glaze: optStr(glaze) ?? null,
@@ -43,6 +59,7 @@ export async function POST(req: Request) {
     size: optStr(body?.size) ?? null, thickness: optStr(body?.thickness) ?? null,
     usageArea: optStr(body?.usageArea) ?? null, description: optStr(body?.description) ?? null,
     imageUrl: typeof body?.imageUrl === "string" ? body.imageUrl : null,
+    boxesPerPallet: bpp.value ?? null, sqcmPerBox: spb.value ?? null,
   });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "missing" ? 400 : 409 });
   return NextResponse.json({ id: r.id }, { status: 201 });
@@ -55,12 +72,18 @@ export async function PATCH(req: Request) {
   if ("err" in c) return c.err;
   if (typeof body?.productId !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
 
+  const bpp = optPosInt(body.boxesPerPallet);
+  const spb = optPosInt(body.sqcmPerBox);
+  if (!bpp.ok || !spb.ok) return NextResponse.json({ error: "invalid_packaging" }, { status: 400 });
+
   await updateProduct({
     tenantId: c.tenantId, productId: body.productId,
     name: typeof body.name === "string" ? body.name : undefined,
     color: optStr(body.color), glaze: optStr(body.glaze), punch: optStr(body.punch), body: optStr(body.body),
     size: optStr(body.size), thickness: optStr(body.thickness),
     usageArea: optStr(body.usageArea), description: optStr(body.description),
+    variantId: typeof body.variantId === "string" ? body.variantId : undefined,
+    boxesPerPallet: bpp.value, sqcmPerBox: spb.value,
   });
   return NextResponse.json({ ok: true });
 }

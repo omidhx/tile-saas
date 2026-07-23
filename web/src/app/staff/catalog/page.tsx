@@ -5,7 +5,7 @@ import Icon from "../../Icon";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
-import { matches } from "@/lib/search";
+import { matches, normalize } from "@/lib/search";
 
 type Img = { id: string; url: string };
 type Product = {
@@ -15,6 +15,8 @@ type Product = {
   size: string | null; thickness: string | null; usageArea: string | null; description: string | null;
   images: Img[]; sku: string | null;
   variantId: string | null; hasStock: boolean; basePrice: number | null;
+  /** بسته‌بندیِ فیزیکی — پایه‌ی تبدیلِ کارتن⇄پالت⇄مترمربع در صفحه‌ی سفارشِ نماینده. */
+  boxesPerPallet: number | null; sqcmPerBox: number | null;
 };
 type Sub = {
   id: string; variantId: string; substituteVariantId: string;
@@ -22,8 +24,22 @@ type Sub = {
 };
 
 const money = (v: number) => v.toLocaleString("fa-IR");
-const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", imageUrl: "" };
-const EMPTY_EDIT = { name: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "" };
+const sqm = (cm2: number) => (cm2 / 10000).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
+const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", imageUrl: "", boxesPerPallet: "", sqmPerBox: "" };
+const EMPTY_EDIT = { name: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", boxesPerPallet: "", sqmPerBox: "" };
+
+/** ورودیِ عددیِ اختیاری (ارقامِ فارسی هم می‌پذیرد): خالی=null (معتبر)، وگرنه باید عددِ صحیحِ مثبت باشد. */
+function parsePackInt(s: string): { ok: true; value: number | null } | { ok: false } {
+  if (!s.trim()) return { ok: true, value: null };
+  const n = Number(normalize(s).replace(/[^0-9]/g, ""));
+  return Number.isInteger(n) && n > 0 ? { ok: true, value: n } : { ok: false };
+}
+/** مثلِ parsePackInt ولی اعشاری (متراژ) — نقطه هم مجاز است. */
+function parsePackNum(s: string): { ok: true; value: number | null } | { ok: false } {
+  if (!s.trim()) return { ok: true, value: null };
+  const n = Number(normalize(s).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? { ok: true, value: n } : { ok: false };
+}
 
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
@@ -70,8 +86,16 @@ export default function CatalogPage() {
 
   async function createProduct() {
     if (!ctx || !form.name.trim() || !form.code.trim() || !form.sku.trim()) return;
+    // اعتبارسنجیِ بسته‌بندی همین‌جا — وگرنه ۴۰۰ سرور با «نام/کد/sku» اشتباه گرفته می‌شود
+    // (هر دو یک کدِ وضعیت دارند و postJson بدنه‌ی خطا را برنمی‌گرداند).
+    const bpp = parsePackInt(form.boxesPerPallet);
+    const spb = parsePackNum(form.sqmPerBox);
+    if (!bpp.ok || !spb.ok) { setMsg("تعداد کارتن در پالت یا متراژِ هر کارتن نامعتبر است."); return; }
     setPending("create"); setMsg("");
-    const res = await postJson("/api/products", { tenantId: ctx.tenantId, ...form });
+    const res = await postJson("/api/products", {
+      tenantId: ctx.tenantId, ...form,
+      boxesPerPallet: bpp.value, sqcmPerBox: spb.value != null ? Math.round(spb.value * 10000) : null,
+    });
     if (!res.ok) {
       const code = res.status;
       setMsg(code === 409 ? "کد یا sku تکراری است." : code === 400 ? "نام، کد و sku الزامی‌اند." : actionError(code));
@@ -111,14 +135,22 @@ export default function CatalogPage() {
     setEditForm({
       name: p.name, color: p.color ?? "", glaze: p.glaze ?? "", punch: p.punch ?? "", body: p.body ?? "",
       size: p.size ?? "", thickness: p.thickness ?? "", usageArea: p.usageArea ?? "", description: p.description ?? "",
+      boxesPerPallet: p.boxesPerPallet != null ? String(p.boxesPerPallet) : "",
+      sqmPerBox: p.sqcmPerBox != null ? String(p.sqcmPerBox / 10000) : "",
     });
     setSubFor(null); setMsg("");
   }
 
-  async function saveEdit(productId: string) {
+  async function saveEdit(p: Product) {
     if (!ctx || !editForm.name.trim()) return;
-    setPending("edit" + productId); setMsg("");
-    const res = await postJson("/api/products", { tenantId: ctx.tenantId, productId, ...editForm }, "PATCH");
+    const bpp = parsePackInt(editForm.boxesPerPallet);
+    const spb = parsePackNum(editForm.sqmPerBox);
+    if (!bpp.ok || !spb.ok) { setMsg("تعداد کارتن در پالت یا متراژِ هر کارتن نامعتبر است."); return; }
+    setPending("edit" + p.id); setMsg("");
+    const res = await postJson("/api/products", {
+      tenantId: ctx.tenantId, productId: p.id, ...editForm, variantId: p.variantId ?? undefined,
+      boxesPerPallet: bpp.value, sqcmPerBox: spb.value != null ? Math.round(spb.value * 10000) : null,
+    }, "PATCH");
     if (!res.ok) setMsg(actionError(res.status));
     else { setEditFor(null); setMsg("محصول ویرایش شد."); await load(ctx.tenantId); }
     setPending(null);
@@ -158,22 +190,50 @@ export default function CatalogPage() {
   const ready = form.name.trim() && form.code.trim() && form.sku.trim();
 
   // فیلدهای «اطلاعاتِ بیشتر» — در فرمِ ساخت و ویرایش مشترک‌اند
-  const moreFields = (v: typeof EMPTY_EDIT, set: (patch: Partial<typeof EMPTY_EDIT>) => void, key: string) => (
-    <details className="more-info">
-      <summary>اطلاعاتِ بیشتر (اختیاری) — ابعاد، ضخامت، کاربری، توضیحات</summary>
-      <div className="grid2" style={{ marginTop: "var(--sp-2)" }}>
-        <div><label htmlFor={`sz-${key}`}>ابعاد</label>
-          <input id={`sz-${key}`} value={v.size} onChange={(e) => set({ size: e.target.value })} placeholder="۶۰×۶۰" /></div>
-        <div><label htmlFor={`th-${key}`}>ضخامت</label>
-          <input id={`th-${key}`} value={v.thickness} onChange={(e) => set({ thickness: e.target.value })} placeholder="۹ میلی‌متر" /></div>
-        <div><label htmlFor={`ua-${key}`}>کاربری</label>
-          <input id={`ua-${key}`} value={v.usageArea} onChange={(e) => set({ usageArea: e.target.value })} placeholder="کف / دیوار / نما" /></div>
-      </div>
-      <label htmlFor={`de-${key}`} style={{ marginTop: "var(--sp-2)" }}>توضیحات</label>
-      <textarea id={`de-${key}`} value={v.description} onChange={(e) => set({ description: e.target.value })}
-                rows={3} placeholder="توضیحاتِ محصول برای نماینده و مشتری…" />
-    </details>
-  );
+  const moreFields = (v: typeof EMPTY_EDIT, set: (patch: Partial<typeof EMPTY_EDIT>) => void, key: string) => {
+    // پیش‌نمایشِ زنده‌ی فرمول — فقط وقتی حداقل یکی از دو مقدار معتبر باشد
+    const bpp = parsePackInt(v.boxesPerPallet);
+    const spb = parsePackNum(v.sqmPerBox);
+    const preview: string[] = [];
+    if (spb.ok && spb.value != null) preview.push(`هر کارتن ≈ ${spb.value.toLocaleString("fa-IR", { maximumFractionDigits: 2 })} مترمربع`);
+    if (bpp.ok && bpp.value != null) preview.push(`هر پالت = ${money(bpp.value)} کارتن`);
+    if (bpp.ok && bpp.value != null && spb.ok && spb.value != null)
+      preview.push(`هر پالت ≈ ${(bpp.value * spb.value).toLocaleString("fa-IR", { maximumFractionDigits: 2 })} مترمربع`);
+
+    return (
+      <details className="more-info">
+        <summary>اطلاعاتِ بیشتر (اختیاری) — ابعاد، ضخامت، کاربری، بسته‌بندی، توضیحات</summary>
+        <div className="grid2" style={{ marginTop: "var(--sp-2)" }}>
+          <div><label htmlFor={`sz-${key}`}>ابعاد</label>
+            <input id={`sz-${key}`} value={v.size} onChange={(e) => set({ size: e.target.value })} placeholder="۶۰×۶۰" /></div>
+          <div><label htmlFor={`th-${key}`}>ضخامت</label>
+            <input id={`th-${key}`} value={v.thickness} onChange={(e) => set({ thickness: e.target.value })} placeholder="۹ میلی‌متر" /></div>
+          <div><label htmlFor={`ua-${key}`}>کاربری</label>
+            <input id={`ua-${key}`} value={v.usageArea} onChange={(e) => set({ usageArea: e.target.value })} placeholder="کف / دیوار / نما" /></div>
+        </div>
+
+        {/* بسته‌بندی: پایه‌ی فرمولِ تبدیلِ کارتن⇄پالت⇄مترمربع که نماینده در سفارش می‌بیند.
+            مشخصه‌ی ثابتِ کارخانه است — یک‌بار اینجا تنظیم می‌شود، نه هر بار توسطِ نماینده. */}
+        <div className="grid2" style={{ marginTop: "var(--sp-3)" }}>
+          <div><label htmlFor={`bpp-${key}`}>تعداد کارتن در هر پالت</label>
+            <input id={`bpp-${key}`} inputMode="numeric" value={v.boxesPerPallet}
+              onChange={(e) => set({ boxesPerPallet: e.target.value })} placeholder="۴۸" /></div>
+          <div><label htmlFor={`spb-${key}`}>متراژِ هر کارتن (مترمربع)</label>
+            <input id={`spb-${key}`} inputMode="decimal" value={v.sqmPerBox}
+              onChange={(e) => set({ sqmPerBox: e.target.value })} placeholder="۱٫۴۴" /></div>
+        </div>
+        {preview.length > 0 && (
+          <p className="subtle" style={{ marginTop: "var(--sp-1)" }}>
+            برای فرمولِ تبدیلِ نماینده: {preview.join("؛ ")}.
+          </p>
+        )}
+
+        <label htmlFor={`de-${key}`} style={{ marginTop: "var(--sp-2)" }}>توضیحات</label>
+        <textarea id={`de-${key}`} value={v.description} onChange={(e) => set({ description: e.target.value })}
+                  rows={3} placeholder="توضیحاتِ محصول برای نماینده و مشتری…" />
+      </details>
+    );
+  };
 
   return (
     <main>
@@ -291,6 +351,18 @@ export default function CatalogPage() {
                 <Link href="/staff/prices" className="subtle">ویرایش قیمت ←</Link>
               </div>
 
+              {/* بسته‌بندی: تبدیلِ کارتن⇄پالت⇄مترمربعی که نماینده در سفارش می‌بیند، همیشه دیده می‌شود
+                  تا پشتیبان بدونِ بازکردنِ ویرایش هم بتواند فرمول را ببیند. */}
+              <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>
+                {p.boxesPerPallet || p.sqcmPerBox ? (
+                  <>
+                    بسته‌بندی:{" "}
+                    {p.boxesPerPallet ? `${money(p.boxesPerPallet)} کارتن/پالت` : "پالت نامشخص"}
+                    {p.sqcmPerBox ? ` · ${sqm(p.sqcmPerBox)} مترمربع/کارتن` : " · متراژ نامشخص"}
+                  </>
+                ) : "بسته‌بندی تنظیم نشده — نماینده فقط با کارتن سفارش می‌دهد"}
+              </div>
+
               {/* گالری: اولی = اصلی (تامنیل). کلیک روی ★ = اصلی‌کردن، × = حذف. */}
               {(() => {
                 const galleryBusy = pending === "img" + p.id;
@@ -374,7 +446,7 @@ export default function CatalogPage() {
                   {moreFields(editForm, (patch) => setEditForm((s) => ({ ...s, ...patch })), p.id)}
                   <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
                     <button className="primary" disabled={pending === "edit" + p.id || !editForm.name.trim()}
-                      onClick={() => saveEdit(p.id)}>
+                      onClick={() => saveEdit(p)}>
                       {pending === "edit" + p.id && <span className="spinner" aria-hidden="true" />}ذخیره
                     </button>
                     <button className="ghost" onClick={() => setEditFor(null)}>انصراف</button>

@@ -25,6 +25,10 @@ export type ProductRow = {
   sku: string | null;
   /** variantِ اول — برای مدیریتِ جایگزینِ همین محصول لازم است. */
   variantId: string | null;
+  /** بسته‌بندیِ فیزیکی — برای تبدیلِ کارتن⇄پالت⇄مترمربع در صفحه‌ی سفارشِ نماینده.
+   *  مشخصه‌ی ثابتِ کارخانه است، پس یک‌بار اینجا تنظیم می‌شود نه هر بار توسطِ نماینده. */
+  boxesPerPallet: number | null;
+  sqcmPerBox: number | null;
   hasStock: boolean;
   /** قیمت در لیستِ پایه — فقط نمایشی؛ ویرایش در صفحه‌ی قیمت‌گذاری. */
   basePrice: number | null;
@@ -36,7 +40,7 @@ export function listProducts(tenantId: string) {
       SELECT p.id, p.name, p.code, p.image_url AS "imageUrl",
              p.color, p.glaze, p.punch, p.body,
              p.size, p.thickness, p.usage_area AS "usageArea", p.description,
-             v.id AS "variantId", v.sku,
+             v.id AS "variantId", v.sku, v.boxes_per_pallet AS "boxesPerPallet", v.sqcm_per_box AS "sqcmPerBox",
              EXISTS (SELECT 1 FROM inventory_lot l WHERE l.variant_id = v.id) AS "hasStock",
              COALESCE((
                SELECT json_agg(json_build_object('id', i.id, 'url', i.url) ORDER BY i.sort_order, i.id)
@@ -48,7 +52,7 @@ export function listProducts(tenantId: string) {
               ORDER BY pl.name LIMIT 1) AS "basePrice"
       FROM product p
       LEFT JOIN LATERAL (
-        SELECT pv.id, pv.sku FROM product_variant pv
+        SELECT pv.id, pv.sku, pv.boxes_per_pallet, pv.sqcm_per_box FROM product_variant pv
         WHERE pv.product_id = p.id ORDER BY pv.sku LIMIT 1
       ) v ON TRUE
       WHERE p.tenant_id = ${tenantId} ORDER BY p.name`;
@@ -61,6 +65,8 @@ type Attrs = {
   color?: string | null; glaze?: string | null; punch?: string | null; body?: string | null;
   size?: string | null; thickness?: string | null; usageArea?: string | null; description?: string | null;
   imageUrl?: string | null;
+  /** بسته‌بندیِ variantِ اول؛ روی خودِ product_variant ذخیره می‌شود نه product. */
+  boxesPerPallet?: number | null; sqcmPerBox?: number | null;
 };
 
 export type CreateResult =
@@ -108,7 +114,9 @@ export async function createProduct(tenantId: string, a: Attrs): Promise<CreateR
               ${a.size?.trim() || null}, ${a.thickness?.trim() || null},
               ${a.usageArea?.trim() || null}, ${a.description?.trim() || null})
       RETURNING id`;
-    await tx`INSERT INTO product_variant (tenant_id, product_id, sku) VALUES (${tenantId}, ${p.id}, ${a.sku.trim()})`;
+    await tx`
+      INSERT INTO product_variant (tenant_id, product_id, sku, boxes_per_pallet, sqcm_per_box)
+      VALUES (${tenantId}, ${p.id}, ${a.sku.trim()}, ${a.boxesPerPallet ?? null}, ${a.sqcmPerBox ?? null})`;
     if (a.imageUrl?.trim()) await addProductImageTx(tx, tenantId, p.id, a.imageUrl.trim());
     return { ok: true as const, id: p.id };
   });
@@ -121,6 +129,8 @@ export async function updateProduct(p: {
   tenantId: string; productId: string;
   name?: string; color?: string | null; glaze?: string | null; punch?: string | null; body?: string | null;
   size?: string | null; thickness?: string | null; usageArea?: string | null; description?: string | null;
+  /** بسته‌بندی روی خودِ variant ذخیره می‌شود؛ بدونِ variantId نادیده گرفته می‌شود. */
+  variantId?: string; boxesPerPallet?: number | null; sqcmPerBox?: number | null;
 }) {
   const id = p.productId, t = p.tenantId;
   if (!id || !t) throw new Error("updateProduct: productId و tenantId الزامی‌اند");
@@ -136,6 +146,12 @@ export async function updateProduct(p: {
     if (p.thickness !== undefined) await tx`UPDATE product SET thickness = ${p.thickness?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
     if (p.usageArea !== undefined) await tx`UPDATE product SET usage_area = ${p.usageArea?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
     if (p.description !== undefined) await tx`UPDATE product SET description = ${p.description?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
+    if (p.variantId) {
+      if (p.boxesPerPallet !== undefined)
+        await tx`UPDATE product_variant SET boxes_per_pallet = ${p.boxesPerPallet} WHERE id = ${p.variantId} AND tenant_id = ${t}`;
+      if (p.sqcmPerBox !== undefined)
+        await tx`UPDATE product_variant SET sqcm_per_box = ${p.sqcmPerBox} WHERE id = ${p.variantId} AND tenant_id = ${t}`;
+    }
   });
 }
 

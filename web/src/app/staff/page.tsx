@@ -8,9 +8,16 @@ import NavMenu from "../NavMenu";
 
 /** ارقامِ فارسی، همه‌جا یکسان. */
 const num = (v: number) => v.toLocaleString("fa-IR");
+/** معادلِ اعشاری (پالت/مترمربع) — برای دو رقمِ اعشار کافی، نه عددِ صحیح مثلِ کارتن. */
+const numUnit = (v: number) => v.toLocaleString("fa-IR", { maximumFractionDigits: 2 });
 
 type Ctx = { tenantId: string; tenantName: string };
-type Resv = { id: string; status: string; agentName: string; items: { name: string; code: string; quantityBoxes: number }[] };
+type ResvItem = {
+  name: string; code: string; quantityBoxes: number;
+  /** برای نمایشِ معادلِ پالت/مترمربع کنارِ عددِ کارتن — بسته‌بندی مشخصه‌ی ثابتِ محصول است. */
+  boxesPerPallet: number | null; sqcmPerBox: number | null;
+};
+type Resv = { id: string; status: string; agentName: string; items: ResvItem[] };
 type Req = { id: string; status: string; agentName: string; approvalMode: "manual" | "auto"; items: { name: string; code: string; qty: number }[] };
 type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number; warehouseName: string | null };
 type Agent = { id: string; legalName: string };
@@ -186,7 +193,24 @@ export default function StaffPage() {
       {pendingResvs.map((r) => (
         <div className="card" key={r.id}>
           <div className="row"><strong>{r.agentName}</strong></div>
-          <div className="muted">{r.items.map((i) => `${i.name} ×${num(i.quantityBoxes)}`).join("، ")}</div>
+          <div className="muted">
+            {/* معادلِ پالت/مترمربع کنارِ هر قلم — سنجشِ سریعِ سفارش‌های بزرگ بدونِ محاسبه‌ی ذهنی */}
+            {r.items.map((i, idx) => (
+              <span key={idx}>
+                {idx > 0 && "، "}
+                {i.name} ×{num(i.quantityBoxes)}
+                {(i.boxesPerPallet || i.sqcmPerBox) && (
+                  <span className="subtle">
+                    {" ("}
+                    {i.boxesPerPallet && `${numUnit(i.quantityBoxes / i.boxesPerPallet)} پالت`}
+                    {i.boxesPerPallet && i.sqcmPerBox && "، "}
+                    {i.sqcmPerBox && `${numUnit((i.quantityBoxes * i.sqcmPerBox) / 10000)} مترمربع`}
+                    {")"}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
           <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
             <button className="primary" onClick={() => approve(r.id)}
               disabled={pending === "approve" + r.id} aria-busy={pending === "approve" + r.id}>
