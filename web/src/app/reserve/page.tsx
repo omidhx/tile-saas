@@ -312,7 +312,7 @@ export default function ReservePage() {
       <main>
         <div className="banner banner--error" role="alert">
           <Icon name="alert" />
-          <span>این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، به پنل پشتیبان برو.</span>
+          <span>این کاربر به نمایندگی‌ای وصل نیست. اگر پشتیبان هستی، <Link href="/staff">به پنل پشتیبان برو</Link>.</span>
         </div>
       </main>
     );

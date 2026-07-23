@@ -1,12 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
 import NavMenu from "../../NavMenu";
+import { getJson, loadError } from "@/lib/api";
+import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDateTime } from "@/lib/date";
 
-type Ctx = { tenantId: string; tenantName: string };
 type Movement = {
   id: string; type: string; onHandDelta: number; allocatedDelta: number;
   refType: string | null; createdAt: string; note: string | null;
@@ -29,8 +29,7 @@ const TYPE_FA: Record<string, string> = {
 const sign = (n: number) => (n > 0 ? `+${n}` : String(n));
 
 export default function LedgerPage() {
-  const router = useRouter();
-  const [ctx, setCtx] = useState<Ctx | null>(null);
+  const { ctx, state } = useContexts("staff");
   const [movements, setMovements] = useState<Movement[]>([]);
   const [drift, setDrift] = useState<Drift[]>([]);
   // این صفحه یک ادعای ایمنی می‌کند («تراز است»). پس باید «بارگذاری موفق و خالی» را از
@@ -38,25 +37,24 @@ export default function LedgerPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadErr, setLoadErr] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/me");
-      if (res.status === 401) { router.push("/login"); return; }
-      const { contexts } = await res.json();
-      const staffCtx = contexts?.find((c: { role?: string }) => c.role === "staff" || c.role === "admin") ?? contexts?.[0];
-      if (!staffCtx) return;
-      setCtx(staffCtx);
-      const l = await fetch(`/api/ledger?tenantId=${staffCtx.tenantId}`);
-      if (l.ok) {
-        const d = await l.json();
-        setMovements(d.movements); setDrift(d.drift); setLoaded(true);
-      } else {
-        setLoadErr(l.status === 403 ? "این گزارش فقط برای پشتیبان است (نقش staff)." : `بارگذاری ناموفق (${l.status})`);
-      }
-    })();
-  }, [router]);
+  const load = useCallback(async (tenantId: string) => {
+    const res = await getJson<{ movements: Movement[]; drift: Drift[] }>(`/api/ledger?tenantId=${tenantId}`);
+    if (res.ok) { setMovements(res.data.movements); setDrift(res.data.drift); setLoadErr(""); }
+    else setLoadErr(loadError(res.status));
+    setLoaded(true);
+  }, []);
 
-  if (!ctx) return <main><p className="muted">در حال بارگذاری…</p></main>;
+  useEffect(() => { if (ctx) load(ctx.tenantId); }, [ctx, load]);
+
+  if (state === "none")
+    return (
+      <main>
+        <div className="banner banner--error" role="alert">
+          <Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span>
+        </div>
+      </main>
+    );
+  if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
     <main>
@@ -72,7 +70,7 @@ export default function LedgerPage() {
       {loadErr ? (
         <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr} — وضعیت ترازی نامشخص است.</span></div>
       ) : !loaded ? (
-        <div className="card"><span className="muted">در حال بررسی…</span></div>
+        <div className="card"><span className="muted"><span className="spinner" aria-hidden="true" /> در حال بررسی…</span></div>
       ) : drift.length === 0 ? (
         <div className="banner banner--ok" role="status">
           <Icon name="check" /><span>تراز است — جمع لجر با موجودی هر Lot می‌خواند.</span>
@@ -102,7 +100,7 @@ export default function LedgerPage() {
       )}
 
       <h2>حرکات اخیر</h2>
-      {loaded && movements.length === 0 && <p className="muted">حرکتی ثبت نشده.</p>}
+      {loaded && !loadErr && movements.length === 0 && <p className="empty">حرکتی ثبت نشده.</p>}
       {movements.map((m) => (
         <div className="card" key={m.id}>
           <div className="row">

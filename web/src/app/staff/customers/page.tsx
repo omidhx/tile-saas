@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
 import NavMenu from "../../NavMenu";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDate, jalaliToDate, todayJalali, toJalali, type Jalali } from "@/lib/date";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
@@ -43,6 +43,8 @@ export default function CustomersPage() {
   const [msg, setMsg] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [editFor, setEditFor] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", note: "" });
 
   const inverted = jalaliToDate(from) > jalaliToDate(to);
 
@@ -66,27 +68,36 @@ export default function CustomersPage() {
 
   async function add() {
     if (!ctx || !name.trim()) return;
-    setPending("add");
-    try {
-      const res = await fetch("/api/customers", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, name, phone, agentAccountId: forAgent || null }),
-      });
-      setMsg(res.ok ? "ثبت شد." : "ثبت نشد.");
-      if (res.ok) { setName(""); setPhone(""); await load(ctx.tenantId, from, to); }
-    } finally { setPending(null); }
+    setPending("add"); setMsg("");
+    const res = await postJson("/api/customers", { tenantId: ctx.tenantId, name, phone, agentAccountId: forAgent || null });
+    if (!res.ok) setMsg(actionError(res.status));
+    else { setName(""); setPhone(""); setMsg("ثبت شد."); await load(ctx.tenantId, from, to); }
+    setPending(null);
   }
 
   async function toggleActive(c: Customer) {
     if (!ctx) return;
-    setPending(c.id);
-    try {
-      await fetch("/api/customers", {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, id: c.id, isActive: !c.isActive }),
-      });
-      await load(ctx.tenantId, from, to);
-    } finally { setPending(null); }
+    setPending(c.id); setMsg("");
+    const res = await postJson("/api/customers", { tenantId: ctx.tenantId, id: c.id, isActive: !c.isActive }, "PATCH");
+    if (!res.ok) setMsg(actionError(res.status));
+    else await load(ctx.tenantId, from, to);
+    setPending(null);
+  }
+
+  function startEdit(c: Customer) {
+    setEditFor(c.id);
+    setEditForm({ name: c.name, phone: c.phone ?? "", note: c.note ?? "" });
+    setMsg("");
+  }
+
+  async function saveEdit(c: Customer) {
+    if (!ctx || !editForm.name.trim()) return;
+    setPending("edit" + c.id); setMsg("");
+    const res = await postJson("/api/customers",
+      { tenantId: ctx.tenantId, id: c.id, ...editForm }, "PATCH");
+    if (!res.ok) setMsg(actionError(res.status));
+    else { setEditFor(null); setMsg("مشتری ویرایش شد."); await load(ctx.tenantId, from, to); }
+    setPending(null);
   }
 
   async function showHistory(customerId: string) {
@@ -134,7 +145,14 @@ export default function CustomersPage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {msg && <div className="banner banner--ok" role="status"><Icon name="check" /><span>{msg}</span></div>}
+      {msg && (() => {
+        const isErr = msg.includes("نشد") || msg.includes("نداری") || msg.includes("منقضی");
+        return (
+          <div className={`banner banner--${isErr ? "error" : "ok"}`} role="status">
+            <Icon name={isErr ? "alert" : "check"} /><span>{msg}</span>
+          </div>
+        );
+      })()}
 
       <h2>ثبت مشتری</h2>
       <div className="card">
@@ -237,12 +255,36 @@ export default function CustomersPage() {
               {c.phone && <span className="subtle num"> · {c.phone}</span>}
               {!c.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
             </span>
-            <button className="ghost" onClick={() => toggleActive(c)}
-                    aria-busy={pending === c.id} disabled={pending === c.id}>
-              {c.isActive ? "غیرفعال کن" : "فعال کن"}
-            </button>
+            <span className="row row--start">
+              <button className="ghost" disabled={pending === "edit" + c.id}
+                      onClick={() => (editFor === c.id ? setEditFor(null) : startEdit(c))}>
+                {editFor === c.id ? "بستن ویرایش" : "ویرایش"}
+              </button>
+              <button className="ghost" onClick={() => toggleActive(c)}
+                      aria-busy={pending === c.id} disabled={pending === c.id}>
+                {c.isActive ? "غیرفعال کن" : "فعال کن"}
+              </button>
+            </span>
           </div>
           <div className="subtle">{c.agentName ?? "مشتری مستقیم کارخانه"}</div>
+
+          {editFor === c.id && (
+            <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+              <label htmlFor={`en-${c.id}`}>نام</label>
+              <input id={`en-${c.id}`} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              <label htmlFor={`ep-${c.id}`}>شماره تماس</label>
+              <input id={`ep-${c.id}`} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} inputMode="numeric" />
+              <label htmlFor={`eo-${c.id}`}>یادداشت</label>
+              <input id={`eo-${c.id}`} value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} />
+              <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+                <button className="primary" disabled={pending === "edit" + c.id || !editForm.name.trim()}
+                        onClick={() => saveEdit(c)}>
+                  {pending === "edit" + c.id && <span className="spinner" aria-hidden="true" />}ذخیره
+                </button>
+                <button className="ghost" onClick={() => setEditFor(null)}>انصراف</button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </main>

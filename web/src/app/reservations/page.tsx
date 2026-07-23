@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../Icon";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import { formatJalaliDateTime } from "@/lib/date";
@@ -24,6 +24,7 @@ export default function MyReservationsPage() {
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelErr, setCancelErr] = useState("");
   // فقط برای اینکه شمارنده‌ی زنده هر دقیقه دوباره رندر شود؛ مقدارش مهم نیست.
   const [, setTick] = useState(0);
 
@@ -51,14 +52,14 @@ export default function MyReservationsPage() {
 
   async function cancel(reservationId: string) {
     if (!ctx) return;
-    setCancelling(reservationId);
-    try {
-      await fetch(`/api/reservations/${reservationId}/cancel`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId }),
-      });
-      await load(ctx);
-    } finally { setCancelling(null); }
+    setCancelling(reservationId); setCancelErr("");
+    // نتیجه باید چک شود، نه اینکه فقط load() بزنیم — وگرنه ۴۰۳/۵۰۰ بی‌سروصدا رد
+    // می‌شود و نماینده فکر می‌کند لغو انجام شد در حالی که رزرو هنوز فعال است.
+    const res = await postJson(`/api/reservations/${reservationId}/cancel`,
+      { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId });
+    if (!res.ok) setCancelErr(actionError(res.status));
+    else await load(ctx);
+    setCancelling(null);
   }
 
   /** مهلتِ باقی‌مانده + اینکه آیا کم است (برای هشدارِ بصری). */
@@ -133,6 +134,7 @@ export default function MyReservationsPage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
+      {cancelErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{cancelErr}</span></div>}
       {loaded && !loadErr && rows.length === 0 && (
         <p className="empty">هنوز رزروی ثبت نکرده‌ای. <Link href="/reserve">رزرو جدید</Link>.</p>
       )}
