@@ -83,18 +83,28 @@ export default function CatalogPage() {
     setPending(null);
   }
 
-  // --- گالری --------------------------------------------------------------
-  async function galleryOp(url: string, body: object, method: "POST" | "PATCH" | "DELETE") {
+  // --- گالری ----------------------------------------------------------------
+  // pendingِ همه‌ی عملیاتِ گالری با کلیدِ خودِ محصول است، نه عکس — تا حینِ یک
+  // عملیات (مثلاً آپلود)، بقیه‌ی دکمه‌های گالریِ همان محصول هم غیرفعال شوند و دو
+  // درخواستِ هم‌زمان روی یک محصول race نسازند.
+  async function galleryOp(productId: string, body: object, method: "POST" | "PATCH" | "DELETE") {
     if (!ctx) return;
-    setPending("img" + url); setMsg("");
+    setPending("img" + productId); setMsg("");
     const res = await postJson("/api/product-images", { tenantId: ctx.tenantId, ...body }, method);
     if (!res.ok) setMsg(actionError(res.status));
     else await load(ctx.tenantId);
     setPending(null);
   }
-  const addImg = (productId: string, url: string) => url.trim() && galleryOp(productId, { productId, url }, "POST");
-  const setPrimaryImg = (imageId: string) => galleryOp(imageId, { imageId }, "PATCH");
-  const removeImg = (imageId: string) => galleryOp(imageId, { imageId }, "DELETE");
+  function addImg(product: Product, url: string) {
+    const clean = url.trim();
+    if (!clean) return;
+    // چکِ تکراری سمتِ کلاینت: بک‌اند idempotent است (کاری نمی‌کند) ولی بدونِ این
+    // چک کاربر فکر می‌کند دکمه کار نکرده، چون هیچ خطا یا تغییری نمی‌بیند.
+    if (product.images.some((img) => img.url === clean)) { setMsg("این عکس قبلاً در گالری هست."); return; }
+    galleryOp(product.id, { productId: product.id, url: clean }, "POST");
+  }
+  const setPrimaryImg = (productId: string, imageId: string) => galleryOp(productId, { imageId }, "PATCH");
+  const removeImg = (productId: string, imageId: string) => galleryOp(productId, { imageId }, "DELETE");
 
   function startEdit(p: Product) {
     setEditFor(p.id);
@@ -282,47 +292,61 @@ export default function CatalogPage() {
               </div>
 
               {/* گالری: اولی = اصلی (تامنیل). کلیک روی ★ = اصلی‌کردن، × = حذف. */}
-              <div className="gallery" style={{ marginTop: "var(--sp-3)" }}>
-                {p.images.map((img, i) => (
-                  <div key={img.id} className={`gallery-item ${i === 0 ? "gallery-item--primary" : ""}`}>
-                    <img src={img.url} alt="" loading="lazy" />
-                    {i === 0
-                      ? <span className="gallery-badge">اصلی</span>
-                      : <button className="gallery-star" title="عکسِ اصلی شود" aria-label="عکسِ اصلی شود"
-                          disabled={pending === "img" + img.id} onClick={() => setPrimaryImg(img.id)}>★</button>}
-                    <button className="gallery-del" title="حذف عکس" aria-label="حذف عکس"
-                      disabled={pending === "img" + img.id} onClick={() => removeImg(img.id)}>×</button>
-                  </div>
-                ))}
-                <label className="gallery-add btn-file" title="افزودن عکس به گالری">
-                  <Icon name="info" size={16} /><span style={{ fontSize: ".7rem" }}>+ عکس</span>
-                  <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: "none" }}
-                    disabled={pending === "img" + p.id}
-                    onChange={async (e) => {
-                      const f = e.target.files?.[0]; e.target.value = "";
-                      if (!f) return;
-                      setPending("img" + p.id);
-                      const url = await uploadFile(f);
-                      setPending(null);
-                      if (url) await addImg(p.id, url);
-                    }} />
-                </label>
-              </div>
-              {/* افزودن با URL */}
-              <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-2)" }}>
-                <input value={imgUrl[p.id] ?? ""} onChange={(e) => setImgUrl({ ...imgUrl, [p.id]: e.target.value })}
-                  placeholder="یا URL عکس…" aria-label="افزودن عکس با URL" style={{ maxWidth: 240, direction: "ltr" }} />
-                <button className="ghost" disabled={!imgUrl[p.id]?.trim() || pending === "img" + (imgUrl[p.id] ?? "")}
-                  onClick={async () => { await addImg(p.id, imgUrl[p.id] ?? ""); setImgUrl({ ...imgUrl, [p.id]: "" }); }}>افزودن</button>
-              </div>
+              {(() => {
+                const galleryBusy = pending === "img" + p.id;
+                return (
+                  <>
+                    <div className="gallery" style={{ marginTop: "var(--sp-3)" }}>
+                      {p.images.map((img, i) => (
+                        <div key={img.id} className={`gallery-item ${i === 0 ? "gallery-item--primary" : ""}`}>
+                          <img src={img.url} alt="" loading="lazy" />
+                          {i === 0
+                            ? <span className="gallery-badge">اصلی</span>
+                            : <button className="gallery-star" title="عکسِ اصلی شود" aria-label="عکسِ اصلی شود"
+                                disabled={galleryBusy} onClick={() => setPrimaryImg(p.id, img.id)}>★</button>}
+                          <button className="gallery-del" title="حذف عکس" aria-label="حذف عکس"
+                            disabled={galleryBusy} onClick={() => removeImg(p.id, img.id)}>×</button>
+                        </div>
+                      ))}
+                      <label className="gallery-add btn-file" title="افزودن عکس به گالری">
+                        <Icon name="image" size={16} /><span style={{ fontSize: ".7rem" }}>+ عکس</span>
+                        <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: "none" }}
+                          disabled={galleryBusy}
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0]; e.target.value = "";
+                            if (!f) return;
+                            setPending("img" + p.id);
+                            const url = await uploadFile(f);
+                            setPending(null);
+                            if (url) addImg(p, url);
+                          }} />
+                      </label>
+                      {galleryBusy && <span className="spinner" aria-hidden="true" style={{ alignSelf: "center" }} />}
+                    </div>
+                    {/* افزودن با URL */}
+                    <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-2)" }}>
+                      <input value={imgUrl[p.id] ?? ""} onChange={(e) => setImgUrl({ ...imgUrl, [p.id]: e.target.value })}
+                        placeholder="یا URL عکس…" aria-label="افزودن عکس با URL" style={{ maxWidth: 240, direction: "ltr" }} />
+                      <button className="ghost" disabled={!imgUrl[p.id]?.trim() || galleryBusy}
+                        onClick={() => { addImg(p, imgUrl[p.id] ?? ""); setImgUrl({ ...imgUrl, [p.id]: "" }); }}>افزودن</button>
+                    </div>
+                  </>
+                );
+              })()}
 
               <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
-                <button className="ghost" onClick={() => (editFor === p.id ? setEditFor(null) : startEdit(p))}>
+                <button className="ghost" disabled={pending === "edit" + p.id}
+                  onClick={() => (editFor === p.id ? setEditFor(null) : startEdit(p))}>
                   {editFor === p.id ? "بستن ویرایش" : "ویرایش"}
                 </button>
                 {p.variantId && (
                   <button className="ghost"
-                    onClick={() => { setSubFor(subFor === p.variantId ? null : p.variantId); setSubPick(""); setSubNote(""); setSubQuery(""); }}>
+                    // یک بخشِ بازِ کارت کافی است — باز کردنِ جایگزین‌ها، ویرایشِ بازمانده را می‌بندد
+                    onClick={() => {
+                      setEditFor(null);
+                      setSubFor(subFor === p.variantId ? null : p.variantId);
+                      setSubPick(""); setSubNote(""); setSubQuery("");
+                    }}>
                     جایگزین‌ها ({money(subs.filter((s) => s.variantId === p.variantId).length)})
                   </button>
                 )}
@@ -361,7 +385,7 @@ export default function CatalogPage() {
               {p.variantId && subFor === p.variantId && (
                 <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
                   <div className="subtle" style={{ marginBottom: "var(--sp-2)" }}>
-                    اگر <strong>{p.name}</strong> نبود, این‌ها پیشنهاد می‌شوند (فقط موجودها به نماینده می‌روند):
+                    اگر <strong>{p.name}</strong> نبود، این‌ها پیشنهاد می‌شوند (فقط موجودها به نماینده می‌روند):
                   </div>
                   {subs.filter((s) => s.variantId === p.variantId).map((s) => (
                     <div className="row" key={s.id} style={{ marginBottom: "var(--sp-1)" }}>
