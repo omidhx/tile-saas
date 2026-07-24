@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
-import { createAgent, updateAgent, addAgentUser, listAgentsFull } from "./agents";
+import { createAgent, updateAgent, addAgentUser, listAgentsFull, deleteAgent } from "./agents";
 
 /**
  * ساختِ نمایندگی + کاربرِ اولش (v3، ادمینِ کارخانه به‌جای SQL دستی).
@@ -81,4 +81,23 @@ test("addAgentUser: افزودنِ کاربرِ دوم به همان نماین�
   assert.equal(add.ok, true);
   const dup = await addAgentUser({ tenantId: T, agentAccountId: id, phone: "09121110009" });
   assert.deepEqual(dup, { ok: false, reason: "already_linked" });
+});
+
+test("deleteAgent: نمایندگیِ نو (بدونِ سابقه) واقعاً حذف می‌شود، همراهِ لینکِ کاربرش", async () => {
+  const created = await createAgent({ tenantId: T, legalName: "تازه", code: "AG-FRESH", firstUserPhone: "09121110010" });
+  const id = created.ok ? created.agentAccountId : "";
+  const r = await deleteAgent({ tenantId: T, agentAccountId: id });
+  assert.equal(r.ok, true);
+  assert.ok(!(await listAgentsFull(T)).some((a) => a.id === id));
+  const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM agent_account_user WHERE agent_account_id = ${id}`;
+  assert.equal(n, 0, "لینکِ کاربر هم باید پاک شده باشد");
+});
+
+test("deleteAgent: نمایندگیِ سابقه‌دار (مشتری وصل) حذف نمی‌شود", async () => {
+  const created = await createAgent({ tenantId: T, legalName: "سابقه‌دار", code: "AG-HIST", firstUserPhone: "09121110011" });
+  const id = created.ok ? created.agentAccountId : "";
+  await sql.unsafe(`INSERT INTO customer (tenant_id, agent_account_id, name) VALUES ('${T}', '${id}', 'مشتریِ آزمایشی');`);
+  const r = await deleteAgent({ tenantId: T, agentAccountId: id });
+  assert.deepEqual(r, { ok: false, reason: "has_history" });
+  assert.ok((await listAgentsFull(T)).some((a) => a.id === id), "نمایندگی باید سرِجایش مانده باشد");
 });

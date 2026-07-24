@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import Icon from "../../Icon";
+import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -107,6 +108,8 @@ export default function ImportPage() {
       </main>
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
+  if (ctx.role === "staff" && !hasPageAccess(ctx.allowedPages, "import"))
+    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
 
   const scopeName = warehouses.find((w) => w.id === scopeWh)?.name;
   // وقتی فهرستِ انبارها نیامده، «کل کارخانه» هم قفل می‌شود: نباید شکستِ بارگذاری

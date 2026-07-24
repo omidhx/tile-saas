@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import { hasPageAccess } from "@/lib/staffPages";
 import MessageBanner from "../../MessageBanner";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
@@ -61,6 +62,8 @@ export default function AutoApprovePage() {
       </main>
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
+  if (ctx.role === "staff" && !hasPageAccess(ctx.allowedPages, "auto-approve"))
+    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
 
   return (
     <main>

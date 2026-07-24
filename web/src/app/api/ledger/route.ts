@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { listMovements, findDrift } from "@/db/ledger";
 
 /**
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const tenantId = u.searchParams.get("tenantId") ?? "";
   const lotId = u.searchParams.get("lotId") ?? undefined;
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeStaffPage(userId, tenantId, "ledger");
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

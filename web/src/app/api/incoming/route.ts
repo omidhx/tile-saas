@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { listIncoming, addIncoming, markArrived, setIncomingStatus } from "@/db/incoming";
 
 /** محموله‌های در راه را کارخانه ثبت می‌کند — staff-only. */
@@ -9,7 +9,7 @@ async function staffCtx(tenantId: unknown) {
   if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
   if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeStaffPage(userId, tenantId, "incoming");
   } catch (e) {
     if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
     throw e;

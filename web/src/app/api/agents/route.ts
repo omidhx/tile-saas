@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, authorizeAdmin, AuthzError } from "@/auth/authz";
-import { listAgentsFull, createAgent, updateAgent, addAgentUser } from "@/db/agents";
+import { listAgentsFull, createAgent, updateAgent, addAgentUser, deleteAgent } from "@/db/agents";
 
 /**
  * GET /api/agents?tenantId — نمایندگی‌های فعالِ tenant (برای فرم backorderِ staff، حداقلِ لازم).
@@ -95,6 +95,21 @@ export async function PATCH(req: Request) {
 
   const { legalName, code, priceListId, creditLimit, autoApproveLimit, isActive } = body;
   const r = await updateAgent({ tenantId, agentAccountId, legalName, code, priceListId, creditLimit, autoApproveLimit, isActive });
+  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
+  return NextResponse.json({ ok: true });
+}
+
+/** DELETE /api/agents — حذفِ واقعی، فقط اگر نمایندگی هیچ سابقه‌ای ندارد. admin-only. */
+export async function DELETE(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const { tenantId, agentAccountId } = body ?? {};
+  if (typeof tenantId !== "string" || typeof agentAccountId !== "string")
+    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+
+  const auth = await requireAdmin(tenantId);
+  if (auth.error) return auth.error;
+
+  const r = await deleteAgent({ tenantId, agentAccountId });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

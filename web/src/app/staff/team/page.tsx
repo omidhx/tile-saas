@@ -6,14 +6,21 @@ import NavMenu from "../../NavMenu";
 import MessageBanner from "../../MessageBanner";
 import { getJson, postJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
+import { STAFF_PAGES } from "@/lib/staffPages";
+import DeleteButton from "../../DeleteButton";
 
-type Member = { membershipId: string; userId: string; phone: string; email: string | null; role: "staff" | "admin"; isActive: boolean };
+type Member = {
+  membershipId: string; userId: string; phone: string; email: string | null;
+  role: "staff" | "admin"; isActive: boolean; canManageAccess: boolean; allowedPages: string[];
+};
 
 const FA: Record<string, string> = {
   seat_limit: "سقفِ تعدادِ اعضای تیمِ این اشتراک پر شده — برای افزایش با پشتیبانی تماس بگیرید.",
   already_member: "این کاربر از قبل عضوِ فعالِ تیم است.",
   email_taken: "این ایمیل قبلاً برای کاربرِ دیگری ثبت شده.",
   last_admin: "این تنها مدیرِ فعال است — باید حداقل یک مدیر باقی بماند.",
+  last_deputy: "این تنها معاونِ مدیرِ فعال است — باید حداقل یک نفر بتواند دسترسیِ بقیه را مدیریت کند.",
+  linked_to_agent: "این کاربر به یک نمایندگی وصل است — اول از صفحه‌ی نمایندگی‌ها جدایش کنید.",
 };
 
 export default function TeamPage() {
@@ -24,10 +31,16 @@ export default function TeamPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"staff" | "admin">("staff");
+  const [deputy, setDeputy] = useState(false);
+  const [pages, setPages] = useState<string[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [msg, setMsg] = useState(""); // فقط موفقیت — MessageBanner با تشخیصِ متنی رندر می‌کند
   const [err, setErr] = useState("");
   const [tempPassword, setTempPassword] = useState<{ phone: string; password: string } | null>(null);
+
+  // ویرایشِ چک‌لیستِ صفحه‌های یک عضوِ staffِ موجود (درجا، بدونِ فرمِ جدا)
+  const [editPagesFor, setEditPagesFor] = useState<string | null>(null);
+  const [editPages, setEditPages] = useState<string[]>([]);
 
   const load = useCallback(async (tenantId: string) => {
     const res = await getJson<{ members: Member[] }>(`/api/team?tenantId=${tenantId}`);
@@ -35,53 +48,68 @@ export default function TeamPage() {
     setLoaded(true);
   }, []);
 
-  useEffect(() => { if (ctx?.role === "admin") load(ctx.tenantId); }, [ctx, load]);
+  useEffect(() => { if (ctx?.role === "admin" && ctx.canManageAccess) load(ctx.tenantId); }, [ctx, load]);
+
+  function togglePage(list: string[], key: string): string[] {
+    return list.includes(key) ? list.filter((p) => p !== key) : [...list, key];
+  }
 
   async function invite() {
     if (!ctx || !phone.trim()) return;
     setPending("invite"); setMsg(""); setErr(""); setTempPassword(null);
-    const res = await postJson("/api/team", { tenantId: ctx.tenantId, phone: phone.trim(), email: email.trim() || undefined, role });
+    const res = await postJson("/api/team", {
+      tenantId: ctx.tenantId, phone: phone.trim(), email: email.trim() || undefined, role,
+      canManageAccess: role === "admin" ? deputy : undefined,
+      allowedPages: role === "staff" ? pages : undefined,
+    });
     setPending(null);
     if (!res.ok) {
       setErr((res.error && FA[res.error]) || `دعوت انجام نشد (خطای ${res.status}).`);
       return;
     }
     const data = res.data as { created: boolean; tempPassword: string | null };
-    setPhone(""); setEmail("");
+    setPhone(""); setEmail(""); setDeputy(false); setPages([]);
     if (data.created && data.tempPassword) setTempPassword({ phone, password: data.tempPassword });
     setMsg(data.created ? "عضو ساخته شد." : "دسترسی به کاربرِ موجود اضافه شد.");
     await load(ctx.tenantId);
   }
 
-  async function setStatus(membershipId: string, isActive: boolean) {
-    if (!ctx) return;
+  async function patch(membershipId: string, body: object) {
+    if (!ctx) return false;
     setPending(membershipId); setMsg(""); setErr("");
-    const res = await postJson("/api/team", { tenantId: ctx.tenantId, membershipId, isActive }, "PATCH");
+    const res = await postJson("/api/team", { tenantId: ctx.tenantId, membershipId, ...body }, "PATCH");
     setPending(null);
     if (!res.ok) {
       setErr((res.error && FA[res.error]) || `تغییر انجام نشد (خطای ${res.status}).`);
+      return false;
+    }
+    await load(ctx.tenantId);
+    return true;
+  }
+
+  async function remove(membershipId: string) {
+    if (!ctx) return;
+    setPending(membershipId); setMsg(""); setErr("");
+    const res = await postJson("/api/team", { tenantId: ctx.tenantId, membershipId }, "DELETE");
+    setPending(null);
+    if (!res.ok) {
+      setErr((res.error && FA[res.error]) || `حذف انجام نشد (خطای ${res.status}).`);
       return;
     }
+    setMsg("عضو حذف شد.");
     await load(ctx.tenantId);
   }
 
-  async function setRoleFor(membershipId: string, newRole: "staff" | "admin") {
-    if (!ctx) return;
-    setPending(membershipId); setMsg(""); setErr("");
-    const res = await postJson("/api/team", { tenantId: ctx.tenantId, membershipId, role: newRole }, "PATCH");
-    setPending(null);
-    if (!res.ok) {
-      setErr((res.error && FA[res.error]) || `تغییر انجام نشد (خطای ${res.status}).`);
-      return;
-    }
-    await load(ctx.tenantId);
+  function startEditPages(m: Member) { setEditPagesFor(m.membershipId); setEditPages(m.allowedPages); setMsg(""); setErr(""); }
+  async function savePages(membershipId: string) {
+    if (await patch(membershipId, { allowedPages: editPages })) setEditPagesFor(null);
   }
 
   if (state === "none")
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span></div></main>;
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
-  if (ctx.role !== "admin")
-    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>این بخش فقط برای مدیر است.</span></div></main>;
+  if (!(ctx.role === "admin" && ctx.canManageAccess))
+    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>این بخش فقط برای معاونِ مدیر است.</span></div></main>;
 
   return (
     <main>
@@ -99,6 +127,8 @@ export default function TeamPage() {
           کسی که با موبایلی که در سامانه نیست دعوت شود، رمزِ یک‌بارمصرف می‌گیرد
           (پیامک + ایمیلِ اختیاری) — و همین‌جا هم یک‌بار نشان داده می‌شود، برای
           وقتی هیچ‌کدام از کانال‌ها نرسید. کاربرِ از‌قبل‌موجود با رمزِ خودش وارد می‌شود.
+          «معاونِ مدیر» تنها کسی است که می‌تواند دسترسیِ بقیه را دست‌کاری کند —
+          خودِ admin‌بودن برای این کار کافی نیست.
         </span>
       </div>
 
@@ -128,6 +158,28 @@ export default function TeamPage() {
           <option value="admin">مدیر — تیم/نمایندگی/انبار هم دستش باشد</option>
         </select>
 
+        {role === "admin" ? (
+          <label className="row row--start" style={{ marginTop: "var(--sp-3)", cursor: "pointer", gap: "var(--sp-2)", justifyContent: "flex-start" }}>
+            <input type="checkbox" checked={deputy} onChange={(e) => setDeputy(e.target.checked)} style={{ width: "auto", minHeight: 0 }} />
+            <span>معاونِ مدیر است — اجازه دارد دسترسیِ بقیه را مدیریت کند (دعوت، نقش، حذف، چک‌لیستِ صفحه‌ها)</span>
+          </label>
+        ) : (
+          <>
+            <label style={{ marginTop: "var(--sp-3)" }}>
+              دسترسی به بخش‌ها <span className="subtle">(خالی = دسترسیِ کامل)</span>
+            </label>
+            <div className="pick-list">
+              {STAFF_PAGES.map((p) => (
+                <label key={p.key} style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", margin: 0, cursor: "pointer", fontWeight: 400 }}>
+                  <input type="checkbox" checked={pages.includes(p.key)} onChange={() => setPages((s) => togglePage(s, p.key))}
+                         style={{ width: "auto", minHeight: 0 }} />
+                  <span>{p.label}</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+
         <button className="primary" onClick={invite} aria-busy={pending === "invite"}
                 disabled={pending === "invite" || !phone.trim()}
                 style={{ width: "100%", marginTop: "var(--sp-4)" }}>
@@ -145,18 +197,60 @@ export default function TeamPage() {
               {m.email && <span className="subtle"> · {m.email}</span>}
               {!m.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
             </span>
-            <span className={`badge${m.role === "admin" ? " badge--ok" : ""}`}>{m.role === "admin" ? "مدیر" : "پشتیبان"}</span>
+            <span className="row row--start">
+              {m.role === "admin" && m.canManageAccess && <span className="badge badge--ok">معاونِ مدیر</span>}
+              <span className={`badge${m.role === "admin" ? " badge--ok" : ""}`}>{m.role === "admin" ? "مدیر" : "پشتیبان"}</span>
+            </span>
           </div>
+
+          {m.role === "staff" && (
+            editPagesFor === m.membershipId ? (
+              <div style={{ marginTop: "var(--sp-2)" }}>
+                <div className="pick-list">
+                  {STAFF_PAGES.map((p) => (
+                    <label key={p.key} style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", margin: 0, cursor: "pointer", fontWeight: 400 }}>
+                      <input type="checkbox" checked={editPages.includes(p.key)}
+                             onChange={() => setEditPages((s) => togglePage(s, p.key))} style={{ width: "auto", minHeight: 0 }} />
+                      <span>{p.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="row row--start" style={{ marginTop: "var(--sp-2)" }}>
+                  <button className="primary" disabled={pending === m.membershipId} onClick={() => savePages(m.membershipId)}>
+                    {pending === m.membershipId && <span className="spinner" aria-hidden="true" />}ذخیره
+                  </button>
+                  <button className="ghost" onClick={() => setEditPagesFor(null)}>انصراف</button>
+                </div>
+              </div>
+            ) : (
+              <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
+                {m.allowedPages.length === 0 ? "دسترسیِ کامل" : `دسترسی: ${m.allowedPages.map((k) => STAFF_PAGES.find((p) => p.key === k)?.label ?? k).join("، ")}`}
+              </div>
+            )
+          )}
+
           <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+            {m.role === "staff" && editPagesFor !== m.membershipId && (
+              <button className="ghost" disabled={pending === m.membershipId} onClick={() => startEditPages(m)}>
+                ویرایشِ دسترسی
+              </button>
+            )}
             <button className="ghost" disabled={pending === m.membershipId}
-                    onClick={() => setRoleFor(m.membershipId, m.role === "admin" ? "staff" : "admin")}>
+                    onClick={() => patch(m.membershipId, { role: m.role === "admin" ? "staff" : "admin" })}>
               {m.role === "admin" ? "پشتیبانِ ساده کن" : "مدیر کن"}
             </button>
+            {m.role === "admin" && (
+              <button className="ghost" disabled={pending === m.membershipId}
+                      onClick={() => patch(m.membershipId, { canManageAccess: !m.canManageAccess })}>
+                {m.canManageAccess ? "معاونیِ مدیر را بردار" : "معاونِ مدیر کن"}
+              </button>
+            )}
             <button className="ghost" disabled={pending === m.membershipId} aria-busy={pending === m.membershipId}
-                    onClick={() => setStatus(m.membershipId, !m.isActive)}>
+                    onClick={() => patch(m.membershipId, { isActive: !m.isActive })}>
               {pending === m.membershipId && <span className="spinner" aria-hidden="true" />}
               {m.isActive ? "غیرفعال کن" : "فعال کن"}
             </button>
+            <DeleteButton pending={pending === m.membershipId} onConfirm={() => remove(m.membershipId)} />
           </div>
         </div>
       ))}

@@ -6,10 +6,14 @@ import NavMenu from "../../NavMenu";
 import MessageBanner from "../../MessageBanner";
 import { getJson, postJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
+import DeleteButton from "../../DeleteButton";
 
 type Warehouse = { id: string; name: string; code: string; type: string };
 const TYPE_FA: Record<string, string> = { main: "اصلی", regional: "منطقه‌ای", in_transit: "در راه" };
-const FA: Record<string, string> = { code_taken: "این کد قبلاً برای انبارِ دیگری استفاده شده." };
+const FA: Record<string, string> = {
+  code_taken: "این کد قبلاً برای انبارِ دیگری استفاده شده.",
+  has_history: "این انبار سابقه دارد (موجودی/حواله/ورودِ اکسل) — حذف نمی‌شود.",
+};
 
 export default function WarehousesPage() {
   const { ctx, state } = useContexts("staff");
@@ -63,6 +67,19 @@ export default function WarehousesPage() {
     }
     setEditFor(null);
     setMsg("انبار ویرایش شد.");
+    await load(ctx.tenantId);
+  }
+
+  async function remove(warehouseId: string) {
+    if (!ctx) return;
+    setPending(warehouseId); setMsg(""); setErr("");
+    const res = await postJson("/api/warehouses", { tenantId: ctx.tenantId, warehouseId }, "DELETE");
+    setPending(null);
+    if (!res.ok) {
+      setErr((res.error && FA[res.error]) || `حذف انجام نشد (خطای ${res.status}).`);
+      return;
+    }
+    setMsg("انبار حذف شد.");
     await load(ctx.tenantId);
   }
 
@@ -130,7 +147,10 @@ export default function WarehousesPage() {
           ) : (
             <div className="row">
               <span><strong>{w.name}</strong> <span className="subtle num">{w.code}</span> · <span className="subtle">{TYPE_FA[w.type] ?? w.type}</span></span>
-              <button className="ghost" onClick={() => startEdit(w)}>ویرایش</button>
+              <span className="row row--start">
+                <button className="ghost" onClick={() => startEdit(w)}>ویرایش</button>
+                <DeleteButton pending={pending === w.id} onConfirm={() => remove(w.id)} />
+              </span>
             </div>
           )}
         </div>

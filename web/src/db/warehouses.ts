@@ -25,7 +25,6 @@ export async function createWarehouse(params: {
 
 export type UpdateWarehouseResult = { ok: true } | { ok: false; reason: "code_taken" };
 
-/** فقط تغییرِ نام/کد — انبار «حذف» نمی‌شود چون inventory_lot بهش FK دارد (بخشِ حذف عمداً نیست). */
 export async function updateWarehouse(params: {
   tenantId: string; warehouseId: string; name?: string; code?: string;
 }): Promise<UpdateWarehouseResult> {
@@ -41,6 +40,31 @@ export async function updateWarehouse(params: {
         name = COALESCE(${params.name ?? null}, name),
         code = COALESCE(${params.code ?? null}, code)
       WHERE tenant_id = ${tenantId} AND id = ${warehouseId}`;
+    return { ok: true };
+  });
+}
+
+export type DeleteWarehouseResult = { ok: true } | { ok: false; reason: "has_history" };
+
+/**
+ * حذفِ واقعیِ انبار — فقط اگر هیچ سابقه‌ای ندارد. inventory_lot/sales_dispatch/
+ * sales_dispatch_item/import_batch/incoming_stock همه بهش FK دارند، بدونِ
+ * CASCADE؛ حذفِ انبارِ فعال یعنی از دست رفتنِ تاریخچه‌ی موجودی/حواله.
+ */
+export async function deleteWarehouse(params: { tenantId: string; warehouseId: string }): Promise<DeleteWarehouseResult> {
+  const { tenantId, warehouseId } = params;
+  return withTenant(tenantId, async (tx) => {
+    const [{ n }] = await tx<{ n: number }[]>`
+      SELECT (
+        (SELECT count(*) FROM inventory_lot WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}) +
+        (SELECT count(*) FROM sales_dispatch WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}) +
+        (SELECT count(*) FROM sales_dispatch_item WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}) +
+        (SELECT count(*) FROM import_batch WHERE tenant_id = ${tenantId} AND scope_warehouse_id = ${warehouseId}) +
+        (SELECT count(*) FROM incoming_stock WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId})
+      )::int AS n`;
+    if (n > 0) return { ok: false, reason: "has_history" };
+
+    await tx`DELETE FROM warehouse WHERE tenant_id = ${tenantId} AND id = ${warehouseId}`;
     return { ok: true };
   });
 }

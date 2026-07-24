@@ -6,6 +6,8 @@ export type Ctx = {
   tenantId: string; tenantName: string;
   agentAccountId: string | null; agentLegalName: string | null;
   role: string;
+  // v4: فقط برای role='admin'/'staff' معنا دارند (بخشِ «دسترسی» در db/team.ts)
+  canManageAccess: boolean; allowedPages: string[];
 };
 
 // انتخابِ کاربر بین جلسه‌ها می‌ماند. localStorage امن است چون **مرجعِ دسترسی نیست**:

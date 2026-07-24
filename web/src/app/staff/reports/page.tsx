@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -50,6 +51,8 @@ export default function ReportsPage() {
       </main>
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
+  if (ctx.role === "staff" && !hasPageAccess(ctx.allowedPages, "reports"))
+    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
 
   const totalValue = rep?.agents.reduce((s, a) => s + a.value, 0) ?? 0;
   const totalBoxes = rep?.topProducts.reduce((s, p) => s + p.boxes, 0) ?? 0;

@@ -102,6 +102,14 @@ CREATE TABLE tenant_membership (
     user_id   UUID NOT NULL REFERENCES app_user(id),
     role      TEXT NOT NULL CHECK (role IN ('admin','staff','agent')),  -- staff/admin: تأیید+حواله؛ agent: رزرو
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    -- v4 «معاونِ مدیر»: تنِ نقشِ admin. صرفاً admin‌بودن دیگر کافی نیست برای
+    -- مدیریتِ تیم/دسترسیِ بقیه — این فلگِ جداست، باید صریحاً داده شود (پیش‌فرض
+    -- false). فقط برای role='admin' معنا دارد؛ روی staff/agent نادیده گرفته می‌شود.
+    can_manage_access BOOLEAN NOT NULL DEFAULT FALSE,
+    -- v4 «دسترسیِ ریزدانه»: فقط برای role='staff' معنا دارد. آرایه‌ی خالی یعنی
+    -- دسترسیِ کامل (رفتارِ پیش‌فرض/قبلی، برای سازگاری با کاربرهای موجود) —
+    -- وقتی مدیر صریحاً زیرمجموعه‌ای انتخاب کند، فقط همان‌ها مجازند.
+    allowed_pages TEXT[] NOT NULL DEFAULT '{}',
     UNIQUE (tenant_id, user_id)
 );
 
@@ -768,9 +776,10 @@ FROM inventory_balance b;
 -- (tenant + نقش) بگیره — وگرنه پنل staff هیچ tenantId نداره و UI قفل می‌شه.
 -- role برگردونده می‌شه تا UI بدونه کاربر نماینده‌ست یا پشتیبان.
 CREATE FUNCTION user_contexts(p_user_id UUID)
-RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT)
+RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT,
+               can_manage_access BOOLEAN, allowed_pages TEXT[])
 LANGUAGE sql SECURITY DEFINER STABLE AS $$
-    SELECT t.id, t.name, aa.id, aa.legal_name, tm.role
+    SELECT t.id, t.name, aa.id, aa.legal_name, tm.role, tm.can_manage_access, tm.allowed_pages
     FROM tenant_membership tm
     JOIN tenant t              ON t.id = tm.tenant_id AND t.is_active
     LEFT JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id

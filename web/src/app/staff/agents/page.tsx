@@ -6,6 +6,7 @@ import NavMenu from "../../NavMenu";
 import MessageBanner from "../../MessageBanner";
 import { getJson, postJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
+import DeleteButton from "../../DeleteButton";
 
 type AgentUser = { userId: string; phone: string; email: string | null };
 type Agent = {
@@ -22,6 +23,7 @@ const FA: Record<string, string> = {
   code_taken: "این کد قبلاً برای نمایندگیِ دیگری استفاده شده.",
   email_taken: "این ایمیل قبلاً برای کاربرِ دیگری ثبت شده.",
   already_linked: "این کاربر از قبل به این نمایندگی وصل است.",
+  has_history: "این نمایندگی سابقه دارد (رزرو/سفارش/حواله/مشتری) — حذف نمی‌شود. غیرفعالش کنید.",
 };
 
 export default function AgentsPage() {
@@ -94,6 +96,19 @@ export default function AgentsPage() {
     const res = await postJson("/api/agents", { tenantId: ctx.tenantId, agentAccountId: a.id, isActive: !a.isActive }, "PATCH");
     setPending(null);
     if (!res.ok) { setErr(`تغییر انجام نشد (خطای ${res.status}).`); return; }
+    await load(ctx.tenantId);
+  }
+
+  async function remove(agentAccountId: string) {
+    if (!ctx) return;
+    setPending("del" + agentAccountId); setMsg(""); setErr("");
+    const res = await postJson("/api/agents", { tenantId: ctx.tenantId, agentAccountId }, "DELETE");
+    setPending(null);
+    if (!res.ok) {
+      setErr((res.error && FA[res.error]) || `حذف انجام نشد (خطای ${res.status}).`);
+      return;
+    }
+    setMsg("نمایندگی حذف شد.");
     await load(ctx.tenantId);
   }
 
@@ -193,10 +208,13 @@ export default function AgentsPage() {
               <strong>{a.legalName}</strong> <span className="subtle num">{a.code}</span>
               {!a.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
             </span>
-            <button className="ghost" disabled={pending === a.id} aria-busy={pending === a.id} onClick={() => toggleActive(a)}>
-              {pending === a.id && <span className="spinner" aria-hidden="true" />}
-              {a.isActive ? "غیرفعال کن" : "فعال کن"}
-            </button>
+            <span className="row row--start">
+              <button className="ghost" disabled={pending === a.id} aria-busy={pending === a.id} onClick={() => toggleActive(a)}>
+                {pending === a.id && <span className="spinner" aria-hidden="true" />}
+                {a.isActive ? "غیرفعال کن" : "فعال کن"}
+              </button>
+              <DeleteButton pending={pending === "del" + a.id} onConfirm={() => remove(a.id)} />
+            </span>
           </div>
           <div className="muted">
             {a.priceListName ?? "بدونِ لیستِ اختصاصی"}

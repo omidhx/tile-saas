@@ -9,7 +9,10 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const rows = await sql<
-    { tenant_id: string; tenant_name: string; agent_account_id: string | null; agent_legal_name: string | null; role: string }[]
+    {
+      tenant_id: string; tenant_name: string; agent_account_id: string | null; agent_legal_name: string | null;
+      role: string; can_manage_access: boolean; allowed_pages: string[];
+    }[]
   >`SELECT * FROM user_contexts(${userId})`;
 
   // agentAccountId برای کاربر staff نال است — UI باید هندلش کنه، نه اینکه قفل شه.
@@ -20,6 +23,8 @@ export async function GET() {
       agentAccountId: r.agent_account_id,
       agentLegalName: r.agent_legal_name,
       role: r.role,
+      canManageAccess: r.can_manage_access,
+      allowedPages: r.allowed_pages,
     })),
   });
 }

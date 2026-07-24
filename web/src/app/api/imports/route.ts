@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { checkRate, tooMany } from "@/auth/rateLimit";
 import { applySnapshot, type SnapshotRow, type ImportScope } from "@/db/imports";
 
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (!rl.ok) return tooMany(rl.retryAfterSec);
 
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeStaffPage(userId, tenantId, "import");
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

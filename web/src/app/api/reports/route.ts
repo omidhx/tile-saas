@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { buildReports } from "@/db/reports";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const u = new URL(req.url);
   const tenantId = u.searchParams.get("tenantId") ?? "";
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeStaffPage(userId, tenantId, "reports");
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

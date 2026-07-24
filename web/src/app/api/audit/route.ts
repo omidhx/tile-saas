@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { listAudit } from "@/db/audit";
 
 /** GET /api/audit?tenantId — دفترِ تغییراتِ قواعدِ پولی. فقط staff. */
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
   const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeStaffPage(userId, tenantId, "audit");
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

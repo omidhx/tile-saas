@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { writeAudit } from "@/db/audit";
 
 /** context مشترک: staff-only — قیمت‌گذاری کارِ پشتیبان است، نه نماینده. */
@@ -10,7 +10,7 @@ async function staffCtx(tenantId: unknown) {
   if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
   if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeStaffPage(userId, tenantId, "prices");
   } catch (e) {
     if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
     throw e;

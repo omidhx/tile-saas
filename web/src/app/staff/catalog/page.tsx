@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
+import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -213,6 +214,8 @@ export default function CatalogPage() {
       </main>
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
+  if (ctx.role === "staff" && !hasPageAccess(ctx.allowedPages, "catalog"))
+    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
 
   const visible = products.filter((p) => matches(query, [p.name, p.code, p.color, p.glaze, p.punch]));
   const withImage = products.filter((p) => p.imageUrl).length;

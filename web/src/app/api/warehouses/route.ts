@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, authorizeAdmin, AuthzError } from "@/auth/authz";
-import { listWarehouses, createWarehouse, updateWarehouse } from "@/db/warehouses";
+import { listWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from "@/db/warehouses";
 
 /** GET /api/warehouses?tenantId — انبارهای tenant (برای انتخاب scope در import، و صفحه‌ی مدیریت). */
 export async function GET(req: Request) {
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, id: r.id }, { status: 201 });
 }
 
-/** PATCH /api/warehouses — تغییرِ نام/کد. admin-only (بدونِ حذف — inventory_lot به انبار FK دارد). */
+/** PATCH /api/warehouses — تغییرِ نام/کد. admin-only. */
 export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, warehouseId, name, code } = body ?? {};
@@ -58,6 +58,21 @@ export async function PATCH(req: Request) {
   if (auth.error) return auth.error;
 
   const r = await updateWarehouse({ tenantId, warehouseId, name, code });
+  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
+  return NextResponse.json({ ok: true });
+}
+
+/** DELETE /api/warehouses — حذفِ واقعی، فقط اگر انبار هیچ سابقه‌ای ندارد. admin-only. */
+export async function DELETE(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const { tenantId, warehouseId } = body ?? {};
+  if (typeof tenantId !== "string" || typeof warehouseId !== "string")
+    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+
+  const auth = await requireAdmin(tenantId);
+  if (auth.error) return auth.error;
+
+  const r = await deleteWarehouse({ tenantId, warehouseId });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

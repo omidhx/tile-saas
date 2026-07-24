@@ -186,3 +186,33 @@ export async function addAgentUser(params: {
     return { ok: true, created, tempPassword };
   });
 }
+
+export type DeleteAgentResult = { ok: true } | { ok: false; reason: "has_history" };
+
+/**
+ * حذفِ واقعیِ نمایندگی — فقط اگر هیچ سابقه‌ای ندارد. جدول‌های زیادی به
+ * agent_account FK دارند (رزرو، سفارش، حواله، مشتری، override قیمت، صف
+ * انتظار، هشدارِ موجودی) و هیچ‌کدام CASCADE نیستند؛ حذفِ نمایندگیِ فعال یعنی
+ * پاک‌شدنِ تاریخچه‌ی مالی/سفارش، پس فقط برای نمایندگیِ کاملاً نو مجاز است.
+ * agent_account_user «سابقه» نیست (فقط لینکِ کاربر)، پس همین‌جا پاک می‌شود.
+ */
+export async function deleteAgent(params: { tenantId: string; agentAccountId: string }): Promise<DeleteAgentResult> {
+  const { tenantId, agentAccountId } = params;
+  return withTenant(tenantId, async (tx) => {
+    const [{ n }] = await tx<{ n: number }[]>`
+      SELECT (
+        (SELECT count(*) FROM reservation WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}) +
+        (SELECT count(*) FROM sales_request WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}) +
+        (SELECT count(*) FROM sales_dispatch WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}) +
+        (SELECT count(*) FROM customer WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}) +
+        (SELECT count(*) FROM agent_price_override WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}) +
+        (SELECT count(*) FROM waitlist_entry WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}) +
+        (SELECT count(*) FROM stock_alert WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId})
+      )::int AS n`;
+    if (n > 0) return { ok: false, reason: "has_history" };
+
+    await tx`DELETE FROM agent_account_user WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId}`;
+    await tx`DELETE FROM agent_account WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
+    return { ok: true };
+  });
+}
