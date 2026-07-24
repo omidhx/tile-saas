@@ -90,3 +90,25 @@ test("cancel قبل از بارگیری: allocated آزاد می‌شه، on_han
     JOIN sales_dispatch sd ON sd.sales_request_id = sr.id WHERE sd.id = ${dispatch}`;
   assert.equal(req.status, "cancelled", "request مرتبط هم باید cancelled شه");
 });
+
+test("guard: حواله‌ی دوم برای همان request → already_dispatched؛ بعد از لغو دوباره مجاز", async () => {
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "dup1", items: [{ lotId: LOT, quantityBoxes: 5 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const reqId = a.ok ? a.salesRequestId : "";
+
+  const d1 = await createDispatchFromRequest({ tenantId: T, salesRequestId: reqId, createdByUserId: U });
+  assert.equal(d1.ok, true);
+  // کدِ خودکار: D-<سال شمسی>-NNN، نه timestamp
+  const [row] = await sql<{ dispatch_code: string }[]>`
+    SELECT dispatch_code FROM sales_dispatch WHERE id = ${d1.ok ? d1.dispatchIds[0] : ""}`;
+  assert.match(row.dispatch_code, /^D-1[34]\d\d-\d{3}$/, "کد باید D-<سال>-NNN باشد");
+
+  const d2 = await createDispatchFromRequest({ tenantId: T, salesRequestId: reqId, createdByUserId: U });
+  assert.equal(!d2.ok && d2.reason, "already_dispatched");
+
+  // حواله‌ی لغوشده جلوی ساختِ دوباره را نمی‌گیرد
+  await setDispatchStatus({ tenantId: T, dispatchId: d1.ok ? d1.dispatchIds[0] : "", toStatus: "cancelled", actorUserId: U });
+  // cancel، request را هم cancelled می‌کند؛ برای تستِ گارد کافی است دلیلِ رد عوض شده باشد
+  const d3 = await createDispatchFromRequest({ tenantId: T, salesRequestId: reqId, createdByUserId: U });
+  assert.equal(!d3.ok && d3.reason, "request_not_approved", "بعد از لغو، دیگر already_dispatched نیست");
+});

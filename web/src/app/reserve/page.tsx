@@ -8,6 +8,7 @@ import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import { formatJalaliDate } from "@/lib/date";
 import { matches, normalize } from "@/lib/search";
+import { hideOnError } from "@/lib/img";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -440,7 +441,7 @@ export default function ReservePage() {
               <button className={l.image_url ? "thumb" : "thumb thumb--empty"} onClick={() => openPreview(l)}
                       aria-label={`جزئیاتِ ${l.name}`}>
                 {l.image_url
-                  ? <img src={l.image_url} alt={l.name} loading="lazy" />
+                  ? <img onError={hideOnError} src={l.image_url} alt={l.name} loading="lazy" />
                   : <Icon name="info" size={20} />}
               </button>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -648,13 +649,13 @@ export default function ReservePage() {
               <strong>{preview.name}</strong>
               <button ref={closeBtnRef} className="ghost" onClick={() => setPreviewId(null)} aria-label="بستن">✕</button>
             </div>
-            {main && <img src={main} alt={preview.name} className="modal-img" />}
+            {main && <img onError={hideOnError} src={main} alt={preview.name} className="modal-img" />}
             {gallery.length > 1 && (
               <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
                 {gallery.map((u, i) => (
                   <button key={i} className={`gallery-item ${i === galleryIdx ? "gallery-item--primary" : ""}`}
                           onClick={() => setGalleryIdx(i)} aria-label={`عکس ${i + 1}`}>
-                    <img src={u} alt="" loading="lazy" />
+                    <img onError={hideOnError} src={u} alt="" loading="lazy" />
                   </button>
                 ))}
               </div>

@@ -96,7 +96,7 @@ export default function StaffPage() {
   async function createBackorder() {
     if (!ctx || !boAgent || !boVariant || Number(boQty) <= 0) return;
     const ok = await act("bo-create", "/api/sales-dispatches", {
-      tenantId: ctx.tenantId, agentAccountId: boAgent, dispatchCode: `BO-${Date.now()}`,
+      tenantId: ctx.tenantId, agentAccountId: boAgent,
       items: [{ variantId: boVariant, quantityBoxes: Number(boQty) }],
     });
     if (ok) setBoQty("");
@@ -119,7 +119,7 @@ export default function StaffPage() {
     setPending(requestId); setActionErr(""); setNote("");
     try {
       const res = await postJson("/api/sales-dispatches",
-        { tenantId: ctx.tenantId, salesRequestId: requestId, dispatchCode: `D-${Date.now()}` });
+        { tenantId: ctx.tenantId, salesRequestId: requestId });
       if (!res.ok) setActionErr(actionError(res.status));
       else {
         // سفارشِ دوانباره دو حواله می‌سازد — پشتیبان باید بداند، وگرنه دنبالِ حواله‌ی

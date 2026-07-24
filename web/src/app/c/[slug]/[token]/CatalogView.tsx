@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { PublicItem } from "@/db/sharedCatalog";
+import { hideOnError } from "@/lib/img";
 
 // نمای کاتالوگِ مشتری: گرید + پاپ‌آپِ گالری/جزئیات. کلاینت چون کلیک و مودال لازم دارد.
 const money = (v: number) => v.toLocaleString("fa-IR");
@@ -32,7 +33,7 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
           <button className="card catalog-card" key={it.code} style={{ margin: 0 }} onClick={() => show(it)}
                   aria-label={`جزئیاتِ ${it.name}`}>
             {it.imageUrl
-              ? <img src={it.imageUrl} alt={it.name} loading="lazy" className="catalog-img" />
+              ? <img onError={hideOnError} src={it.imageUrl} alt={it.name} loading="lazy" className="catalog-img" />
               : <div className="catalog-img catalog-img--empty" aria-hidden="true" />}
             <div style={{ marginTop: "var(--sp-2)" }}>
               <div className="row">
@@ -62,13 +63,13 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
                 <strong>{open.name}</strong>
                 <button ref={closeBtnRef} className="ghost" onClick={() => setOpen(null)} aria-label="بستن">✕</button>
               </div>
-              {main && <img src={main} alt={open.name} className="modal-img" />}
+              {main && <img onError={hideOnError} src={main} alt={open.name} className="modal-img" />}
               {g.length > 1 && (
                 <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
                   {g.map((u, i) => (
                     <button key={i} className={`gallery-item ${i === idx ? "gallery-item--primary" : ""}`}
                             onClick={() => setIdx(i)} aria-label={`عکس ${i + 1}`}>
-                      <img src={u} alt="" loading="lazy" />
+                      <img onError={hideOnError} src={u} alt="" loading="lazy" />
                     </button>
                   ))}
                 </div>

@@ -42,8 +42,10 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { tenantId, salesRequestId, agentAccountId, items, dispatchCode, customerName, destination, customerId } = body ?? {};
-  if (typeof tenantId !== "string" || typeof dispatchCode !== "string")
+  const { tenantId, salesRequestId, agentAccountId, items, customerName, destination, customerId } = body ?? {};
+  // dispatchCode دیگر از کلاینت نمی‌آید — سرور خودش D-1404-003 می‌سازد (schema: «auto-generated سمت اپ»)
+  const dispatchCode = typeof body?.dispatchCode === "string" ? body.dispatchCode : undefined;
+  if (typeof tenantId !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {

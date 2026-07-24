@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { toJalali } from "@/lib/date";
 
 export type CreateDispatchResult =
   /**
@@ -6,7 +7,26 @@ export type CreateDispatchResult =
    * تقسیم می‌شود. تک‌انباره همان آرایه‌ی تک‌عضوی است.
    */
   | { ok: true; dispatchIds: string[] }
-  | { ok: false; reason: "request_not_found" | "request_not_approved" | "no_allocations" };
+  | { ok: false; reason: "request_not_found" | "request_not_approved" | "no_allocations" | "already_dispatched" };
+
+type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
+
+/**
+ * کدِ بعدیِ حواله برای این tenant: D-1404-003 (یا BO-... برای backorder).
+ * schema از اول گفته «auto-generated سمت اپ» ولی فرانت `D-${Date.now()}` می‌فرستاد —
+ * یعنی انباردار با «D-1784885047336» کار می‌کرد، نه شماره‌ای که بشود تلفنی خواند.
+ * suffixهای چندانباره (-W1) با regexp نادیده گرفته می‌شوند تا شماره تکرار نشود.
+ */
+async function nextDispatchCode(tx: Tx, tenantId: string, prefix: "D" | "BO"): Promise<string> {
+  const jy = toJalali(new Date()).jy;
+  const pattern = `^${prefix}-${jy}-(\\d+)`;
+  const [{ m }] = await tx<{ m: number }[]>`
+    SELECT COALESCE(MAX((regexp_match(dispatch_code, ${pattern}))[1]::int), 0) AS m
+    FROM sales_dispatch WHERE tenant_id = ${tenantId}`;
+  // ponytail: بدونِ قفل — دو ساختِ هم‌زمان در یک tenant به UNIQUE می‌خورند و یکی 500
+  // می‌گیرد؛ با چند پشتیبانِ انسانی عملاً رخ نمی‌دهد. اگر داد، advisory lock اضافه شود.
+  return `${prefix}-${jy}-${String(m + 1).padStart(3, "0")}`;
+}
 
 export type DispatchStatus = "registered" | "ready_for_loading" | "loaded" | "delivered" | "cancelled";
 
@@ -30,17 +50,28 @@ const NEXT: Record<DispatchStatus, DispatchStatus[]> = {
  */
 export async function createDispatchFromRequest(params: {
   tenantId: string; salesRequestId: string; createdByUserId: string;
-  dispatchCode: string; customerName?: string; destination?: string;
+  /** ندهید تا خودکار ساخته شود (D-1404-003)؛ تست/seed می‌توانند صریح بدهند. */
+  dispatchCode?: string; customerName?: string; destination?: string;
   /** v2: مشتری Entity شد. customerName همچنان snapshotِ نام است. */
   customerId?: string;
 }): Promise<CreateDispatchResult> {
-  const { tenantId, salesRequestId, createdByUserId, dispatchCode, customerName, destination, customerId } = params;
+  const { tenantId, salesRequestId, createdByUserId, customerName, destination, customerId } = params;
   return withTenant(tenantId, async (tx) => {
     const [req] = await tx<{ agent_account_id: string; status: string }[]>`
       SELECT agent_account_id, status FROM sales_request
       WHERE id = ${salesRequestId} AND tenant_id = ${tenantId}`;
     if (!req) return { ok: false, reason: "request_not_found" };
     if (req.status !== "approved") return { ok: false, reason: "request_not_approved" };
+
+    // گاردِ حواله‌ی تکراری: بدونِ این، دو کلیک روی «ساخت حواله» یعنی دو بار ارسالِ
+    // همان سفارش. لغوشده استثناست — حواله‌ی لغوشده باید قابلِ ساختِ دوباره باشد.
+    const [dup] = await tx<{ id: string }[]>`
+      SELECT id FROM sales_dispatch
+      WHERE tenant_id = ${tenantId} AND sales_request_id = ${salesRequestId} AND status <> 'cancelled'
+      LIMIT 1`;
+    if (dup) return { ok: false, reason: "already_dispatched" };
+
+    const dispatchCode = params.dispatchCode ?? await nextDispatchCode(tx, tenantId, "D");
 
     type Alloc = { lot_id: string; variant_id: string; qty: number; warehouse_id: string; warehouse_code: string };
     const allocs = await tx<Alloc[]>`
@@ -166,13 +197,15 @@ const BO_NEXT: Record<BackorderStatus, BackorderStatus[]> = {
 /** حواله‌ی مستقلِ backorder (بدون SalesRequest). هیچ ردیف موجودی‌ای را دست نمی‌زند. */
 export async function createBackorderDispatch(params: {
   tenantId: string; agentAccountId: string; createdByUserId: string;
-  dispatchCode: string; customerName?: string; destination?: string; customerId?: string;
+  /** ندهید تا خودکار ساخته شود (BO-1404-001). */
+  dispatchCode?: string; customerName?: string; destination?: string; customerId?: string;
   items: { variantId: string; quantityBoxes: number }[];
 }): Promise<{ ok: true; dispatchId: string } | { ok: false; reason: "no_items" | "bad_qty" }> {
-  const { tenantId, agentAccountId, createdByUserId, dispatchCode, customerName, destination, items, customerId } = params;
+  const { tenantId, agentAccountId, createdByUserId, customerName, destination, items, customerId } = params;
   if (items.length === 0) return { ok: false, reason: "no_items" };
   if (items.some((i) => !Number.isInteger(i.quantityBoxes) || i.quantityBoxes <= 0)) return { ok: false, reason: "bad_qty" };
   return withTenant(tenantId, async (tx) => {
+    const dispatchCode = params.dispatchCode ?? await nextDispatchCode(tx, tenantId, "BO");
     const [d] = await tx<{ id: string }[]>`
       INSERT INTO sales_dispatch
         (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, customer_id, destination, status, created_by_user_id)

@@ -29,6 +29,11 @@ export async function GET(req: Request) {
       LEFT JOIN product_variant pv ON pv.id = sri.variant_id
       LEFT JOIN product p ON p.id = pv.product_id
       WHERE sr.tenant_id = ${tenantId} AND sr.status = ${status}
+        -- سفارشی که حواله‌ی زنده دارد از صفِ «ساخت حواله» بیرون می‌رود — وگرنه دکمه
+        -- برای همیشه می‌ماند و دو کلیک یعنی دو بار ارسالِ همان بار (لغوشده استثناست).
+        AND NOT EXISTS (SELECT 1 FROM sales_dispatch sd
+                        WHERE sd.tenant_id = sr.tenant_id AND sd.sales_request_id = sr.id
+                          AND sd.status <> 'cancelled')
       GROUP BY sr.id, aa.legal_name, sr.approval_mode
       ORDER BY sr.created_at DESC
       LIMIT 50`,
