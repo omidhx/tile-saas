@@ -15,7 +15,7 @@ const FA: Record<string, string> = {
 export default function ResetPage() {
   const router = useRouter();
   const [step, setStep] = useState<"phone" | "code">("phone");
-  const [phone, setPhone] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [next, setNext] = useState("");
   const [pending, setPending] = useState(false);
@@ -33,9 +33,9 @@ export default function ResetPage() {
     e.preventDefault();
     setErr(""); setPending(true);
     try {
-      const r = await post({ phone });
-      // پاسخ عمداً بی‌تفاوت است: چه شماره ثبت باشد چه نباشد، به گامِ کد می‌رویم.
-      // هر رفتارِ متفاوتی اینجا، فهرستِ شماره‌های نمایندگان را لو می‌دهد.
+      const r = await post({ identifier });
+      // پاسخ عمداً بی‌تفاوت است: چه شناسه ثبت باشد چه نباشد، به گامِ کد می‌رویم.
+      // هر رفتارِ متفاوتی اینجا، فهرستِ شماره‌ها/ایمیل‌های نمایندگان را لو می‌دهد.
       if (r.ok || r.status === 400) setStep("code");
       else setErr(FA[r.json.error] ?? `درخواست انجام نشد (خطای ${r.status}).`);
     } catch { setErr("ارتباط با سرور برقرار نشد."); }
@@ -46,7 +46,7 @@ export default function ResetPage() {
     e.preventDefault();
     setErr(""); setPending(true);
     try {
-      const r = await post({ phone, code, newPassword: next });
+      const r = await post({ identifier, code, newPassword: next });
       if (r.ok) { setDone(true); return; }
       setErr(FA[r.json.error] ?? `ثبت رمز جدید انجام نشد (خطای ${r.status}).`);
     } catch { setErr("ارتباط با سرور برقرار نشد."); }
@@ -76,18 +76,18 @@ export default function ResetPage() {
         {step === "phone" ? (
           <>
             <p className="muted" style={{ marginTop: 0 }}>
-              شماره‌ی موبایلِ ثبت‌شده را وارد کنید تا کد بازیابی پیامک شود.
+              شماره‌ی موبایل یا ایمیلِ ثبت‌شده را وارد کنید تا کدِ بازیابی برایش فرستاده شود.
             </p>
             <form className="card" onSubmit={askCode} noValidate>
-              <label htmlFor="ph">شماره موبایل</label>
-              <input id="ph" value={phone} onChange={(e) => setPhone(e.target.value)}
-                     inputMode="numeric" autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰" required />
+              <label htmlFor="ph">شماره موبایل یا ایمیل</label>
+              <input id="ph" value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+                     autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰ یا ایمیل" required />
               {err && (
                 <div className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
                   <Icon name="alert" /><span>{err}</span>
                 </div>
               )}
-              <button type="submit" className="primary" disabled={pending || !phone.trim()} aria-busy={pending}
+              <button type="submit" className="primary" disabled={pending || !identifier.trim()} aria-busy={pending}
                       style={{ width: "100%", marginTop: "var(--sp-4)" }}>
                 {pending && <span className="spinner" aria-hidden="true" />}
                 {pending ? "در حال ارسال…" : "ارسال کد"}
@@ -96,12 +96,12 @@ export default function ResetPage() {
           </>
         ) : (
           <>
-            {/* متن عمداً «اگر این شماره ثبت باشد» است، نه «کد فرستاده شد» */}
+            {/* متن عمداً «اگر این شناسه ثبت باشد» است، نه «کد فرستاده شد» */}
             <div className="banner banner--info">
               <Icon name="info" />
               <span>
-                اگر <span className="num">{phone}</span> در سامانه ثبت باشد، کد شش‌رقمی برایش پیامک شد.
-                کد تا ۱۰ دقیقه معتبر است.
+                اگر <span className="num">{identifier}</span> در سامانه ثبت باشد، کدِ شش‌رقمی به همه‌ی
+                راه‌های تماسِ ثبت‌شده‌ی همان حساب (پیامک/ایمیل) فرستاده شد. کد تا ۱۰ دقیقه معتبر است.
               </span>
             </div>
             <form className="card" onSubmit={submitNew} noValidate>

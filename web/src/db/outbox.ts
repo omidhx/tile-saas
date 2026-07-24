@@ -1,5 +1,5 @@
 import { sql } from "./client";
-import { sendSms, renderMessage } from "@/notify/sender";
+import { send, renderMessage, renderSubject, type Channel } from "@/notify/sender";
 
 const MAX_ATTEMPTS = 5;
 
@@ -19,11 +19,13 @@ const MAX_ATTEMPTS = 5;
 export async function sendPendingNotifications(limit = 50): Promise<{ sent: number; failed: number }> {
   let sent = 0, failed = 0;
 
-  const claimed = await sql<{ id: string; recipient: string; payload: Record<string, unknown> }[]>`
+  const claimed = await sql<{ id: string; channel: Channel; recipient: string; payload: Record<string, unknown> }[]>`
     SELECT * FROM claim_pending_notifications(${limit}, ${MAX_ATTEMPTS})`;
 
   for (const row of claimed) {
-    const result = await sendSms({ to: row.recipient, text: renderMessage(row.payload) });
+    const result = await send(row.channel, {
+      to: row.recipient, text: renderMessage(row.payload), subject: renderSubject(row.payload),
+    });
     await sql`SELECT finish_notification(${row.id}, ${result.ok}, ${MAX_ATTEMPTS})`;
     if (result.ok) sent++; else failed++;
   }

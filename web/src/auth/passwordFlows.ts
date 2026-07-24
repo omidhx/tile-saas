@@ -68,11 +68,16 @@ export async function changePassword(p: {
  * درخواستِ کدِ بازیابی. **همیشه** «انجام شد» برمی‌گرداند.
  * اگر کاربر وجود داشته باشد کد ساخته و در Outbox صف می‌شود؛ اگر نه، هیچ.
  * خروجی `code` فقط در تست/dev استفاده می‌شود و هرگز به کلاینت نمی‌رود.
+ *
+ * v3: `identifier` می‌تواند موبایل یا ایمیل باشد — کاربر با هرکدام که یادش
+ * بماند/دم‌دست‌تر باشد بازیابی را شروع می‌کند. کد به **همه‌ی** کانال‌های موجودِ
+ * همان کاربر صف می‌شود (نه فقط همان کانالی که با آن جست‌وجو شد)، چون کلِ هدف
+ * این است که قطعیِ یک کانال بازیابی را متوقف نکند.
  */
-export async function requestReset(phone: string): Promise<{ code: string | null }> {
+export async function requestReset(identifier: string): Promise<{ code: string | null }> {
   // app_user ستون tenant_id ندارد، پس RLS رویش نیست و این کوئری امن است.
-  const [u] = await sql<{ id: string }[]>`
-    SELECT id FROM app_user WHERE phone = ${phone} AND is_active`;
+  const [u] = await sql<{ id: string; phone: string; email: string | null }[]>`
+    SELECT id, phone, email FROM app_user WHERE (phone = ${identifier} OR email = ${identifier}) AND is_active`;
   if (!u) return { code: null };
 
   /*
@@ -100,27 +105,34 @@ export async function requestReset(phone: string): Promise<{ code: string | null
     await tx`
       INSERT INTO password_reset (user_id, code_hash, expires_at)
       VALUES (${u.id}, ${hashCode(code)}, now() + make_interval(mins => ${CODE_TTL_MIN}))`;
-    // Outbox: در همان تراکنش، تا اگر چیزی رول‌بک شد پیامکِ کدِ ناموجود فرستاده نشود
+    // Outbox: در همان تراکنش، تا اگر چیزی رول‌بک شد پیامِ کدِ ناموجود فرستاده نشود.
+    // یک ردیف به‌ازای هر کانالِ موجود — همان کد، چند مسیر.
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-      VALUES (${ctx.tenant_id}, 'sms', ${phone},
+      VALUES (${ctx.tenant_id}, 'sms', ${u.phone},
               jsonb_build_object('type', 'password_reset', 'code', ${code}::text,
                                  'ttlMinutes', ${CODE_TTL_MIN}::int))`;
+    if (u.email)
+      await tx`
+        INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
+        VALUES (${ctx.tenant_id}, 'email', ${u.email},
+                jsonb_build_object('type', 'password_reset', 'code', ${code}::text,
+                                   'ttlMinutes', ${CODE_TTL_MIN}::int))`;
   });
 
   return { code };
 }
 
-/** تأیید کد و ثبتِ رمز جدید. */
+/** تأیید کد و ثبتِ رمز جدید. `identifier` همان موبایل/ایمیلی است که در requestReset داده شد. */
 export async function confirmReset(p: {
-  phone: string; code: string; newPassword: string;
+  identifier: string; code: string; newPassword: string;
 }): Promise<Result> {
   const bad = validateNew(p.newPassword);
   if (bad) return { ok: false, reason: bad };
 
   const [u] = await sql<{ id: string }[]>`
-    SELECT id FROM app_user WHERE phone = ${p.phone} AND is_active`;
-  // شماره‌ی ناموجود همان پاسخِ «کد نامعتبر» را می‌گیرد (قاعده‌ی ۲)
+    SELECT id FROM app_user WHERE (phone = ${p.identifier} OR email = ${p.identifier}) AND is_active`;
+  // شناسه‌ی ناموجود همان پاسخِ «کد نامعتبر» را می‌گیرد (قاعده‌ی ۲)
   if (!u) return { ok: false, reason: "invalid_code" };
 
   const hash = await hashPassword(p.newPassword);

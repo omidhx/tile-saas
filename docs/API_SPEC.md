@@ -130,7 +130,10 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/reports` | staff | گزارش‌های مدیریتی |
 | `/api/ledger` | staff | دفتر حرکات + تطبیق (drift) |
 | `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی |
-| `/api/agents` `/api/catalog` `/api/warehouses` | staff | فهرست‌های کمکی |
+| `/api/catalog` | staff | فهرستِ کمکیِ محصولات |
+| `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر) برای admin |
+| `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`) | فهرست؛ ساخت/تغییرِ نام برای admin (بدونِ حذف — `inventory_lot` FK دارد) |
+| `/api/team` | admin | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن (گاردِ «حداقل یک admin») |
 
 ## Rate limits
 پیاده‌شده روی: `login`، `reservations` (۳۰/دقیقه per user)، `auth/password` (۵/۱۵دقیقه)،

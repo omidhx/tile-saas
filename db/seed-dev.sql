@@ -27,9 +27,11 @@ INSERT INTO app_user(id, phone, password_hash) VALUES
   ('44444444-4444-4444-4444-444444444444', '09120000000', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq'),
   ('55555555-5555-5555-5555-555555555556', '09120000001', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq');
 
+-- کاربرِ دوم admin است نه صرفاً staff: مدیریتِ تیم/نمایندگی/انبار (v3) فقط برای
+-- admin باز است — کاربرِ دموی پشتیبان باید بتواند این صفحه‌ها را هم ببیند.
 INSERT INTO tenant_membership(tenant_id, user_id, role, is_active) VALUES
   ('11111111-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444', 'agent', true),
-  ('11111111-1111-1111-1111-111111111111', '55555555-5555-5555-5555-555555555556', 'staff', true);
+  ('11111111-1111-1111-1111-111111111111', '55555555-5555-5555-5555-555555555556', 'admin', true);
 
 INSERT INTO price_list(id, tenant_id, name) VALUES
   ('aaaa1111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', 'لیست پایه');

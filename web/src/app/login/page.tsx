@@ -15,7 +15,7 @@ function loginError(status: number): string {
 
 export default function LoginPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState("");
@@ -28,7 +28,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       if (!res.ok) { setErr(loginError(res.status)); return; }
 
@@ -55,9 +55,9 @@ export default function LoginPage() {
         </p>
 
         <form className="card" onSubmit={submit} noValidate>
-          <label htmlFor="phone">شماره موبایل</label>
-          <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)}
-                 inputMode="numeric" autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰"
+          <label htmlFor="phone">شماره موبایل یا ایمیل</label>
+          <input id="phone" value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+                 autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰ یا ایمیل"
                  aria-invalid={err ? true : undefined} required />
 
           <label htmlFor="pw">رمز عبور</label>

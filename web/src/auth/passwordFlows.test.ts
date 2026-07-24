@@ -88,7 +88,7 @@ test("تغییر رمز، کدهای بازیابیِ در جریان را هم 
   const { code } = await requestReset(PHONE);
   await changePassword({ userId: U, currentPassword: OLD, newPassword: "brandnew123" });
 
-  const r = await confirmReset({ phone: PHONE, code: code!, newPassword: "attacker99" });
+  const r = await confirmReset({ identifier: PHONE, code: code!, newPassword: "attacker99" });
   assert.deepEqual(r, { ok: false, reason: "invalid_code" },
     "کدِ SMSیِ قبل از تغییرِ رمز نباید هنوز کار کند");
 });
@@ -115,7 +115,7 @@ test("کد در همان تراکنش به Outbox می‌رود (پیامک)", a
 test("کدِ درست رمز را عوض می‌کند و نشست‌ها را می‌کشد", async () => {
   const before = await epoch();
   const { code } = await requestReset(PHONE);
-  const r = await confirmReset({ phone: PHONE, code: code!, newPassword: "resetpass123" });
+  const r = await confirmReset({ identifier: PHONE, code: code!, newPassword: "resetpass123" });
   assert.ok(r.ok);
   assert.ok(await verifyPassword("resetpass123", await currentHash()));
   assert.ok((await epoch()) > before, "بازیابی هم باید نشست‌ها را باطل کند");
@@ -123,8 +123,8 @@ test("کدِ درست رمز را عوض می‌کند و نشست‌ها را �
 
 test("کد یک‌بارمصرف است", async () => {
   const { code } = await requestReset(PHONE);
-  assert.ok((await confirmReset({ phone: PHONE, code: code!, newPassword: "first12345" })).ok);
-  const second = await confirmReset({ phone: PHONE, code: code!, newPassword: "second12345" });
+  assert.ok((await confirmReset({ identifier: PHONE, code: code!, newPassword: "first12345" })).ok);
+  const second = await confirmReset({ identifier: PHONE, code: code!, newPassword: "second12345" });
   assert.deepEqual(second, { ok: false, reason: "invalid_code" });
   assert.ok(await verifyPassword("first12345", await currentHash()), "رمزِ دوم نباید اعمال شده باشد");
 });
@@ -133,27 +133,27 @@ test("درخواستِ دوباره، کدِ قبلی را باطل می‌کن�
   const first = await requestReset(PHONE);
   const second = await requestReset(PHONE);
   assert.notEqual(first.code, second.code);
-  assert.deepEqual(await confirmReset({ phone: PHONE, code: first.code!, newPassword: "viaold12345" }),
+  assert.deepEqual(await confirmReset({ identifier: PHONE, code: first.code!, newPassword: "viaold12345" }),
     { ok: false, reason: "invalid_code" }, "فقط آخرین کد باید کار کند");
-  assert.ok((await confirmReset({ phone: PHONE, code: second.code!, newPassword: "vianew12345" })).ok);
+  assert.ok((await confirmReset({ identifier: PHONE, code: second.code!, newPassword: "vianew12345" })).ok);
 });
 
 test("کدِ منقضی رد می‌شود", async () => {
   const { code } = await requestReset(PHONE);
   await sql`UPDATE password_reset SET created_at = now() - interval '2 hours',
             expires_at = now() - interval '1 minute'`;
-  assert.deepEqual(await confirmReset({ phone: PHONE, code: code!, newPassword: "expired12345" }),
+  assert.deepEqual(await confirmReset({ identifier: PHONE, code: code!, newPassword: "expired12345" }),
     { ok: false, reason: "invalid_code" });
 });
 
 test("🔴 حدسِ پیاپی بعد از ۵ تلاش کد را می‌سوزاند", async () => {
   const { code } = await requestReset(PHONE);
   for (let i = 0; i < 5; i++) {
-    const r = await confirmReset({ phone: PHONE, code: "000000", newPassword: "guessed12345" });
+    const r = await confirmReset({ identifier: PHONE, code: "000000", newPassword: "guessed12345" });
     assert.deepEqual(r, { ok: false, reason: "invalid_code" }, `تلاش ${i + 1}`);
   }
   // تلاشِ ششم حتی با کدِ **درست** هم باید رد شود
-  const after = await confirmReset({ phone: PHONE, code: code!, newPassword: "guessed12345" });
+  const after = await confirmReset({ identifier: PHONE, code: code!, newPassword: "guessed12345" });
   assert.deepEqual(after, { ok: false, reason: "too_many_attempts" },
     "کدِ شش‌رقمی با ۱۰ دقیقه فرصت وگرنه قابلِ جست‌وجوی کامل است");
 });
@@ -163,15 +163,32 @@ test("کدِ کاربرِ دیگر روی این حساب کار نمی‌کند
   // برای کاربرِ دوم عضویت نداریم، پس مستقیم کد می‌سازیم تا شرایط واقعی شبیه‌سازی شود
   await sql`INSERT INTO password_reset (user_id, code_hash, expires_at)
             VALUES (${OTHER}, encode(sha256('123456'::bytea),'hex'), now() + interval '10 min')`;
-  assert.deepEqual(await confirmReset({ phone: PHONE, code: "123456", newPassword: "crossuser123" }),
+  assert.deepEqual(await confirmReset({ identifier: PHONE, code: "123456", newPassword: "crossuser123" }),
     { ok: false, reason: "invalid_code" }, "کد باید به کاربر گره خورده باشد");
-  assert.ok((await confirmReset({ phone: PHONE, code: mine.code!, newPassword: "ownuser12345" })).ok);
+  assert.ok((await confirmReset({ identifier: PHONE, code: mine.code!, newPassword: "ownuser12345" })).ok);
 });
 
 test("رمزِ کوتاه در مسیرِ بازیابی هم رد می‌شود، و کد را نمی‌سوزاند", async () => {
   const { code } = await requestReset(PHONE);
-  assert.deepEqual(await confirmReset({ phone: PHONE, code: code!, newPassword: "short" }),
+  assert.deepEqual(await confirmReset({ identifier: PHONE, code: code!, newPassword: "short" }),
     { ok: false, reason: "too_short" });
-  assert.ok((await confirmReset({ phone: PHONE, code: code!, newPassword: "longenough123" })).ok,
+  assert.ok((await confirmReset({ identifier: PHONE, code: code!, newPassword: "longenough123" })).ok,
     "کاربری که رمزِ کوتاه زد نباید مجبور شود کدِ تازه بگیرد");
+});
+
+test("v3: بازیابی با ایمیل هم کار می‌کند، و کد به هر دو کانال صف می‌شود", async () => {
+  await sql`UPDATE app_user SET email = 'agent@example.com' WHERE id = ${U}`;
+  const { code } = await requestReset("agent@example.com");
+  assert.ok(code, "کاربرِ دارایِ ایمیل باید کد بگیرد");
+
+  const rows = await sql<{ channel: string; recipient: string }[]>`
+    SELECT channel, recipient FROM notification_outbox
+    WHERE tenant_id = ${T} AND payload->>'code' = ${code} ORDER BY channel`;
+  assert.deepEqual([...rows].map((r) => ({ channel: r.channel, recipient: r.recipient })), [
+    { channel: "email", recipient: "agent@example.com" },
+    { channel: "sms", recipient: PHONE },
+  ], "همان کد باید هم به sms هم به email صف شود");
+
+  assert.ok((await confirmReset({ identifier: "agent@example.com", code: code!, newPassword: "viaemail123" })).ok,
+    "تأیید هم باید با همان ایمیل کار کند");
 });

@@ -35,7 +35,13 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 CREATE TABLE app_user (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone         TEXT NOT NULL UNIQUE,
+    -- v3: ایمیل و بله هم راهِ ورود/بازیابی‌اند، نه فقط موبایل — تا قطعیِ یک کانال
+    -- کاربر را کاملاً بیرون از سامانه نگذارد. هر دو nullable (اول فقط موبایل لازم
+    -- است) ولی وقتی پر باشند باید یکتا بمانند، وگرنه لاگین با ایمیل مبهم می‌شود.
     email         TEXT,
+    -- chat_id عددیِ ربات بله، بعد از اتصالِ حساب (فلوی اتصال بعداً، نیازمندِ webhook
+    -- عمومی است — همان محدودیتِ SMSِ production، پس فعلاً ستون هست، فلو نیست).
+    bale_chat_id  TEXT,
     password_hash TEXT NOT NULL,
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     -- نسخه‌ی نشست. JWT همین عدد را حمل می‌کند و فقط وقتی معتبر است که **برابر**
@@ -50,6 +56,10 @@ CREATE TABLE app_user (
     session_epoch INT NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- یکتاییِ partial: NULL نامحدود مجاز است (اکثرِ کاربرها ایمیل ندارند)، فقط
+-- مقدارهای واقعی نباید تکرار شوند.
+CREATE UNIQUE INDEX idx_app_user_email ON app_user (email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX idx_app_user_bale ON app_user (bale_chat_id) WHERE bale_chat_id IS NOT NULL;
 
 -- کدِ یک‌بارمصرفِ بازیابی رمز (SMS). خودِ کد ذخیره نمی‌شود — hash می‌شود، چون
 -- یک اعتبارنامه است: هرکس به DB خواندنی دسترسی پیدا کند نباید بتواند رمز عوض کند.
@@ -77,6 +87,12 @@ CREATE TABLE tenant (
     -- NULL = خاموش، یعنی همه‌ی رزروها تأییدِ دستی می‌خواهند. پیش‌فرض عمداً خاموش است:
     -- فیچری که پول را بدونِ نگاهِ انسان متعهد می‌کند نباید با نصبِ ساده روشن شود.
     auto_approve_limit          BIGINT CHECK (auto_approve_limit >= 0),
+    -- v3 «سقفِ اشتراک»: قلاب برای پلن/billingِ آینده — NULL همان معنیِ همیشگی را
+    -- دارد (نامحدود)، پس تننت‌های فعلی تغییری نمی‌بینند. وقتی صورتحساب واقعی
+    -- اضافه شد، فقط همین دو عدد را ست می‌کند؛ create-flowها همین الان گارد را
+    -- رعایت می‌کنند (db/team.ts، db/agents.ts).
+    max_staff                   INT CHECK (max_staff >= 0),
+    max_agents                  INT CHECK (max_agents >= 0),
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -532,7 +548,9 @@ CREATE TABLE import_row (
 CREATE TABLE notification_outbox (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id     UUID NOT NULL REFERENCES tenant(id),
-    channel       TEXT NOT NULL DEFAULT 'sms' CHECK (channel IN ('sms')),
+    -- v3 «چندکاناله»: پیامک تنها راه نبود — قطعیِ خطِ SMS یعنی کاربر هیچ کدی
+    -- نمی‌گیرد. email/bale افزوده شدند تا همان کد به چند مسیر صف شود (بخش پایین).
+    channel       TEXT NOT NULL DEFAULT 'sms' CHECK (channel IN ('sms','email','bale')),
     recipient     TEXT NOT NULL,
     payload       JSONB NOT NULL,
     status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','failed')),
@@ -802,7 +820,7 @@ REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
 -- برداشتِ اتمیکِ پیام‌های آماده (claim): attempt_count++ و SKIP LOCKED تا دو worker
 -- هم‌زمان یک پیام را دوبار نفرستند.
 CREATE FUNCTION claim_pending_notifications(p_limit INT, p_max_attempts INT)
-RETURNS TABLE (id UUID, recipient TEXT, payload JSONB, attempt_count INT)
+RETURNS TABLE (id UUID, channel TEXT, recipient TEXT, payload JSONB, attempt_count INT)
 LANGUAGE sql SECURITY DEFINER AS $$
     UPDATE notification_outbox SET attempt_count = notification_outbox.attempt_count + 1
     WHERE notification_outbox.id IN (
@@ -812,7 +830,7 @@ LANGUAGE sql SECURITY DEFINER AS $$
         LIMIT p_limit
         FOR UPDATE SKIP LOCKED
     )
-    RETURNING notification_outbox.id, notification_outbox.recipient,
+    RETURNING notification_outbox.id, notification_outbox.channel, notification_outbox.recipient,
               notification_outbox.payload, notification_outbox.attempt_count;
 $$;
 REVOKE EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) FROM PUBLIC;

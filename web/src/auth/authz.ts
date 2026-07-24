@@ -62,3 +62,21 @@ export async function authorizeStaff(userId: string, tenantId: string): Promise<
     return { userId, tenantId, role: m.role };
   });
 }
+
+/**
+ * دسترسیِ admin — v3: مدیریتِ تیم/نمایندگی/انبار (ساختِ حساب، تعیینِ دسترسی) از
+ * تأییدِ روزمره‌ی staff جداست؛ نقشی که رمز/دسترسیِ بقیه را دست‌کاری می‌کند باید
+ * محدودتر از نقشی باشد که فقط سفارش تأیید می‌کند. برخلافِ authorizeStaff، اینجا
+ * 'staff' کافی نیست — فقط 'admin'.
+ */
+export async function authorizeAdmin(userId: string, tenantId: string): Promise<{ userId: string; tenantId: string }> {
+  return withTenant(tenantId, async (tx) => {
+    const [m] = await tx<{ role: string }[]>`
+      SELECT role FROM tenant_membership
+      WHERE user_id = ${userId} AND tenant_id = ${tenantId} AND is_active
+      LIMIT 1`;
+    if (!m) throw new AuthzError("کاربر عضو این tenant نیست");
+    if (m.role !== "admin") throw new AuthzError("این عملیات نیازمند نقشِ admin است");
+    return { userId, tenantId };
+  });
+}
