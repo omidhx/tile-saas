@@ -280,6 +280,10 @@ export default function CatalogPage() {
             <input id={`spb-${key}`} inputMode="decimal" value={v.sqmPerBox}
               onChange={(e) => set({ sqmPerBox: e.target.value })} placeholder="۱٫۴۴" /></div>
         </div>
+        <p className="subtle" style={{ marginTop: "var(--sp-1)" }}>
+          این دو عدد فقط نسبتِ بسته‌بندی‌اند (برای فرمولِ تبدیلِ نماینده)، نه مقدارِ موجودی —
+          موجودیِ واقعی را از ورودِ اکسل یا کالای در راه اضافه کنید.
+        </p>
         {preview.length > 0 && (
           <p className="subtle" style={{ marginTop: "var(--sp-1)" }}>
             برای فرمولِ تبدیلِ نماینده: {preview.join("؛ ")}.
@@ -311,6 +315,10 @@ export default function CatalogPage() {
           همه‌جا دیده می‌شود. جایگزین و اطلاعاتِ بیشتر (ابعاد/توضیحات) هم همین‌جا.
           {" "}<span className="num">{withImage.toLocaleString("fa-IR")}</span> از{" "}
           <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
+          {" "}<strong>توجه:</strong> ساختنِ محصول اینجا فقط مشخصات و قیمت را ثبت می‌کند و
+          <strong> موجودیِ انبار نمی‌سازد</strong> — تا زمانی که از{" "}
+          <Link href="/staff/import">ورودِ اکسل</Link> یا <Link href="/staff/incoming">کالای در راه</Link>{" "}
+          موجودی برایش ثبت نشود، برای نماینده «ناموجود» دیده می‌شود.
         </span>
       </div>
 
@@ -386,7 +394,11 @@ export default function CatalogPage() {
                 <strong>{p.name}</strong>
                 <span>
                   <span className="subtle num">{p.code}</span>
-                  {!p.hasStock && <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>بدون موجودی</span>}
+                  {!p.hasStock && (
+                    <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>
+                      بدون موجودی — <Link href="/staff/import">افزودنِ موجودی ←</Link>
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="subtle">
