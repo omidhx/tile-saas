@@ -12,6 +12,7 @@ export async function GET() {
     {
       tenant_id: string; tenant_name: string; agent_account_id: string | null; agent_legal_name: string | null;
       role: string; can_manage_access: boolean; allowed_pages: string[];
+      assigned_staff_name: string | null; assigned_staff_phone: string | null;
     }[]
   >`SELECT * FROM user_contexts(${userId})`;
 
@@ -25,6 +26,9 @@ export async function GET() {
       role: r.role,
       canManageAccess: r.can_manage_access,
       allowedPages: r.allowed_pages,
+      // v5: پشتیبانِ ثابتِ همین نمایندگی — فقط برای contextِ agent پر است.
+      assignedStaffName: r.assigned_staff_name,
+      assignedStaffPhone: r.assigned_staff_phone,
     })),
   });
 }

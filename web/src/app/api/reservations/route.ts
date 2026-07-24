@@ -31,6 +31,9 @@ export async function GET(req: Request) {
       SELECT r.id,
         CASE WHEN r.status = 'active' AND r.expires_at <= now() THEN 'expired' ELSE r.status END AS status,
         r.expires_at AS "expiresAt", aa.legal_name AS "agentName",
+        -- v5: پشتیبانِ ثابتِ همین نمایندگی — هم صفِ staff (بداند سفارش دستِ کیست)
+        -- هم صفحه‌ی نماینده («این را چه کسی پیگیری می‌کند») از همین یک ستون می‌خوانند.
+        su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone",
         COALESCE(json_agg(json_build_object(
           'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes,
           -- برای پنلِ پشتیبان: معادلِ پالت/مترمربع کنارِ عددِ کارتن (spec تبدیلِ واحد).
@@ -40,6 +43,7 @@ export async function GET(req: Request) {
         )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items
       FROM reservation r
       JOIN agent_account aa ON aa.id = r.agent_account_id
+      LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
       LEFT JOIN reservation_item ri ON ri.reservation_id = r.id
       LEFT JOIN inventory_lot l ON l.id = ri.lot_id
       LEFT JOIN product_variant pv ON pv.id = l.variant_id
@@ -49,7 +53,7 @@ export async function GET(req: Request) {
             // صفِ تأیید: فقط رزروِ واقعاً زنده — منقضی نباید به‌عنوان «در انتظار تأیید» دیده شه
             ? tx`r.status = 'active' AND r.expires_at > now()`
             : tx`r.agent_account_id = ${agentAccountId}`}
-      GROUP BY r.id, aa.legal_name
+      GROUP BY r.id, aa.legal_name, su.full_name, su.phone
       ORDER BY r.created_at DESC
       LIMIT 50`,
   );

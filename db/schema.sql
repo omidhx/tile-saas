@@ -35,6 +35,10 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 CREATE TABLE app_user (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone         TEXT NOT NULL UNIQUE,
+    -- v5: نام و نام‌خانوادگی — تا اینجا فقط شماره/ایمیل بود که برای «این پشتیبانِ
+    -- ثابتِ نمایندگیِ توست» نمایش‌پذیر نیست. nullable: کاربرهای قدیمی نام ندارند،
+    -- UI باید با شماره fallback کند (همان قاعده‌ی audit_log.actor_phone).
+    full_name     TEXT,
     -- v3: ایمیل و بله هم راهِ ورود/بازیابی‌اند، نه فقط موبایل — تا قطعیِ یک کانال
     -- کاربر را کاملاً بیرون از سامانه نگذارد. هر دو nullable (اول فقط موبایل لازم
     -- است) ولی وقتی پر باشند باید یکتا بمانند، وگرنه لاگین با ایمیل مبهم می‌شود.
@@ -125,6 +129,14 @@ CREATE TABLE agent_account (
     --   0    = هرگز خودکار (نماینده‌ی تازه/بدهکار) — چون ۰ کوچک‌تر از هر سفارشی است،
     --          همین یک عدد جای یک ستونِ بولیِ جداگانه را می‌گیرد.
     auto_approve_limit BIGINT CHECK (auto_approve_limit >= 0),
+    -- v5 «پشتیبانِ ثابت»: کارخانه پورسانتِ هر نماینده را به یک پشتیبانِ مشخص
+    -- می‌دهد؛ نماینده باید بداند سفارشش دستِ کیست، حتی وقتی خودکار تأیید شده
+    -- (هیچ actor انسانی در کار نبوده). فقط admin از /staff/agents تعیینش می‌کند
+    -- (نه هر staff‌ای) — همانی که پورسانت را حساب می‌کند باید کنترلش کند.
+    -- REFERENCES app_user(id) نه composite: app_user سراسری است، بی tenant_id.
+    -- اینکه این کاربر واقعاً عضوِ فعالِ staff/adminِ همین tenant باشد را
+    -- db/agents.ts در لحظه‌ی ست‌کردن چک می‌کند (schema به‌تنهایی نمی‌تواند).
+    assigned_staff_user_id UUID REFERENCES app_user(id),
     is_active    BOOLEAN NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
@@ -777,13 +789,17 @@ FROM inventory_balance b;
 -- role برگردونده می‌شه تا UI بدونه کاربر نماینده‌ست یا پشتیبان.
 CREATE FUNCTION user_contexts(p_user_id UUID)
 RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT,
-               can_manage_access BOOLEAN, allowed_pages TEXT[])
+               can_manage_access BOOLEAN, allowed_pages TEXT[],
+               assigned_staff_name TEXT, assigned_staff_phone TEXT)
 LANGUAGE sql SECURITY DEFINER STABLE AS $$
-    SELECT t.id, t.name, aa.id, aa.legal_name, tm.role, tm.can_manage_access, tm.allowed_pages
+    SELECT t.id, t.name, aa.id, aa.legal_name, tm.role, tm.can_manage_access, tm.allowed_pages,
+           su.full_name, su.phone
     FROM tenant_membership tm
     JOIN tenant t              ON t.id = tm.tenant_id AND t.is_active
     LEFT JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id
     LEFT JOIN agent_account aa ON aa.id = aau.agent_account_id AND aa.is_active
+    -- پشتیبانِ ثابتِ همین نمایندگی — فقط برای contextِ agent معنا دارد (پایین)
+    LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
     WHERE tm.user_id = p_user_id AND tm.is_active
 $$;
 REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;

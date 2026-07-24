@@ -23,9 +23,10 @@ INSERT INTO tenant(id, name, slug, auto_approve_limit) VALUES
   ('11111111-1111-1111-1111-111111111111', 'کارخانه کاشی نمونه', 'nemoone', 200000000);
 
 -- هر دو رمز: pass1234  (bcrypt، فقط برای محیط توسعه)
-INSERT INTO app_user(id, phone, password_hash) VALUES
-  ('44444444-4444-4444-4444-444444444444', '09120000000', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq'),
-  ('55555555-5555-5555-5555-555555555556', '09120000001', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq');
+-- v5: نام دارند تا کارتِ «پشتیبانِ ثابت» در دمو خالی نباشد.
+INSERT INTO app_user(id, phone, full_name, password_hash) VALUES
+  ('44444444-4444-4444-4444-444444444444', '09120000000', 'رضا احمدی', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq'),
+  ('55555555-5555-5555-5555-555555555556', '09120000001', 'سارا محمدی', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq');
 
 -- کاربرِ دوم admin است نه صرفاً staff: مدیریتِ تیم/نمایندگی/انبار (v3) فقط برای
 -- admin باز است — کاربرِ دموی پشتیبان باید بتواند این صفحه‌ها را هم ببیند.
@@ -38,9 +39,11 @@ INSERT INTO tenant_membership(tenant_id, user_id, role, is_active, can_manage_ac
 INSERT INTO price_list(id, tenant_id, name) VALUES
   ('aaaa1111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', 'لیست پایه');
 
-INSERT INTO agent_account(id, tenant_id, legal_name, code, price_list_id) VALUES
+-- v5: assigned_staff_user_id = همان پشتیبانِ دمو — تا کارتِ «پیگیرِ سفارشِ شما»
+-- در /reservations و بجِ پشتیبان در صفِ /staff از همان اول در دمو دیده شود.
+INSERT INTO agent_account(id, tenant_id, legal_name, code, price_list_id, assigned_staff_user_id) VALUES
   ('a5555555-5555-5555-5555-555555555555', '11111111-1111-1111-1111-111111111111',
-   'نمایندگی یزد', 'AG-YZD', 'aaaa1111-1111-1111-1111-111111111111');
+   'نمایندگی یزد', 'AG-YZD', 'aaaa1111-1111-1111-1111-111111111111', '55555555-5555-5555-5555-555555555556');
 
 INSERT INTO agent_account_user(tenant_id, agent_account_id, user_id, role) VALUES
   ('11111111-1111-1111-1111-111111111111', 'a5555555-5555-5555-5555-555555555555',

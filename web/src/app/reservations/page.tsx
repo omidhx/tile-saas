@@ -133,6 +133,21 @@ export default function MyReservationsPage() {
         </nav>
       </div>
 
+      {/* پشتیبانِ ثابتِ این نمایندگی — نماینده باید بداند سفارشش دستِ کیست و
+          چطور در ارتباط باشد (تلفن)، حتی وقتی تأییدِ خودکار بوده و کسی دستی
+          کاری نکرده. اگر هنوز پشتیبانی تعیین نشده، این کارت اصلاً نشان داده نمی‌شود. */}
+      {(ctx.assignedStaffName || ctx.assignedStaffPhone) && (
+        <div className="card">
+          <div className="row">
+            <span className="muted">پیگیرِ سفارش‌های شما</span>
+          </div>
+          <div className="row">
+            <strong>{ctx.assignedStaffName ?? "پشتیبان"}</strong>
+            {ctx.assignedStaffPhone && <span className="num">{ctx.assignedStaffPhone}</span>}
+          </div>
+        </div>
+      )}
+
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
       {cancelErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{cancelErr}</span></div>}
       {loaded && !loadErr && rows.length === 0 && (

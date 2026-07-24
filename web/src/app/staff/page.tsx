@@ -16,8 +16,12 @@ type ResvItem = {
   /** برای نمایشِ معادلِ پالت/مترمربع کنارِ عددِ کارتن — بسته‌بندی مشخصه‌ی ثابتِ محصول است. */
   boxesPerPallet: number | null; sqcmPerBox: number | null;
 };
-type Resv = { id: string; status: string; agentName: string; items: ResvItem[] };
-type Req = { id: string; status: string; agentName: string; approvalMode: "manual" | "auto"; items: { name: string; code: string; qty: number }[] };
+type Resv = { id: string; status: string; agentName: string; assignedStaffName: string | null; assignedStaffPhone: string | null; items: ResvItem[] };
+type Req = {
+  id: string; status: string; agentName: string; approvalMode: "manual" | "auto";
+  assignedStaffName: string | null; assignedStaffPhone: string | null;
+  items: { name: string; code: string; qty: number }[];
+};
 type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number; warehouseName: string | null };
 type Agent = { id: string; legalName: string };
 type Variant = { id: string; name: string; code: string; sku: string };
@@ -190,7 +194,13 @@ export default function StaffPage() {
       {loaded && !loadErr && pendingResvs.length === 0 && <p className="empty">رزروِ فعالی برای تأیید نیست.</p>}
       {pendingResvs.map((r) => (
         <div className="card" key={r.id}>
-          <div className="row"><strong>{r.agentName}</strong></div>
+          <div className="row">
+            <strong>{r.agentName}</strong>
+            {/* پشتیبانِ ثابت: پورسانتِ این سفارش دستِ کیست — هر staffی که صف را می‌بیند باید بداند */}
+            {(r.assignedStaffName || r.assignedStaffPhone) && (
+              <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
+            )}
+          </div>
           <div className="muted">
             {/* معادلِ پالت/مترمربع کنارِ هر قلم — سنجشِ سریعِ سفارش‌های بزرگ بدونِ محاسبه‌ی ذهنی */}
             {r.items.map((i, idx) => (
@@ -231,8 +241,13 @@ export default function StaffPage() {
         <div className="card" key={r.id}>
           <div className="row">
             <strong>{r.agentName}</strong>
-            {/* پشتیبان باید ببیند کدام سفارش بدونِ او تأیید شده — وگرنه فیچر بی‌سروصدا کار می‌کند */}
-            {r.approvalMode === "auto" && <span className="badge badge--ok">تأیید خودکار (زیر سقف)</span>}
+            <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
+              {(r.assignedStaffName || r.assignedStaffPhone) && (
+                <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
+              )}
+              {/* پشتیبان باید ببیند کدام سفارش بدونِ او تأیید شده — وگرنه فیچر بی‌سروصدا کار می‌کند */}
+              {r.approvalMode === "auto" && <span className="badge badge--ok">تأیید خودکار (زیر سقف)</span>}
+            </span>
           </div>
           <div className="muted">{r.items.map((i) => `${i.name} ×${num(i.qty)}`).join("، ")}</div>
           <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>

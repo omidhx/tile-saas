@@ -16,10 +16,10 @@ export type FindOrCreateResult =
  * کاربر خودش ست کرده).
  */
 export async function findOrCreateUser(
-  tx: postgres.TransactionSql, phone: string, email: string | null,
+  tx: postgres.TransactionSql, phone: string, email: string | null, fullName?: string | null,
 ): Promise<FindOrCreateResult> {
-  const [existing] = await tx<{ id: string; email: string | null }[]>`
-    SELECT id, email FROM app_user WHERE phone = ${phone}`;
+  const [existing] = await tx<{ id: string; email: string | null; full_name: string | null }[]>`
+    SELECT id, email, full_name FROM app_user WHERE phone = ${phone}`;
 
   if (existing) {
     if (email && !existing.email) {
@@ -27,6 +27,9 @@ export async function findOrCreateUser(
       if (dup) return { ok: false, reason: "email_taken" };
       await tx`UPDATE app_user SET email = ${email} WHERE id = ${existing.id}`;
     }
+    // مثلِ ایمیل: فقط جای خالی پر می‌شود — نامِ کاربرِ موجود را بازنویسی نمی‌کنیم.
+    if (fullName && !existing.full_name)
+      await tx`UPDATE app_user SET full_name = ${fullName} WHERE id = ${existing.id}`;
     return { ok: true, userId: existing.id, created: false, tempPassword: null };
   }
 
@@ -36,8 +39,8 @@ export async function findOrCreateUser(
   }
   const tempPassword = generateTempPassword();
   const [u] = await tx<{ id: string }[]>`
-    INSERT INTO app_user (phone, email, password_hash)
-    VALUES (${phone}, ${email}, ${await hashPassword(tempPassword)})
+    INSERT INTO app_user (phone, email, full_name, password_hash)
+    VALUES (${phone}, ${email}, ${fullName ?? null}, ${await hashPassword(tempPassword)})
     RETURNING id`;
   return { ok: true, userId: u.id, created: true, tempPassword };
 }

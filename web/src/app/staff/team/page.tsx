@@ -10,7 +10,7 @@ import { STAFF_PAGES } from "@/lib/staffPages";
 import DeleteButton from "../../DeleteButton";
 
 type Member = {
-  membershipId: string; userId: string; phone: string; email: string | null;
+  membershipId: string; userId: string; phone: string; email: string | null; fullName: string | null;
   role: "staff" | "admin"; isActive: boolean; canManageAccess: boolean; allowedPages: string[];
 };
 
@@ -30,6 +30,7 @@ export default function TeamPage() {
   const [loaded, setLoaded] = useState(false);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<"staff" | "admin">("staff");
   const [deputy, setDeputy] = useState(false);
   const [pages, setPages] = useState<string[]>([]);
@@ -41,6 +42,10 @@ export default function TeamPage() {
   // ویرایشِ چک‌لیستِ صفحه‌های یک عضوِ staffِ موجود (درجا، بدونِ فرمِ جدا)
   const [editPagesFor, setEditPagesFor] = useState<string | null>(null);
   const [editPages, setEditPages] = useState<string[]>([]);
+
+  // ویرایشِ درجای نامِ یک عضوِ موجود — برای تصحیحِ تایپو یا پرکردنِ نامِ ثبت‌نشده
+  const [editNameFor, setEditNameFor] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
 
   const load = useCallback(async (tenantId: string) => {
     const res = await getJson<{ members: Member[] }>(`/api/team?tenantId=${tenantId}`);
@@ -58,7 +63,8 @@ export default function TeamPage() {
     if (!ctx || !phone.trim()) return;
     setPending("invite"); setMsg(""); setErr(""); setTempPassword(null);
     const res = await postJson("/api/team", {
-      tenantId: ctx.tenantId, phone: phone.trim(), email: email.trim() || undefined, role,
+      tenantId: ctx.tenantId, phone: phone.trim(), email: email.trim() || undefined,
+      fullName: fullName.trim() || undefined, role,
       canManageAccess: role === "admin" ? deputy : undefined,
       allowedPages: role === "staff" ? pages : undefined,
     });
@@ -68,7 +74,7 @@ export default function TeamPage() {
       return;
     }
     const data = res.data as { created: boolean; tempPassword: string | null };
-    setPhone(""); setEmail(""); setDeputy(false); setPages([]);
+    setPhone(""); setEmail(""); setFullName(""); setDeputy(false); setPages([]);
     if (data.created && data.tempPassword) setTempPassword({ phone, password: data.tempPassword });
     setMsg(data.created ? "عضو ساخته شد." : "دسترسی به کاربرِ موجود اضافه شد.");
     await load(ctx.tenantId);
@@ -103,6 +109,11 @@ export default function TeamPage() {
   function startEditPages(m: Member) { setEditPagesFor(m.membershipId); setEditPages(m.allowedPages); setMsg(""); setErr(""); }
   async function savePages(membershipId: string) {
     if (await patch(membershipId, { allowedPages: editPages })) setEditPagesFor(null);
+  }
+
+  function startEditName(m: Member) { setEditNameFor(m.membershipId); setEditName(m.fullName ?? ""); setMsg(""); setErr(""); }
+  async function saveName(membershipId: string) {
+    if (await patch(membershipId, { fullName: editName })) setEditNameFor(null);
   }
 
   if (state === "none")
@@ -149,6 +160,9 @@ export default function TeamPage() {
         <label htmlFor="ph">موبایل</label>
         <input id="ph" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="۰۹۱۲۰۰۰۰۰۰۰" />
 
+        <label htmlFor="fn">نام و نام‌خانوادگی</label>
+        <input id="fn" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="مثلاً: رضا احمدی" />
+
         <label htmlFor="em">ایمیل (اختیاری — راهِ دومِ ورود اگر پیامک نرسید)</label>
         <input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
 
@@ -193,8 +207,22 @@ export default function TeamPage() {
         <div className="card" key={m.membershipId}>
           <div className="row">
             <span>
-              <strong className="num">{m.phone}</strong>
-              {m.email && <span className="subtle"> · {m.email}</span>}
+              {editNameFor === m.membershipId ? (
+                <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)}
+                         placeholder="نام و نام‌خانوادگی" aria-label={`نامِ ${m.phone}`} style={{ maxWidth: 200 }} autoFocus />
+                  <button className="primary" disabled={pending === m.membershipId} onClick={() => saveName(m.membershipId)}>
+                    {pending === m.membershipId && <span className="spinner" aria-hidden="true" />}ذخیره
+                  </button>
+                  <button className="ghost" onClick={() => setEditNameFor(null)}>انصراف</button>
+                </span>
+              ) : (
+                <>
+                  <strong>{m.fullName ?? <span className="subtle">(بدونِ نام)</span>}</strong>{" "}
+                  <span className="subtle num">{m.phone}</span>
+                  {m.email && <span className="subtle"> · {m.email}</span>}
+                </>
+              )}
               {!m.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
             </span>
             <span className="row row--start">
@@ -230,6 +258,11 @@ export default function TeamPage() {
           )}
 
           <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
+            {editNameFor !== m.membershipId && (
+              <button className="ghost" disabled={pending === m.membershipId} onClick={() => startEditName(m)}>
+                ویرایشِ نام
+              </button>
+            )}
             {m.role === "staff" && editPagesFor !== m.membershipId && (
               <button className="ghost" disabled={pending === m.membershipId} onClick={() => startEditPages(m)}>
                 ویرایشِ دسترسی

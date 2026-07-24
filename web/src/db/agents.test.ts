@@ -101,3 +101,47 @@ test("deleteAgent: نمایندگیِ سابقه‌دار (مشتری وصل) ح
   assert.deepEqual(r, { ok: false, reason: "has_history" });
   assert.ok((await listAgentsFull(T)).some((a) => a.id === id), "نمایندگی باید سرِجایش مانده باشد");
 });
+
+test("v5: assignedStaffUserId فقط اگر staff/adminِ فعالِ همین tenant باشد پذیرفته می‌شود", async () => {
+  const STAFF = "d9999999-9999-9999-9999-999999999991";
+  await sql.unsafe(`
+    INSERT INTO app_user (id,phone,full_name,password_hash) VALUES ('${STAFF}','09140000001','رضا پشتیبان','x');
+    INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${T}','${STAFF}','staff',true);
+  `);
+
+  const bad = await createAgent({
+    tenantId: T, legalName: "بی‌پشتیبانِ نامعتبر", code: "AG-BADSTAFF", firstUserPhone: "09121110012",
+    assignedStaffUserId: "00000000-0000-0000-0000-000000000000",
+  });
+  assert.deepEqual(bad, { ok: false, reason: "invalid_staff" });
+
+  const ok = await createAgent({
+    tenantId: T, legalName: "باپشتیبان", code: "AG-GOODSTAFF", firstUserPhone: "09121110013",
+    assignedStaffUserId: STAFF,
+  });
+  assert.equal(ok.ok, true);
+  const agent = (await listAgentsFull(T)).find((a) => a.code === "AG-GOODSTAFF")!;
+  assert.equal(agent.assignedStaffUserId, STAFF);
+  assert.equal(agent.assignedStaffName, "رضا پشتیبان");
+});
+
+test("v5: updateAgent می‌تواند assignedStaffUserId را صریحاً NULL کند", async () => {
+  const STAFF2 = "d9999999-9999-9999-9999-999999999992";
+  await sql.unsafe(`
+    INSERT INTO app_user (id,phone,password_hash) VALUES ('${STAFF2}','09140000002','x');
+    INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${T}','${STAFF2}','admin',true);
+  `);
+  const created = await createAgent({
+    tenantId: T, legalName: "قابلِ‌تغییر", code: "AG-REASSIGN", firstUserPhone: "09121110014",
+    assignedStaffUserId: STAFF2,
+  });
+  const id = created.ok ? created.agentAccountId : "";
+
+  const cleared = await updateAgent({ tenantId: T, agentAccountId: id, assignedStaffUserId: null });
+  assert.equal(cleared.ok, true);
+  const agent = (await listAgentsFull(T)).find((a) => a.id === id)!;
+  assert.equal(agent.assignedStaffUserId, null, "باید واقعاً NULL شود، نه بی‌اثر بماند");
+
+  const invalid = await updateAgent({ tenantId: T, agentAccountId: id, assignedStaffUserId: "00000000-0000-0000-0000-000000000000" });
+  assert.deepEqual(invalid, { ok: false, reason: "invalid_staff" });
+});

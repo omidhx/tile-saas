@@ -5,9 +5,23 @@ import { STAFF_PAGE_KEYS } from "@/lib/staffPages";
 export type Role = "staff" | "admin";
 
 export type TeamMember = {
-  membershipId: string; userId: string; phone: string; email: string | null;
+  membershipId: string; userId: string; phone: string; email: string | null; fullName: string | null;
   role: Role; isActive: boolean; canManageAccess: boolean; allowedPages: string[];
 };
+
+export type StaffOption = { userId: string; fullName: string | null; phone: string };
+
+/** برای دراپ‌داونِ «پشتیبانِ ثابت» در فرمِ نمایندگی (db/agents.ts) — فقط staff/adminِ فعال. */
+export async function listStaffOptions(tenantId: string): Promise<StaffOption[]> {
+  return withTenant(tenantId, (tx) =>
+    tx<StaffOption[]>`
+      SELECT u.id AS "userId", u.full_name AS "fullName", u.phone
+      FROM tenant_membership tm
+      JOIN app_user u ON u.id = tm.user_id
+      WHERE tm.tenant_id = ${tenantId} AND tm.role IN ('staff','admin') AND tm.is_active
+      ORDER BY u.full_name, u.phone`,
+  );
+}
 
 export type InviteResult =
   // created=false → کاربر از قبل بود، فقط عضویت اضافه/فعال شد؛ tempPassword فقط برای created=true
@@ -20,7 +34,7 @@ export type InviteResult =
 export async function listTeam(tenantId: string): Promise<TeamMember[]> {
   return withTenant(tenantId, (tx) =>
     tx<TeamMember[]>`
-      SELECT tm.id AS "membershipId", u.id AS "userId", u.phone, u.email,
+      SELECT tm.id AS "membershipId", u.id AS "userId", u.phone, u.email, u.full_name AS "fullName",
              tm.role, tm.is_active AS "isActive",
              tm.can_manage_access AS "canManageAccess", tm.allowed_pages AS "allowedPages"
       FROM tenant_membership tm
@@ -45,11 +59,12 @@ function cleanAllowedPages(pages: string[] | undefined): string[] {
  * (طرفِ دیگر همیشه پیش‌فرض/نادیده گرفته می‌شود، حتی اگر فرم اشتباهی فرستاده باشد).
  */
 export async function inviteTeamMember(params: {
-  tenantId: string; phone: string; email?: string | null; role: Role;
+  tenantId: string; phone: string; email?: string | null; fullName?: string | null; role: Role;
   canManageAccess?: boolean; allowedPages?: string[];
 }): Promise<InviteResult> {
   const { tenantId, phone, role } = params;
   const email = params.email?.trim() || null;
+  const fullName = params.fullName?.trim() || null;
   const canManageAccess = role === "admin" && !!params.canManageAccess;
   const allowedPages = role === "staff" ? cleanAllowedPages(params.allowedPages) : [];
 
@@ -64,7 +79,7 @@ export async function inviteTeamMember(params: {
       if (n >= tenant.max_staff) return { ok: false, reason: "seat_limit" };
     }
 
-    const found = await findOrCreateUser(tx, phone, email);
+    const found = await findOrCreateUser(tx, phone, email, fullName);
     if (!found.ok) return found;
     const { userId, created, tempPassword } = found;
 
@@ -138,7 +153,7 @@ async function guardMinimumAccess(
  */
 export async function setTeamMember(params: {
   tenantId: string; membershipId: string; role?: Role; isActive?: boolean;
-  canManageAccess?: boolean; allowedPages?: string[];
+  canManageAccess?: boolean; allowedPages?: string[]; fullName?: string;
 }): Promise<SetMemberResult> {
   const { tenantId, membershipId } = params;
   return withTenant(tenantId, async (tx) => {
@@ -155,6 +170,13 @@ export async function setTeamMember(params: {
         is_active = COALESCE(${params.isActive ?? null}, is_active),
         can_manage_access = COALESCE(${params.canManageAccess ?? null}, can_manage_access)
       WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
+    // fullName صرفاً برچسبِ نمایشی است، نه اعتبارنامه — برخلافِ ایمیل، همیشه
+    // قابلِ بازنویسی است (مدیر باید بتواند تایپوی نام را اصلاح کند).
+    if (params.fullName !== undefined) {
+      const [{ user_id }] = await tx<{ user_id: string }[]>`
+        SELECT user_id FROM tenant_membership WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
+      await tx`UPDATE app_user SET full_name = ${params.fullName.trim() || null} WHERE id = ${user_id}`;
+    }
     return { ok: true };
   });
 }

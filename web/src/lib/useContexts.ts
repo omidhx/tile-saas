@@ -8,6 +8,8 @@ export type Ctx = {
   role: string;
   // v4: فقط برای role='admin'/'staff' معنا دارند (بخشِ «دسترسی» در db/team.ts)
   canManageAccess: boolean; allowedPages: string[];
+  // v5: پشتیبانِ ثابتِ این نمایندگی — فقط وقتی agentAccountId پر است معنا دارد
+  assignedStaffName: string | null; assignedStaffPhone: string | null;
 };
 
 // انتخابِ کاربر بین جلسه‌ها می‌ماند. localStorage امن است چون **مرجعِ دسترسی نیست**:

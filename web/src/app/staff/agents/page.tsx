@@ -13,9 +13,12 @@ type Agent = {
   id: string; legalName: string; code: string; isActive: boolean;
   priceListId: string | null; priceListName: string | null;
   creditLimit: number | null; autoApproveLimit: number | null;
+  assignedStaffUserId: string | null; assignedStaffName: string | null; assignedStaffPhone: string | null;
   users: AgentUser[];
 };
 type PriceList = { id: string; name: string };
+type StaffOption = { userId: string; fullName: string | null; phone: string };
+const staffLabel = (s: StaffOption) => s.fullName ? `${s.fullName} (${s.phone})` : s.phone;
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 const FA: Record<string, string> = {
@@ -24,12 +27,14 @@ const FA: Record<string, string> = {
   email_taken: "این ایمیل قبلاً برای کاربرِ دیگری ثبت شده.",
   already_linked: "این کاربر از قبل به این نمایندگی وصل است.",
   has_history: "این نمایندگی سابقه دارد (رزرو/سفارش/حواله/مشتری) — حذف نمی‌شود. غیرفعالش کنید.",
+  invalid_staff: "این کاربر عضوِ فعالِ تیمِ پشتیبان/مدیر نیست.",
 };
 
 export default function AgentsPage() {
   const { ctx, state } = useContexts("staff");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -45,18 +50,23 @@ export default function AgentsPage() {
   const [autoApproveLimit, setAutoApproveLimit] = useState("");
   const [firstPhone, setFirstPhone] = useState("");
   const [firstEmail, setFirstEmail] = useState("");
+  const [assignedStaffUserId, setAssignedStaffUserId] = useState("");
 
   // افزودنِ کاربرِ دیگر به یک نمایندگیِ موجود
   const [addFor, setAddFor] = useState<string | null>(null);
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
 
+  // ویرایشِ درجای پشتیبانِ ثابت
+  const [editStaffFor, setEditStaffFor] = useState<string | null>(null);
+  const [editStaffId, setEditStaffId] = useState("");
+
   const load = useCallback(async (tenantId: string) => {
     const [a, p] = await Promise.all([
-      getJson<{ agents: Agent[] }>(`/api/agents?tenantId=${tenantId}&detail=1`),
+      getJson<{ agents: Agent[]; staffOptions: StaffOption[] }>(`/api/agents?tenantId=${tenantId}&detail=1`),
       getJson<{ lists: PriceList[] }>(`/api/prices?tenantId=${tenantId}`),
     ]);
-    if (a.ok) { setAgents(a.data.agents); setLoadErr(""); } else setLoadErr(loadError(a.status));
+    if (a.ok) { setAgents(a.data.agents); setStaffOptions(a.data.staffOptions); setLoadErr(""); } else setLoadErr(loadError(a.status));
     if (p.ok) setPriceLists(p.data.lists);
     setLoaded(true);
   }, []);
@@ -65,7 +75,7 @@ export default function AgentsPage() {
 
   function resetForm() {
     setLegalName(""); setCode(""); setPriceListId(""); setCreditLimit(""); setAutoApproveLimit("");
-    setFirstPhone(""); setFirstEmail("");
+    setFirstPhone(""); setFirstEmail(""); setAssignedStaffUserId("");
   }
 
   async function create() {
@@ -76,6 +86,7 @@ export default function AgentsPage() {
       priceListId: priceListId || null,
       creditLimit: creditLimit.trim() ? Number(creditLimit) : null,
       autoApproveLimit: autoApproveLimit.trim() ? Number(autoApproveLimit) : null,
+      assignedStaffUserId: assignedStaffUserId || null,
       firstUserPhone: firstPhone.trim(), firstUserEmail: firstEmail.trim() || undefined,
     });
     setPending(null);
@@ -87,6 +98,18 @@ export default function AgentsPage() {
     if (data.tempPassword) setTempPassword({ phone: firstPhone.trim(), password: data.tempPassword });
     setMsg("نمایندگی ساخته شد.");
     resetForm();
+    await load(ctx.tenantId);
+  }
+
+  function startEditStaff(a: Agent) { setEditStaffFor(a.id); setEditStaffId(a.assignedStaffUserId ?? ""); setMsg(""); setErr(""); }
+  async function saveStaff(agentAccountId: string) {
+    if (!ctx) return;
+    setPending("staff" + agentAccountId); setMsg(""); setErr("");
+    const res = await postJson("/api/agents",
+      { tenantId: ctx.tenantId, agentAccountId, assignedStaffUserId: editStaffId || null }, "PATCH");
+    setPending(null);
+    if (!res.ok) { setErr((res.error && FA[res.error]) || `تغییر انجام نشد (خطای ${res.status}).`); return; }
+    setEditStaffFor(null);
     await load(ctx.tenantId);
   }
 
@@ -186,6 +209,12 @@ export default function AgentsPage() {
         <label htmlFor="aa">سقفِ تأییدِ خودکارِ اختصاصی (ریال، اختیاری — خالی = ارثِ کارخانه)</label>
         <input id="aa" inputMode="numeric" value={autoApproveLimit} onChange={(e) => setAutoApproveLimit(e.target.value)} />
 
+        <label htmlFor="as">پشتیبانِ ثابت (اختیاری)</label>
+        <select id="as" value={assignedStaffUserId} onChange={(e) => setAssignedStaffUserId(e.target.value)}>
+          <option value="">— بدونِ پشتیبانِ ثابت —</option>
+          {staffOptions.map((s) => <option key={s.userId} value={s.userId}>{staffLabel(s)}</option>)}
+        </select>
+
         <label htmlFor="fp">موبایلِ کاربرِ اول</label>
         <input id="fp" value={firstPhone} onChange={(e) => setFirstPhone(e.target.value)} placeholder="۰۹۱۲۰۰۰۰۰۰۰" />
 
@@ -227,6 +256,28 @@ export default function AgentsPage() {
                 {u.phone}{u.email ? ` · ${u.email}` : ""}
               </div>
             ))}
+          </div>
+
+          <div style={{ marginTop: "var(--sp-2)" }}>
+            {editStaffFor === a.id ? (
+              <div className="row row--start" style={{ gap: "var(--sp-2)" }}>
+                <select value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ maxWidth: 240 }}>
+                  <option value="">— بدونِ پشتیبانِ ثابت —</option>
+                  {staffOptions.map((s) => <option key={s.userId} value={s.userId}>{staffLabel(s)}</option>)}
+                </select>
+                <button className="primary" disabled={pending === "staff" + a.id} onClick={() => saveStaff(a.id)}>
+                  {pending === "staff" + a.id && <span className="spinner" aria-hidden="true" />}ذخیره
+                </button>
+                <button className="ghost" onClick={() => setEditStaffFor(null)}>انصراف</button>
+              </div>
+            ) : (
+              <div className="row row--start" style={{ gap: "var(--sp-2)" }}>
+                <span className="subtle">
+                  پشتیبانِ ثابت: {a.assignedStaffName ?? a.assignedStaffPhone ?? "تعیین‌نشده"}
+                </span>
+                <button className="ghost" onClick={() => startEditStaff(a)}>ویرایش</button>
+              </div>
+            )}
           </div>
 
           <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-2)", borderTop: "1px solid var(--line)" }}>

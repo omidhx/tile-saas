@@ -6,8 +6,20 @@ export type AgentFull = {
   id: string; legalName: string; code: string; isActive: boolean;
   priceListId: string | null; priceListName: string | null;
   creditLimit: number | null; autoApproveLimit: number | null;
+  // v5 «پشتیبانِ ثابت»: کسی که پورسانتِ این نمایندگی را می‌گیرد و به نماینده
+  // نشان داده می‌شود (reservations/sales-requests). Name/Phone برای نمایشِ
+  // مستقیم در همین صفحه؛ Id برای پرکردنِ دراپ‌داونِ ویرایش.
+  assignedStaffUserId: string | null; assignedStaffName: string | null; assignedStaffPhone: string | null;
   users: AgentUser[];
 };
+
+/** آیا این کاربر عضوِ فعالِ staff/adminِ همین tenant است؟ برای اعتبارسنجیِ assignedStaffUserId. */
+async function isActiveStaffMember(tx: Parameters<Parameters<typeof withTenant>[1]>[0], tenantId: string, userId: string) {
+  const [row] = await tx<{ x: number }[]>`
+    SELECT 1 AS x FROM tenant_membership
+    WHERE tenant_id = ${tenantId} AND user_id = ${userId} AND role IN ('staff','admin') AND is_active`;
+  return !!row;
+}
 
 /** فهرستِ کاملِ نمایندگی‌ها برای صفحه‌ی مدیریت — همراه با کاربرانِ هرکدام. */
 export async function listAgentsFull(tenantId: string): Promise<AgentFull[]> {
@@ -15,9 +27,12 @@ export async function listAgentsFull(tenantId: string): Promise<AgentFull[]> {
     const agents = await tx<Omit<AgentFull, "users">[]>`
       SELECT aa.id, aa.legal_name AS "legalName", aa.code, aa.is_active AS "isActive",
              aa.price_list_id AS "priceListId", pl.name AS "priceListName",
-             aa.credit_limit AS "creditLimit", aa.auto_approve_limit AS "autoApproveLimit"
+             aa.credit_limit AS "creditLimit", aa.auto_approve_limit AS "autoApproveLimit",
+             aa.assigned_staff_user_id AS "assignedStaffUserId",
+             su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone"
       FROM agent_account aa
       LEFT JOIN price_list pl ON pl.id = aa.price_list_id
+      LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
       WHERE aa.tenant_id = ${tenantId}
       ORDER BY aa.is_active DESC, aa.legal_name`;
     if (agents.length === 0) return [];
@@ -41,12 +56,13 @@ export async function listAgentsFull(tenantId: string): Promise<AgentFull[]> {
 export type CreateAgentResult =
   // tempPassword فقط وقتی کاربرِ اول تازه ساخته شده پر است — مثلِ db/team.ts.
   | { ok: true; agentAccountId: string; tempPassword: string | null }
-  | { ok: false; reason: "seat_limit" | "code_taken" | "email_taken" };
+  | { ok: false; reason: "seat_limit" | "code_taken" | "email_taken" | "invalid_staff" };
 
 /** ساختِ نمایندگیِ تازه + کاربرِ اولش (find-or-create — همان قاعده‌ی db/team.ts). */
 export async function createAgent(params: {
   tenantId: string; legalName: string; code: string;
   priceListId?: string | null; creditLimit?: number | null; autoApproveLimit?: number | null;
+  assignedStaffUserId?: string | null;
   firstUserPhone: string; firstUserEmail?: string | null;
 }): Promise<CreateAgentResult> {
   const { tenantId, legalName, code } = params;
@@ -66,14 +82,17 @@ export async function createAgent(params: {
       SELECT id FROM agent_account WHERE tenant_id = ${tenantId} AND code = ${code}`;
     if (dupCode) return { ok: false, reason: "code_taken" };
 
+    if (params.assignedStaffUserId && !(await isActiveStaffMember(tx, tenantId, params.assignedStaffUserId)))
+      return { ok: false, reason: "invalid_staff" };
+
     const found = await findOrCreateUser(tx, params.firstUserPhone, email);
     if (!found.ok) return found;
     const { userId, created, tempPassword } = found;
 
     const [agent] = await tx<{ id: string }[]>`
-      INSERT INTO agent_account (tenant_id, legal_name, code, price_list_id, credit_limit, auto_approve_limit)
+      INSERT INTO agent_account (tenant_id, legal_name, code, price_list_id, credit_limit, auto_approve_limit, assigned_staff_user_id)
       VALUES (${tenantId}, ${legalName}, ${code}, ${params.priceListId ?? null},
-              ${params.creditLimit ?? null}, ${params.autoApproveLimit ?? null})
+              ${params.creditLimit ?? null}, ${params.autoApproveLimit ?? null}, ${params.assignedStaffUserId ?? null})
       RETURNING id`;
 
     // عضویتِ کاربر در این tenant با نقشِ 'agent' — پیش‌نیازِ FK آی agent_account_user
@@ -103,13 +122,14 @@ export async function createAgent(params: {
   });
 }
 
-export type UpdateAgentResult = { ok: true } | { ok: false; reason: "code_taken" };
+export type UpdateAgentResult = { ok: true } | { ok: false; reason: "code_taken" | "invalid_staff" };
 
 /** ویرایشِ فیلدهای نمایندگی (شاملِ فعال/غیرفعال). */
 export async function updateAgent(params: {
   tenantId: string; agentAccountId: string;
   legalName?: string; code?: string; priceListId?: string | null;
   creditLimit?: number | null; autoApproveLimit?: number | null; isActive?: boolean;
+  assignedStaffUserId?: string | null;
 }): Promise<UpdateAgentResult> {
   const { tenantId, agentAccountId } = params;
   return withTenant(tenantId, async (tx) => {
@@ -118,9 +138,13 @@ export async function updateAgent(params: {
         SELECT id FROM agent_account WHERE tenant_id = ${tenantId} AND code = ${params.code} AND id <> ${agentAccountId}`;
       if (dup) return { ok: false, reason: "code_taken" };
     }
-    // شش UPDATEِ جداگانه، نه یک CASE WHEN: priceListId/creditLimit/autoApproveLimit
-    // باید بشود صریحاً به NULL برگرداند (مثلاً «ارثِ سقفِ کارخانه»)، یعنی
-    // COALESCE اینجا غلط است — نبودِ کلید را از NULLِ صریح جدا نگه می‌داریم.
+    if (params.assignedStaffUserId !== undefined && params.assignedStaffUserId !== null
+      && !(await isActiveStaffMember(tx, tenantId, params.assignedStaffUserId)))
+      return { ok: false, reason: "invalid_staff" };
+    // هفت UPDATEِ جداگانه، نه یک CASE WHEN: priceListId/creditLimit/autoApproveLimit/
+    // assignedStaffUserId باید بشود صریحاً به NULL برگرداند (مثلاً «ارثِ سقفِ کارخانه»
+    // یا «فعلاً پشتیبانِ ثابت ندارد»)، یعنی COALESCE اینجا غلط است — نبودِ کلید را
+    // از NULLِ صریح جدا نگه می‌داریم.
     if (params.legalName !== undefined)
       await tx`UPDATE agent_account SET legal_name = ${params.legalName} WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.code !== undefined)
@@ -131,6 +155,8 @@ export async function updateAgent(params: {
       await tx`UPDATE agent_account SET credit_limit = ${params.creditLimit}::bigint WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.autoApproveLimit !== undefined)
       await tx`UPDATE agent_account SET auto_approve_limit = ${params.autoApproveLimit}::bigint WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
+    if (params.assignedStaffUserId !== undefined)
+      await tx`UPDATE agent_account SET assigned_staff_user_id = ${params.assignedStaffUserId}::uuid WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.isActive !== undefined)
       await tx`UPDATE agent_account SET is_active = ${params.isActive} WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     return { ok: true };

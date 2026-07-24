@@ -20,11 +20,15 @@ export async function GET(req: Request) {
     tx`
       SELECT sr.id, sr.status, sr.created_at AS "createdAt", aa.legal_name AS "agentName",
         sr.approval_mode AS "approvalMode",
+        -- v5: پشتیبانِ ثابت — حتی وقتی approval_mode='auto' (بدونِ actor انسانی)،
+        -- تا هر staffی که صف را می‌بیند بداند این سفارش پورسانتِ کیست.
+        su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone",
         COALESCE(json_agg(json_build_object(
           'name', p.name, 'code', p.code, 'qty', sri.requested_qty_boxes
         )) FILTER (WHERE sri.id IS NOT NULL), '[]') AS items
       FROM sales_request sr
       JOIN agent_account aa ON aa.id = sr.agent_account_id
+      LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
       LEFT JOIN sales_request_item sri ON sri.request_id = sr.id
       LEFT JOIN product_variant pv ON pv.id = sri.variant_id
       LEFT JOIN product p ON p.id = pv.product_id
@@ -34,7 +38,7 @@ export async function GET(req: Request) {
         AND NOT EXISTS (SELECT 1 FROM sales_dispatch sd
                         WHERE sd.tenant_id = sr.tenant_id AND sd.sales_request_id = sr.id
                           AND sd.status <> 'cancelled')
-      GROUP BY sr.id, aa.legal_name, sr.approval_mode
+      GROUP BY sr.id, aa.legal_name, sr.approval_mode, su.full_name, su.phone
       ORDER BY sr.created_at DESC
       LIMIT 50`,
   );

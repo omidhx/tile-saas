@@ -3,6 +3,7 @@ import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, authorizeAdmin, AuthzError } from "@/auth/authz";
 import { listAgentsFull, createAgent, updateAgent, addAgentUser, deleteAgent } from "@/db/agents";
+import { listStaffOptions } from "@/db/team";
 
 /**
  * GET /api/agents?tenantId — نمایندگی‌های فعالِ tenant (برای فرم backorderِ staff، حداقلِ لازم).
@@ -22,7 +23,8 @@ export async function GET(req: Request) {
       if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
       throw e;
     }
-    return NextResponse.json({ agents: await listAgentsFull(tenantId) });
+    const [agents, staffOptions] = await Promise.all([listAgentsFull(tenantId), listStaffOptions(tenantId)]);
+    return NextResponse.json({ agents, staffOptions });
   }
 
   try {
@@ -53,7 +55,7 @@ async function requireAdmin(tenantId: string) {
 /** POST /api/agents — نمایندگیِ تازه + کاربرِ اولش. admin-only. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { tenantId, legalName, code, priceListId, creditLimit, autoApproveLimit, firstUserPhone, firstUserEmail } = body ?? {};
+  const { tenantId, legalName, code, priceListId, creditLimit, autoApproveLimit, assignedStaffUserId, firstUserPhone, firstUserEmail } = body ?? {};
   if (typeof tenantId !== "string" || typeof legalName !== "string" || !legalName.trim()
     || typeof code !== "string" || !code.trim() || typeof firstUserPhone !== "string" || !firstUserPhone.trim())
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
@@ -64,6 +66,7 @@ export async function POST(req: Request) {
   const r = await createAgent({
     tenantId, legalName: legalName.trim(), code: code.trim(),
     priceListId: priceListId ?? null, creditLimit: creditLimit ?? null, autoApproveLimit: autoApproveLimit ?? null,
+    assignedStaffUserId: assignedStaffUserId ?? null,
     firstUserPhone: firstUserPhone.trim(), firstUserEmail,
   });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "seat_limit" ? 403 : 409 });
@@ -93,8 +96,8 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true, created: r.created, tempPassword: r.tempPassword });
   }
 
-  const { legalName, code, priceListId, creditLimit, autoApproveLimit, isActive } = body;
-  const r = await updateAgent({ tenantId, agentAccountId, legalName, code, priceListId, creditLimit, autoApproveLimit, isActive });
+  const { legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId } = body;
+  const r = await updateAgent({ tenantId, agentAccountId, legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
   return NextResponse.json({ ok: true });
 }
