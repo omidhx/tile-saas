@@ -118,7 +118,7 @@ export default function IncomingPage() {
           <h1>موجودی در راه</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link><NavMenu /></nav>
+        <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
       </div>
 
       <div className="banner banner--info">

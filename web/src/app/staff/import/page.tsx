@@ -123,7 +123,7 @@ export default function ImportPage() {
           <h1>ورود موجودی از اکسل</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link><NavMenu /></nav>
+        <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
       </div>
 
       {/* این عملیات مخرب است (موجودیِ غایب صفر می‌شود) — قبل از هر فیلدی گفته می‌شود */}

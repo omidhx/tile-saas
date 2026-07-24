@@ -155,7 +155,7 @@ export default function StaffPage() {
         {/* ده لینکِ تخت روی موبایل می‌پیچید و روی دسکتاپ هم نویز بود.
             «خروج» عمداً بیرونِ منو ماند: یک عملِ پرتکرار پشتِ یک کلیکِ اضافه نرود. */}
         <nav>
-          <NavMenu />
+          <NavMenu ctx={ctx} />
           <LogoutButton />
         </nav>
       </div>

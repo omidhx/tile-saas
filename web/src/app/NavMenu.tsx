@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Icon from "./Icon";
+import type { Ctx } from "@/lib/useContexts";
+import { hasPageAccess } from "@/lib/staffPages";
 
 /**
  * منوی ناوبریِ پنل پشتیبان.
@@ -16,46 +18,54 @@ import Icon from "./Icon";
  *   • «تنظیمات» یک‌بار در راه‌اندازی تنظیم می‌شود و بعد دست‌نخورده می‌ماند
  *   • «گزارش و ردیابی» فقط وقتی سؤال یا مشکلی پیش بیاید
  * کاربر اینطور می‌داند کجا را بگردد، حتی وقتی نامِ دقیقِ صفحه یادش نیست.
+ *
+ * v4: لینکِ صفحه‌ای که کاربر بهش دسترسی ندارد اصلاً نشان داده نمی‌شود — قبلاً
+ * همه‌چیز به همه نشان داده می‌شد و کلیک روی صفحه‌ی ممنوعه بنرِ خطا می‌گرفت؛ آن
+ * تجربه گمراه‌کننده بود («این لینک هست ولی کار نمی‌کند»). حالا NavMenu نقش/
+ * دسترسیِ کاربر را از ctx می‌گیرد و فیلتر می‌کند.
  */
 
-type Item = { href: string; label: string };
+type Item = {
+  href: string; label: string;
+  // نبودِ هر سه یعنی همیشه نشان داده شود (مثلِ «امنیت حساب»)
+  pageKey?: string;      // یکی از STAFF_PAGE_KEYS — برای role='staff' چک می‌شود
+  adminOnly?: boolean;   // فقط role==='admin'
+  deputyOnly?: boolean;  // فقط role==='admin' && canManageAccess
+};
 type Group = { title: string; items: Item[] };
 
 const GROUPS: Group[] = [
   {
     title: "کار روزمره",
     items: [
-      { href: "/staff/import", label: "ورود موجودی از اکسل" },
-      { href: "/staff/incoming", label: "موجودی در راه" },
-      { href: "/staff/customers", label: "مشتریان" },
+      { href: "/staff/import", label: "ورود موجودی از اکسل", pageKey: "import" },
+      { href: "/staff/incoming", label: "موجودی در راه", pageKey: "incoming" },
+      { href: "/staff/customers", label: "مشتریان", pageKey: "customers" },
     ],
   },
   {
     title: "تنظیمات فروش",
     items: [
-      { href: "/staff/prices", label: "قیمت‌گذاری" },
-      { href: "/staff/auto-approve", label: "تأیید خودکار" },
-      { href: "/staff/substitutes", label: "کالای جایگزین" },
-      { href: "/staff/catalog", label: "مدیریت محصول" },
+      { href: "/staff/prices", label: "قیمت‌گذاری", pageKey: "prices" },
+      { href: "/staff/auto-approve", label: "تأیید خودکار", pageKey: "auto-approve" },
+      { href: "/staff/substitutes", label: "کالای جایگزین", pageKey: "substitutes" },
+      { href: "/staff/catalog", label: "مدیریت محصول", pageKey: "catalog" },
     ],
   },
   {
     title: "گزارش و ردیابی",
     items: [
-      { href: "/staff/reports", label: "گزارش‌های مدیریتی" },
-      { href: "/staff/ledger", label: "دفتر حرکات موجودی" },
-      { href: "/staff/audit", label: "دفتر تغییرات" },
+      { href: "/staff/reports", label: "گزارش‌های مدیریتی", pageKey: "reports" },
+      { href: "/staff/ledger", label: "دفتر حرکات موجودی", pageKey: "ledger" },
+      { href: "/staff/audit", label: "دفتر تغییرات", pageKey: "audit" },
     ],
   },
   {
-    // فقط برای admin کاربردی است؛ به staffِ ساده هم نشان داده می‌شود (مثلِ بقیه‌ی
-    // لینک‌ها) و اگر کلیک کند همان بنرِ استانداردِ «فقط برای مدیر» را می‌بیند —
-    // فیلترِ سمتِ کلاینت لازم نیست، این منو نقشِ کاربر را نمی‌داند.
     title: "راه‌اندازی و دسترسی",
     items: [
-      { href: "/staff/team", label: "تیمِ کارخانه" },
-      { href: "/staff/agents", label: "نمایندگی‌ها" },
-      { href: "/staff/warehouses", label: "انبارها" },
+      { href: "/staff/team", label: "تیمِ کارخانه", deputyOnly: true },
+      { href: "/staff/agents", label: "نمایندگی‌ها", adminOnly: true },
+      { href: "/staff/warehouses", label: "انبارها", adminOnly: true },
     ],
   },
   {
@@ -64,11 +74,22 @@ const GROUPS: Group[] = [
   },
 ];
 
-export default function NavMenu() {
+function visible(item: Item, ctx: Ctx): boolean {
+  if (item.deputyOnly) return ctx.role === "admin" && ctx.canManageAccess;
+  if (item.adminOnly) return ctx.role === "admin";
+  if (item.pageKey) return ctx.role === "admin" || hasPageAccess(ctx.allowedPages, item.pageKey);
+  return true;
+}
+
+export default function NavMenu({ ctx }: { ctx: Ctx }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
+
+  const groups = GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((it) => visible(it, ctx)) }))
+    .filter((g) => g.items.length > 0);
 
   // با رفتن به صفحه‌ی دیگر، منو باید بسته شود — وگرنه روی صفحه‌ی جدید باز می‌ماند
   useEffect(() => { setOpen(false); }, [pathname]);
@@ -115,7 +136,7 @@ export default function NavMenu() {
 
       {open && (
         <div id="nav-panel" ref={panelRef} className="navmenu__panel" role="navigation" aria-label="منوی پنل">
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <div key={g.title} className="navmenu__group">
               <div className="navmenu__title">{g.title}</div>
               {g.items.map((it) => (
