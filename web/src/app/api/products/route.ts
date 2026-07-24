@@ -28,7 +28,7 @@ async function staffCtx(tenantId: unknown) {
     if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
     throw e;
   }
-  return { tenantId };
+  return { tenantId, userId };
 }
 
 /** GET ?tenantId — همه‌ی محصولات + وضعیتِ عکس (پنل کاتالوگ). */
@@ -52,6 +52,18 @@ export async function POST(req: Request) {
   const spb = optPosInt(body?.sqcmPerBox);
   if (!bpp.ok || !spb.ok) return NextResponse.json({ error: "invalid_packaging" }, { status: 400 });
 
+  // موجودیِ اولیه (اختیاری): یا هر دو (انبار + تعداد) بیایند، یا هیچ‌کدام —
+  // نیمه‌کاره (فقط انبار یا فقط تعداد) یعنی فرم را اشتباه پر کرده، نه «بدونِ موجودی».
+  const rawStock = body?.initialStock;
+  let initialStock: { warehouseId: string; quantityBoxes: number } | undefined;
+  if (rawStock != null) {
+    const qty = Number(rawStock?.quantityBoxes);
+    if (typeof rawStock?.warehouseId !== "string" || !rawStock.warehouseId ||
+        !Number.isInteger(qty) || qty <= 0)
+      return NextResponse.json({ error: "invalid_stock" }, { status: 400 });
+    initialStock = { warehouseId: rawStock.warehouseId, quantityBoxes: qty };
+  }
+
   const r = await createProduct(c.tenantId, {
     name, code, sku,
     color: optStr(color) ?? null, glaze: optStr(glaze) ?? null,
@@ -60,7 +72,8 @@ export async function POST(req: Request) {
     usageArea: optStr(body?.usageArea) ?? null, description: optStr(body?.description) ?? null,
     imageUrl: typeof body?.imageUrl === "string" ? body.imageUrl : null,
     boxesPerPallet: bpp.value ?? null, sqcmPerBox: spb.value ?? null,
-  });
+    initialStock,
+  }, c.userId);
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "missing" ? 400 : 409 });
   return NextResponse.json({ id: r.id }, { status: 201 });
 }

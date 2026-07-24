@@ -10,13 +10,20 @@ import { createProduct, listProducts, updateProduct, addProductImage, removeProd
  */
 
 const T = "11111111-1111-1111-1111-111111111111";
+const WH = "a3333333-3333-3333-3333-333333333333";
 
 before(async () => {
   await resetSchema();
   await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');`);
+  await sql.unsafe(`INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','انبارِ اصلی','W1','main');`);
 });
 after(async () => { await sql.end(); });
 beforeEach(async () => {
+  // ترتیب مهم است: lot به variant قفل است (RESTRICT، نه CASCADE) — بدونِ پاک‌کردنِ
+  // اول لجر/بالانس/لات، حذفِ variant در تستِ موجودیِ اولیه با خطای FK رد می‌شود.
+  await sql`DELETE FROM inventory_transaction WHERE tenant_id = ${T}`;
+  await sql`DELETE FROM inventory_balance WHERE tenant_id = ${T}`;
+  await sql`DELETE FROM inventory_lot WHERE tenant_id = ${T}`;
   await sql`DELETE FROM product_variant WHERE tenant_id = ${T}`;
   await sql`DELETE FROM product WHERE tenant_id = ${T}`;
 });
@@ -130,6 +137,36 @@ test("بسته‌بندی: در ساخت ثبت می‌شود؛ در ویرای�
   p = (await listProducts(T)).find((x) => x.code === "P3")!;
   assert.equal(p.boxesPerPallet, 96);
   assert.equal(p.sqcmPerBox, null, "null صریح یعنی پاک‌کردن");
+});
+
+test("موجودیِ اولیه: ساختِ محصول با انبار+تعداد یک lot با on_hand همان تعداد می‌سازد و hasStock=true می‌شود", async () => {
+  const actor = "22222222-2222-2222-2222-222222222222";
+  await sql.unsafe(`INSERT INTO app_user (id,phone,password_hash) VALUES ('${actor}','09120000099','x') ON CONFLICT DO NOTHING;`);
+  const r = await createProduct(T, {
+    name: "کاشیِ باموجودی", code: "PS1", sku: "PS1-A",
+    initialStock: { warehouseId: WH, quantityBoxes: 100 },
+  }, actor);
+  assert.ok(r.ok);
+
+  const p = (await listProducts(T)).find((x) => x.code === "PS1")!;
+  assert.equal(p.hasStock, true, "بدونِ این، دقیقاً همان گزارشِ کاربر تکرار می‌شد");
+
+  const [lot] = await sql<{ id: string }[]>`SELECT id FROM inventory_lot WHERE variant_id = ${p.variantId}`;
+  const [bal] = await sql<{ on_hand_qty_boxes: number }[]>`
+    SELECT on_hand_qty_boxes FROM inventory_balance WHERE lot_id = ${lot.id}`;
+  assert.equal(bal.on_hand_qty_boxes, 100);
+
+  const [txn] = await sql<{ transaction_type: string; actor_user_id: string }[]>`
+    SELECT transaction_type, actor_user_id FROM inventory_transaction WHERE lot_id = ${lot.id}`;
+  assert.equal(txn.transaction_type, "initial_stock");
+  assert.equal(txn.actor_user_id, actor, "برای ردِ حسابرسی — چه کسی موجودی زده");
+});
+
+test("موجودیِ اولیه: بدونِ initialStock محصول همچنان بدونِ lot می‌ماند (بدون رگرسیون)", async () => {
+  const r = await createProduct(T, { name: "بدون‌موجودی", code: "PS2", sku: "PS2-A" });
+  assert.ok(r.ok);
+  const p = (await listProducts(T)).find((x) => x.code === "PS2")!;
+  assert.equal(p.hasStock, false);
 });
 
 test("basePrice از اولین لیستِ قیمت می‌آید (نمایشی، نه ویرایش)", async () => {

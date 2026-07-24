@@ -67,6 +67,9 @@ type Attrs = {
   imageUrl?: string | null;
   /** بسته‌بندیِ variantِ اول؛ روی خودِ product_variant ذخیره می‌شود نه product. */
   boxesPerPallet?: number | null; sqcmPerBox?: number | null;
+  /** موجودیِ اولیه (اختیاری) — برای وقتی که کارخانه از همین‌جا موجودی هم ثبت می‌کند،
+   *  نه فقط از ورودِ اکسل/کالای در راه. یک lot تازه در انبارِ انتخابی می‌سازد. */
+  initialStock?: { warehouseId: string; quantityBoxes: number };
 };
 
 export type CreateResult =
@@ -97,8 +100,9 @@ export async function addProductImageTx(tx: TransactionSql, tenantId: string, pr
   await syncPrimary(tx, tenantId, productId);
 }
 
-/** محصولِ جدید + variant اولش. کد و sku در tenant یکتا هستند. */
-export async function createProduct(tenantId: string, a: Attrs): Promise<CreateResult> {
+/** محصولِ جدید + variant اولش. کد و sku در tenant یکتا هستند.
+ *  actorUserId فقط برای لجرِ موجودیِ اولیه لازم است (رفِ audit). */
+export async function createProduct(tenantId: string, a: Attrs, actorUserId?: string): Promise<CreateResult> {
   if (!a.name.trim() || !a.code.trim() || !a.sku.trim()) return { ok: false, reason: "missing" };
   return withTenant(tenantId, async (tx) => {
     const [dupCode] = await tx`SELECT 1 FROM product WHERE tenant_id = ${tenantId} AND code = ${a.code.trim()}`;
@@ -114,10 +118,27 @@ export async function createProduct(tenantId: string, a: Attrs): Promise<CreateR
               ${a.size?.trim() || null}, ${a.thickness?.trim() || null},
               ${a.usageArea?.trim() || null}, ${a.description?.trim() || null})
       RETURNING id`;
-    await tx`
+    const [v] = await tx<{ id: string }[]>`
       INSERT INTO product_variant (tenant_id, product_id, sku, boxes_per_pallet, sqcm_per_box)
-      VALUES (${tenantId}, ${p.id}, ${a.sku.trim()}, ${a.boxesPerPallet ?? null}, ${a.sqcmPerBox ?? null})`;
+      VALUES (${tenantId}, ${p.id}, ${a.sku.trim()}, ${a.boxesPerPallet ?? null}, ${a.sqcmPerBox ?? null})
+      RETURNING id`;
     if (a.imageUrl?.trim()) await addProductImageTx(tx, tenantId, p.id, a.imageUrl.trim());
+
+    // موجودیِ اولیه: همان مسیرِ لجرِ import/incoming (lot + balance + transaction)
+    // تا گزارشِ تطبیق از همان اول درست بماند، نه یک UPDATE مستقیمِ بدونِ ردِ حسابرسی.
+    if (a.initialStock && a.initialStock.quantityBoxes > 0) {
+      const [lot] = await tx<{ id: string }[]>`
+        INSERT INTO inventory_lot (tenant_id, variant_id, warehouse_id)
+        VALUES (${tenantId}, ${v.id}, ${a.initialStock.warehouseId})
+        RETURNING id`;
+      await tx`
+        INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes)
+        VALUES (${tenantId}, ${lot.id}, ${a.initialStock.quantityBoxes})`;
+      await tx`
+        INSERT INTO inventory_transaction
+          (tenant_id, lot_id, transaction_type, on_hand_delta_boxes, reference_type, reference_id, actor_user_id)
+        VALUES (${tenantId}, ${lot.id}, 'initial_stock', ${a.initialStock.quantityBoxes}, 'product', ${p.id}, ${actorUserId ?? null})`;
+    }
     return { ok: true as const, id: p.id };
   });
 }

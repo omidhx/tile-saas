@@ -24,10 +24,11 @@ type Sub = {
   id: string; variantId: string; substituteVariantId: string;
   substituteName: string; substituteCode: string; note: string | null;
 };
+type Wh = { id: string; name: string; code: string };
 
 const money = (v: number) => v.toLocaleString("fa-IR");
 const sqm = (cm2: number) => (cm2 / 10000).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
-const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", imageUrl: "", boxesPerPallet: "", sqmPerBox: "" };
+const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", imageUrl: "", boxesPerPallet: "", sqmPerBox: "", stockWarehouseId: "", stockQty: "" };
 const EMPTY_EDIT = { name: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", boxesPerPallet: "", sqmPerBox: "" };
 
 /** ورودیِ عددیِ اختیاری (ارقامِ فارسی هم می‌پذیرد): خالی=null (معتبر)، وگرنه باید عددِ صحیحِ مثبت باشد. */
@@ -75,6 +76,7 @@ export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
   const [products, setProducts] = useState<Product[]>([]);
   const [subs, setSubs] = useState<Sub[]>([]);
+  const [whs, setWhs] = useState<Wh[]>([]);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
@@ -92,13 +94,15 @@ export default function CatalogPage() {
   const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async (tenantId: string) => {
-    const [p, s] = await Promise.all([
+    const [p, s, w] = await Promise.all([
       getJson<{ products: Product[] }>(`/api/products?tenantId=${tenantId}`),
       getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`),
+      getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${tenantId}`),
     ]);
     if (p.ok) setProducts(p.data.products);
     if (s.ok) setSubs(s.data.items);
-    const failed = [p, s].find((x) => !x.ok);
+    if (w.ok) setWhs(w.data.warehouses);
+    const failed = [p, s, w].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
@@ -121,10 +125,18 @@ export default function CatalogPage() {
     const bpp = parsePackInt(form.boxesPerPallet);
     const spb = parsePackNum(form.sqmPerBox);
     if (!bpp.ok || !spb.ok) { setMsg("تعداد کارتن در پالت یا متراژِ هر کارتن نامعتبر است."); return; }
+    // موجودیِ اولیه اختیاری است؛ اگر یکی از دو فیلد پر شد، هر دو لازم‌اند —
+    // وگرنه «فقط انبار انتخاب شد» بی‌صدا نادیده گرفته می‌شود و کاربر فکر می‌کند ثبت شد.
+    const qty = parsePackInt(form.stockQty);
+    if (!qty.ok) { setMsg("تعدادِ موجودیِ اولیه نامعتبر است."); return; }
+    if ((qty.value != null) !== !!form.stockWarehouseId) {
+      setMsg("برای ثبتِ موجودیِ اولیه، هم انبار و هم تعداد را وارد کن."); return;
+    }
     setPending("create"); setMsg("");
     const res = await postJson("/api/products", {
       tenantId: ctx.tenantId, ...form,
       boxesPerPallet: bpp.value, sqcmPerBox: spb.value != null ? Math.round(spb.value * 10000) : null,
+      initialStock: qty.value != null ? { warehouseId: form.stockWarehouseId, quantityBoxes: qty.value } : undefined,
     });
     if (!res.ok) {
       const code = res.status;
@@ -315,10 +327,10 @@ export default function CatalogPage() {
           همه‌جا دیده می‌شود. جایگزین و اطلاعاتِ بیشتر (ابعاد/توضیحات) هم همین‌جا.
           {" "}<span className="num">{withImage.toLocaleString("fa-IR")}</span> از{" "}
           <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
-          {" "}<strong>توجه:</strong> ساختنِ محصول اینجا فقط مشخصات و قیمت را ثبت می‌کند و
-          <strong> موجودیِ انبار نمی‌سازد</strong> — تا زمانی که از{" "}
-          <Link href="/staff/import">ورودِ اکسل</Link> یا <Link href="/staff/incoming">کالای در راه</Link>{" "}
-          موجودی برایش ثبت نشود، برای نماینده «ناموجود» دیده می‌شود.
+          {" "}می‌توانید <strong>موجودیِ اولیه</strong> را همین‌جا (پایینِ فرم) هم ثبت کنید؛ برای
+          واردات دسته‌جمعی یا محموله‌های در راه هم{" "}
+          <Link href="/staff/import">ورودِ اکسل</Link> و <Link href="/staff/incoming">کالای در راه</Link>{" "}
+          در دسترس‌اند. بدونِ هیچ‌کدام، محصول برای نماینده «ناموجود» دیده می‌شود.
         </span>
       </div>
 
@@ -363,6 +375,21 @@ export default function CatalogPage() {
                 <input id="pu" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://…" /></div>
             </div>
             {attrFields(form, (patch) => setForm((s) => ({ ...s, ...patch })), "new")}
+
+            {/* موجودیِ اولیه (اختیاری) — همین‌جا هم می‌شود موجودی ثبت کرد، نه فقط
+                از ورودِ اکسل/کالای در راه. اگر خالی بماند، محصول «بدون موجودی» می‌ماند
+                تا بعداً از همان دو راه پر شود. */}
+            <div className="grid2" style={{ marginTop: "var(--sp-2)" }}>
+              <div><label htmlFor="pw">انبار (برای موجودیِ اولیه)</label>
+                <select id="pw" value={form.stockWarehouseId} onChange={(e) => setForm({ ...form, stockWarehouseId: e.target.value })}>
+                  <option value="">— انتخاب نشود —</option>
+                  {whs.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select></div>
+              <div><label htmlFor="pq">تعدادِ موجودیِ اولیه (کارتن)</label>
+                <input id="pq" inputMode="numeric" value={form.stockQty}
+                  onChange={(e) => setForm({ ...form, stockQty: e.target.value })} placeholder="۲۰۰" /></div>
+            </div>
+
             {moreFields(form, (patch) => setForm((s) => ({ ...s, ...patch })), "new")}
             <button className="primary" onClick={createProduct} aria-busy={pending === "create"}
               disabled={pending === "create" || !ready}
