@@ -82,7 +82,7 @@ export async function authorizeAdmin(userId: string, tenantId: string): Promise<
 }
 
 /**
- * دسترسیِ «معاونِ مدیر» (v4) — سخت‌گیرتر از authorizeAdmin. admin‌بودن برای
+ * دسترسیِ «مدیرِ دسترسی» (v4) — سخت‌گیرتر از authorizeAdmin. admin‌بودن برای
  * مدیریتِ نمایندگی/انبار کافی است، ولی برای دست‌کاریِ تیم (دعوت، نقش، حذف،
  * چک‌لیستِ صفحه‌ها) به فلگِ صریحِ can_manage_access نیاز است — کسی که رمز/
  * دسترسیِ بقیه را تعیین می‌کند باید محدودتر از یک adminِ معمولی باشد.
@@ -94,7 +94,7 @@ export async function authorizeAccessManager(userId: string, tenantId: string): 
       WHERE user_id = ${userId} AND tenant_id = ${tenantId} AND is_active
       LIMIT 1`;
     if (!m) throw new AuthzError("کاربر عضو این tenant نیست");
-    if (m.role !== "admin" || !m.can_manage_access) throw new AuthzError("این عملیات نیازمندِ معاونِ مدیر است");
+    if (m.role !== "admin" || !m.can_manage_access) throw new AuthzError("این عملیات نیازمندِ مدیرِ دسترسی است");
     return { userId, tenantId };
   });
 }

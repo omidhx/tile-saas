@@ -102,7 +102,7 @@ CREATE TABLE tenant_membership (
     user_id   UUID NOT NULL REFERENCES app_user(id),
     role      TEXT NOT NULL CHECK (role IN ('admin','staff','agent')),  -- staff/admin: تأیید+حواله؛ agent: رزرو
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    -- v4 «معاونِ مدیر»: تنِ نقشِ admin. صرفاً admin‌بودن دیگر کافی نیست برای
+    -- v4 «مدیرِ دسترسی»: تنِ نقشِ admin. صرفاً admin‌بودن دیگر کافی نیست برای
     -- مدیریتِ تیم/دسترسیِ بقیه — این فلگِ جداست، باید صریحاً داده شود (پیش‌فرض
     -- false). فقط برای role='admin' معنا دارد؛ روی staff/agent نادیده گرفته می‌شود.
     can_manage_access BOOLEAN NOT NULL DEFAULT FALSE,

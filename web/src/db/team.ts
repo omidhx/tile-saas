@@ -105,7 +105,7 @@ export type SetMemberResult = { ok: true } | { ok: false; reason: "last_admin" |
  * گاردِ مشترکِ setTeamMember/deleteTeamMember: آیا حذف/غیرفعال‌کردن/تنزلِ این
  * عضو، تیم را بدونِ حداقلِ لازم می‌گذارد؟ دو چیز جداگانه باید حفظ شود:
  *   • حداقل یک adminِ فعال — وگرنه هیچ‌کس نمی‌تواند نمایندگی/انبار بسازد.
- *   • حداقل یک «معاونِ مدیر»ِ فعال — وگرنه هیچ‌کس نمی‌تواند دسترسیِ بقیه را
+ *   • حداقل یک «مدیرِ دسترسی»ِ فعال — وگرنه هیچ‌کس نمی‌تواند دسترسیِ بقیه را
  *     دست‌کاری کند و تیم برای همیشه قفل می‌ماند (فقط SQL دستی راه می‌داشت).
  */
 async function guardMinimumAccess(
@@ -134,7 +134,7 @@ async function guardMinimumAccess(
 
 /**
  * تغییرِ نقش/فعال‌بودن/دسترسیِ عضوِ تیم. گاردِ «حداقل یک adminِ فعال» و
- * «حداقل یک معاونِ مدیرِ فعال» (guardMinimumAccess).
+ * «حداقل یک مدیرِ دسترسیِ فعال» (guardMinimumAccess).
  */
 export async function setTeamMember(params: {
   tenantId: string; membershipId: string; role?: Role; isActive?: boolean;

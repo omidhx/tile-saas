@@ -4,7 +4,7 @@ import { authorizeAccessManager, AuthzError } from "@/auth/authz";
 import { listTeam, inviteTeamMember, setTeamMember, deleteTeamMember, type Role } from "@/db/team";
 import { STAFF_PAGE_KEYS } from "@/lib/staffPages";
 
-/** همه‌ی متدهای این فایل «معاونِ مدیر» می‌خواهند — adminِ ساده کافی نیست (v4). */
+/** همه‌ی متدهای این فایل «مدیرِ دسترسی» می‌خواهند — adminِ ساده کافی نیست (v4). */
 async function requireAccessManager(tenantId: string) {
   const userId = await currentUserId();
   if (!userId) return { error: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
@@ -21,7 +21,7 @@ function validAllowedPages(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((p) => typeof p === "string" && STAFF_PAGE_KEYS.includes(p));
 }
 
-/** GET /api/team?tenantId — فهرستِ اعضای تیمِ پشتیبان/مدیر. فقط معاونِ مدیر. */
+/** GET /api/team?tenantId — فهرستِ اعضای تیمِ پشتیبان/مدیر. فقط مدیرِ دسترسی. */
 export async function GET(req: Request) {
   const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
   const auth = await requireAccessManager(tenantId);
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ members: await listTeam(tenantId) });
 }
 
-/** POST /api/team — دعوتِ عضوِ تیم با موبایل(+ایمیل). فقط معاونِ مدیر. */
+/** POST /api/team — دعوتِ عضوِ تیم با موبایل(+ایمیل). فقط مدیرِ دسترسی. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, phone, email, role, canManageAccess, allowedPages } = body ?? {};
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, created: r.created, tempPassword: r.tempPassword }, { status: 201 });
 }
 
-/** PATCH /api/team — تغییرِ نقش/فعال‌بودن/دسترسیِ عضو. فقط معاونِ مدیر. */
+/** PATCH /api/team — تغییرِ نقش/فعال‌بودن/دسترسیِ عضو. فقط مدیرِ دسترسی. */
 export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, membershipId, role, isActive, canManageAccess, allowedPages } = body ?? {};
@@ -70,7 +70,7 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
-/** DELETE /api/team — حذفِ واقعیِ عضویت (نه فقط غیرفعال‌سازی). فقط معاونِ مدیر. */
+/** DELETE /api/team — حذفِ واقعیِ عضویت (نه فقط غیرفعال‌سازی). فقط مدیرِ دسترسی. */
 export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, membershipId } = body ?? {};

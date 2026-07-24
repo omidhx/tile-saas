@@ -78,7 +78,7 @@ test("v4: صفحه‌ی نامعتبر در allowedPages فیلتر می‌شو�
   assert.deepEqual(m.allowedPages, ["prices"]);
 });
 
-test("v4: تنها معاونِ مدیرِ فعال قابلِ تنزل/غیرفعال‌شدن نیست (last_deputy)", async () => {
+test("v4: تنها مدیرِ دسترسیِ فعال قابلِ تنزل/غیرفعال‌شدن نیست (last_deputy)", async () => {
   const T3 = "44444444-4444-4444-4444-444444444444";
   await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T3}','D','d');`);
   await inviteTeamMember({ tenantId: T3, phone: "09130000008", role: "admin", canManageAccess: true });
@@ -87,11 +87,11 @@ test("v4: تنها معاونِ مدیرِ فعال قابلِ تنزل/غیرف
   const demote = await setTeamMember({ tenantId: T3, membershipId: deputy.membershipId, canManageAccess: false });
   assert.deepEqual(demote, { ok: false, reason: "last_deputy" });
 
-  // غیرفعال‌کردن هم آخرین admin هم آخرین معاون را می‌برد — last_admin مرزِ بنیادی‌تری است
+  // غیرفعال‌کردن هم آخرین admin هم آخرین مدیرِ دسترسی را می‌برد — last_admin مرزِ بنیادی‌تری است
   const deactivate = await setTeamMember({ tenantId: T3, membershipId: deputy.membershipId, isActive: false });
   assert.deepEqual(deactivate, { ok: false, reason: "last_admin" });
 
-  // با یک معاونِ دومی، تنزلِ اولی مجاز می‌شود
+  // با یک مدیرِ دسترسیِ دوم، تنزلِ اولی مجاز می‌شود
   await inviteTeamMember({ tenantId: T3, phone: "09130000009", role: "admin", canManageAccess: true });
   const ok = await setTeamMember({ tenantId: T3, membershipId: deputy.membershipId, canManageAccess: false });
   assert.equal(ok.ok, true);
@@ -107,7 +107,7 @@ test("deleteTeamMember: عضوِ عادی حذف می‌شود؛ آخرین admi
   const admin = members.find((m) => m.phone === "09130000010")!;
   const staff = members.find((m) => m.phone === "09130000011")!;
 
-  // آخرین admin/معاون قابلِ حذف نیست
+  // آخرین admin/مدیرِ دسترسی قابلِ حذف نیست
   const delAdmin = await deleteTeamMember({ tenantId: T4, membershipId: admin.membershipId });
   assert.deepEqual(delAdmin, { ok: false, reason: "last_admin" });
 

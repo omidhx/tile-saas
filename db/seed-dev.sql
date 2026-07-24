@@ -29,7 +29,7 @@ INSERT INTO app_user(id, phone, password_hash) VALUES
 
 -- کاربرِ دوم admin است نه صرفاً staff: مدیریتِ تیم/نمایندگی/انبار (v3) فقط برای
 -- admin باز است — کاربرِ دموی پشتیبان باید بتواند این صفحه‌ها را هم ببیند.
--- v4: همین کاربر can_manage_access هم دارد — «معاونِ مدیر»ی که بوت‌استرپ نبود
+-- v4: همین کاربر can_manage_access هم دارد — «مدیرِ دسترسی»ی که بوت‌استرپ نبود
 -- را کسی نمی‌توانست بسازد؛ اولین admin باید از اول این فلگ را داشته باشد.
 INSERT INTO tenant_membership(tenant_id, user_id, role, is_active, can_manage_access) VALUES
   ('11111111-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444', 'agent', true, false),

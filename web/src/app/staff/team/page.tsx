@@ -19,7 +19,7 @@ const FA: Record<string, string> = {
   already_member: "این کاربر از قبل عضوِ فعالِ تیم است.",
   email_taken: "این ایمیل قبلاً برای کاربرِ دیگری ثبت شده.",
   last_admin: "این تنها مدیرِ فعال است — باید حداقل یک مدیر باقی بماند.",
-  last_deputy: "این تنها معاونِ مدیرِ فعال است — باید حداقل یک نفر بتواند دسترسیِ بقیه را مدیریت کند.",
+  last_deputy: "این تنها مدیرِ دسترسیِ فعال است — باید حداقل یک نفر بتواند دسترسیِ بقیه را مدیریت کند.",
   linked_to_agent: "این کاربر به یک نمایندگی وصل است — اول از صفحه‌ی نمایندگی‌ها جدایش کنید.",
 };
 
@@ -109,7 +109,7 @@ export default function TeamPage() {
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>این بخش فقط برای پشتیبان است.</span></div></main>;
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
   if (!(ctx.role === "admin" && ctx.canManageAccess))
-    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>این بخش فقط برای معاونِ مدیر است.</span></div></main>;
+    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>این بخش فقط برای مدیرِ دسترسی است.</span></div></main>;
 
   return (
     <main>
@@ -127,7 +127,7 @@ export default function TeamPage() {
           کسی که با موبایلی که در سامانه نیست دعوت شود، رمزِ یک‌بارمصرف می‌گیرد
           (پیامک + ایمیلِ اختیاری) — و همین‌جا هم یک‌بار نشان داده می‌شود، برای
           وقتی هیچ‌کدام از کانال‌ها نرسید. کاربرِ از‌قبل‌موجود با رمزِ خودش وارد می‌شود.
-          «معاونِ مدیر» تنها کسی است که می‌تواند دسترسیِ بقیه را دست‌کاری کند —
+          «مدیرِ دسترسی» تنها کسی است که می‌تواند دسترسیِ بقیه را دست‌کاری کند —
           خودِ admin‌بودن برای این کار کافی نیست.
         </span>
       </div>
@@ -161,7 +161,7 @@ export default function TeamPage() {
         {role === "admin" ? (
           <label className="row row--start" style={{ marginTop: "var(--sp-3)", cursor: "pointer", gap: "var(--sp-2)", justifyContent: "flex-start" }}>
             <input type="checkbox" checked={deputy} onChange={(e) => setDeputy(e.target.checked)} style={{ width: "auto", minHeight: 0 }} />
-            <span>معاونِ مدیر است — اجازه دارد دسترسیِ بقیه را مدیریت کند (دعوت، نقش، حذف، چک‌لیستِ صفحه‌ها)</span>
+            <span>مدیرِ دسترسی است — اجازه دارد دسترسیِ بقیه را مدیریت کند (دعوت، نقش، حذف، چک‌لیستِ صفحه‌ها)</span>
           </label>
         ) : (
           <>
@@ -198,7 +198,7 @@ export default function TeamPage() {
               {!m.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
             </span>
             <span className="row row--start">
-              {m.role === "admin" && m.canManageAccess && <span className="badge badge--ok">معاونِ مدیر</span>}
+              {m.role === "admin" && m.canManageAccess && <span className="badge badge--ok">مدیرِ دسترسی</span>}
               <span className={`badge${m.role === "admin" ? " badge--ok" : ""}`}>{m.role === "admin" ? "مدیر" : "پشتیبان"}</span>
             </span>
           </div>
@@ -242,7 +242,7 @@ export default function TeamPage() {
             {m.role === "admin" && (
               <button className="ghost" disabled={pending === m.membershipId}
                       onClick={() => patch(m.membershipId, { canManageAccess: !m.canManageAccess })}>
-                {m.canManageAccess ? "معاونیِ مدیر را بردار" : "معاونِ مدیر کن"}
+                {m.canManageAccess ? "نقشِ مدیرِ دسترسی را بردار" : "مدیرِ دسترسی کن"}
               </button>
             )}
             <button className="ghost" disabled={pending === m.membershipId} aria-busy={pending === m.membershipId}
