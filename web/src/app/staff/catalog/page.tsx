@@ -4,10 +4,15 @@ import Link from "next/link";
 import Icon from "../../Icon";
 import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
+import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { matches, normalize } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
+import PricesSection from "./PricesSection";
+import ImportSection from "./ImportSection";
+import IncomingSection from "./IncomingSection";
+import SubstitutesSection from "./SubstitutesSection";
 
 type Img = { id: string; url: string };
 type Product = {
@@ -72,8 +77,17 @@ function QuickPick({ label, options, onPick }: { label: string; options: string[
   );
 }
 
+const ALL_TABS: (Tab & { pageKey: string })[] = [
+  { key: "catalog", label: "محصولات", pageKey: "catalog" },
+  { key: "prices", label: "قیمت‌گذاری", pageKey: "prices" },
+  { key: "import", label: "ورود از اکسل", pageKey: "import" },
+  { key: "incoming", label: "موجودی در راه", pageKey: "incoming" },
+  { key: "substitutes", label: "کالای جایگزین", pageKey: "substitutes" },
+];
+
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
+  const [tab, setTab] = useState("catalog");
   const [products, setProducts] = useState<Product[]>([]);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [whs, setWhs] = useState<Wh[]>([]);
@@ -108,6 +122,17 @@ export default function CatalogPage() {
   }, []);
 
   useEffect(() => { if (ctx) load(ctx.tenantId); }, [ctx, load]);
+
+  // آدرسِ ورودی (مثلاً از NavMenu: ?tab=prices) تبِ اولیه را تعیین می‌کند —
+  // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «catalog» است) ناسازگار نشود.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && ALL_TABS.some((x) => x.key === t)) setTab(t);
+  }, []);
+  function go(key: string) {
+    setTab(key);
+    history.replaceState(null, "", `?tab=${key}`);
+  }
 
   async function uploadFile(file: File): Promise<string | null> {
     if (!ctx) return null;
@@ -226,8 +251,15 @@ export default function CatalogPage() {
       </main>
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
-  if (ctx.role === "staff" && !hasPageAccess(ctx.allowedPages, "catalog"))
+
+  // v6: قیمت‌گذاری/ورودِ اکسل/موجودیِ در راه/جایگزین‌ها با «مدیریتِ محصول» ادغام
+  // شدند چون هر پنج تا دربارهِ یک محصول‌اند و پشتیبان مدام بینشان سوییچ می‌کرد —
+  // حالا زیرِ یک مسیرِ تب‌دار. هر تب دسترسیِ pageKeyِ خودش را جدا نگه می‌دارد
+  // (مثلِ قبل)، تا کسی که فقط «قیمت‌گذاری» دارد نه «مدیریتِ محصول» را نبیند.
+  const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
+  if (tabs.length === 0)
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
 
   const visible = products.filter((p) => matches(query, [p.name, p.code, p.color, p.glaze, p.punch]));
   const withImage = products.filter((p) => p.imageUrl).length;
@@ -313,12 +345,20 @@ export default function CatalogPage() {
     <main>
       <div className="topbar">
         <div>
-          <h1>مدیریت محصول</h1>
+          <h1>محصول و موجودی</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
         <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
       </div>
 
+      <TabBar tabs={tabs} active={activeTab} onChange={go} />
+
+      {activeTab === "prices" && <PricesSection ctx={ctx} />}
+      {activeTab === "import" && <ImportSection ctx={ctx} />}
+      {activeTab === "incoming" && <IncomingSection ctx={ctx} />}
+      {activeTab === "substitutes" && <SubstitutesSection ctx={ctx} />}
+      {activeTab === "catalog" && (
+      <>
       <div className="banner banner--info">
         <Icon name="info" />
         <span>
@@ -328,9 +368,11 @@ export default function CatalogPage() {
           {" "}<span className="num">{withImage.toLocaleString("fa-IR")}</span> از{" "}
           <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
           {" "}می‌توانید <strong>موجودیِ اولیه</strong> را همین‌جا (پایینِ فرم) هم ثبت کنید؛ برای
-          واردات دسته‌جمعی یا محموله‌های در راه هم{" "}
-          <Link href="/staff/import">ورودِ اکسل</Link> و <Link href="/staff/incoming">کالای در راه</Link>{" "}
-          در دسترس‌اند. بدونِ هیچ‌کدام، محصول برای نماینده «ناموجود» دیده می‌شود.
+          واردات دسته‌جمعی یا محموله‌های در راه هم می‌توانید از تب‌های{" "}
+          <button type="button" onClick={() => go("import")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>ورودِ اکسل</button>
+          {" "}و{" "}
+          <button type="button" onClick={() => go("incoming")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>کالای در راه</button>
+          {" "}استفاده کنید. بدونِ هیچ‌کدام، محصول برای نماینده «ناموجود» دیده می‌شود.
         </span>
       </div>
 
@@ -423,7 +465,8 @@ export default function CatalogPage() {
                   <span className="subtle num">{p.code}</span>
                   {!p.hasStock && (
                     <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>
-                      بدون موجودی — <Link href="/staff/import">افزودنِ موجودی ←</Link>
+                      بدون موجودی —{" "}
+                      <button type="button" onClick={() => go("import")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>افزودنِ موجودی ←</button>
                     </span>
                   )}
                 </span>
@@ -438,7 +481,8 @@ export default function CatalogPage() {
                   ? <>قیمتِ پایه: <span className="metric">{money(p.basePrice)}</span> ریال / کارتن</>
                   : <span className="subtle">قیمتی ثبت نشده</span>}
                 {" · "}
-                <Link href="/staff/prices" className="subtle">ویرایش قیمت ←</Link>
+                <button type="button" className="subtle" onClick={() => go("prices")}
+                  style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>ویرایش قیمت ←</button>
               </div>
 
               {/* بسته‌بندی: تبدیلِ کارتن⇄پالت⇄مترمربعی که نماینده در سفارش می‌بیند، همیشه دیده می‌شود
@@ -575,6 +619,8 @@ export default function CatalogPage() {
           </div>
         </div>
       ))}
+      </>
+      )}
     </main>
   );
 }

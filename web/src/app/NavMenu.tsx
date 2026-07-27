@@ -36,28 +36,37 @@ type Group = { title: string; items: Item[] };
 
 const GROUPS: Group[] = [
   {
+    // v6: کاتالوگ/قیمت‌گذاری/ورودِ اکسل/موجودیِ در راه/جایگزین‌ها همه دربارهِ یک
+    // محصول‌اند و حالا زیرِ یک صفحه‌ی تب‌دار (/staff/catalog)اند — این پنج لینک
+    // فقط میان‌بُرِ «همان صفحه، همان تب» هستند، نه پنج مسیرِ جدا.
+    title: "محصول و موجودی",
+    items: [
+      { href: "/staff/catalog", label: "محصولات", pageKey: "catalog" },
+      { href: "/staff/catalog?tab=prices", label: "قیمت‌گذاری", pageKey: "prices" },
+      { href: "/staff/catalog?tab=import", label: "ورود از اکسل", pageKey: "import" },
+      { href: "/staff/catalog?tab=incoming", label: "موجودی در راه", pageKey: "incoming" },
+      { href: "/staff/catalog?tab=substitutes", label: "کالای جایگزین", pageKey: "substitutes" },
+    ],
+  },
+  {
     title: "کار روزمره",
     items: [
-      { href: "/staff/import", label: "ورود موجودی از اکسل", pageKey: "import" },
-      { href: "/staff/incoming", label: "موجودی در راه", pageKey: "incoming" },
       { href: "/staff/customers", label: "مشتریان", pageKey: "customers" },
     ],
   },
   {
     title: "تنظیمات فروش",
     items: [
-      { href: "/staff/prices", label: "قیمت‌گذاری", pageKey: "prices" },
       { href: "/staff/auto-approve", label: "تأیید خودکار", pageKey: "auto-approve" },
-      { href: "/staff/substitutes", label: "کالای جایگزین", pageKey: "substitutes" },
-      { href: "/staff/catalog", label: "مدیریت محصول", pageKey: "catalog" },
     ],
   },
   {
+    // v6: گزارش‌ها/دفترِ حرکات/دفترِ تغییرات هم همین‌طور زیرِ یک صفحه‌ی تب‌دارند.
     title: "گزارش و ردیابی",
     items: [
-      { href: "/staff/reports", label: "گزارش‌های مدیریتی", pageKey: "reports" },
-      { href: "/staff/ledger", label: "دفتر حرکات موجودی", pageKey: "ledger" },
-      { href: "/staff/audit", label: "دفتر تغییرات", pageKey: "audit" },
+      { href: "/staff/reports", label: "گزارش‌ها", pageKey: "reports" },
+      { href: "/staff/reports?tab=ledger", label: "دفتر حرکات موجودی", pageKey: "ledger" },
+      { href: "/staff/reports?tab=audit", label: "دفتر تغییرات", pageKey: "audit" },
     ],
   },
   {
