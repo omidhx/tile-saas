@@ -36,16 +36,13 @@ type Group = { title: string; items: Item[] };
 
 const GROUPS: Group[] = [
   {
-    // v6: کاتالوگ/قیمت‌گذاری/ورودِ اکسل/موجودیِ در راه/جایگزین‌ها همه دربارهِ یک
-    // محصول‌اند و حالا زیرِ یک صفحه‌ی تب‌دار (/staff/catalog)اند — این پنج لینک
-    // فقط میان‌بُرِ «همان صفحه، همان تب» هستند، نه پنج مسیرِ جدا.
+    // v7: قیمت‌گذاری/موجودیِ در راه/جایگزین‌ها دیگر تبِ خودشان را ندارند — روی
+    // کارتِ همان محصول در «محصولات» باز می‌شوند (pageKeyِ هرکدام همان‌جا، روی
+    // دکمه‌اش، چک می‌شود). فقط «ورود از اکسل» چون عملیاتی دسته‌جمعی‌ست تبِ جداست.
     title: "محصول و موجودی",
     items: [
       { href: "/staff/catalog", label: "محصولات", pageKey: "catalog" },
-      { href: "/staff/catalog?tab=prices", label: "قیمت‌گذاری", pageKey: "prices" },
       { href: "/staff/catalog?tab=import", label: "ورود از اکسل", pageKey: "import" },
-      { href: "/staff/catalog?tab=incoming", label: "موجودی در راه", pageKey: "incoming" },
-      { href: "/staff/catalog?tab=substitutes", label: "کالای جایگزین", pageKey: "substitutes" },
     ],
   },
   {

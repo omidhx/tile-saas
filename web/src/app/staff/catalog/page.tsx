@@ -9,10 +9,9 @@ import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { matches, normalize } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
-import PricesSection from "./PricesSection";
+import { JalaliDateInput } from "@/lib/JalaliDateInput";
+import { formatJalaliDate, jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
 import ImportSection from "./ImportSection";
-import IncomingSection from "./IncomingSection";
-import SubstitutesSection from "./SubstitutesSection";
 
 type Img = { id: string; url: string };
 type Product = {
@@ -30,11 +29,25 @@ type Sub = {
   substituteName: string; substituteCode: string; note: string | null;
 };
 type Wh = { id: string; name: string; code: string };
+type PriceList = { id: string; name: string; agentCount: number };
+type PriceItem = { priceListId: string; variantId: string; price: string };
+type IncomingItem = {
+  id: string; variantId: string;
+  warehouseId: string; warehouseName: string;
+  quantityBoxes: number; expectedAt: string;
+  source: string; status: "planned" | "confirmed" | "arrived" | "cancelled"; note: string | null;
+};
 
 const money = (v: number) => v.toLocaleString("fa-IR");
 const sqm = (cm2: number) => (cm2 / 10000).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
 const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", imageUrl: "", boxesPerPallet: "", sqmPerBox: "", stockWarehouseId: "", stockQty: "" };
 const EMPTY_EDIT = { name: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", boxesPerPallet: "", sqmPerBox: "" };
+const INCOMING_STATUS_FA: Record<string, string> = {
+  planned: "برنامه‌ریزی‌شده", confirmed: "قطعی‌شده", arrived: "رسیده", cancelled: "لغوشده",
+};
+const INCOMING_SOURCE_FA: Record<string, string> = {
+  production: "تولید", transfer: "انتقال بین انبار", purchase: "خرید",
+};
 
 /** ورودیِ عددیِ اختیاری (ارقامِ فارسی هم می‌پذیرد): خالی=null (معتبر)، وگرنه باید عددِ صحیحِ مثبت باشد. */
 function parsePackInt(s: string): { ok: true; value: number | null } | { ok: false } {
@@ -77,13 +90,15 @@ function QuickPick({ label, options, onPick }: { label: string; options: string[
   );
 }
 
+// v7: قیمت‌گذاری/موجودیِ در راه/جایگزین‌ها دیگر تب/صفحه‌ی جدا نیستند — چون
+// این‌ها همیشه دربارهِ *یک* محصولِ مشخص‌اند، روی همان کارتِ محصول باز می‌شوند.
+// فقط «ورود از اکسل» تبِ جداست، چون یک عملیاتِ دسته‌جمعیِ کلِ کارخانه/انبار
+// است و به هیچ محصولِ واحدی تعلق ندارد — روی کارتِ یک محصول جا نمی‌شود.
 const ALL_TABS: (Tab & { pageKey: string })[] = [
   { key: "catalog", label: "محصولات", pageKey: "catalog" },
-  { key: "prices", label: "قیمت‌گذاری", pageKey: "prices" },
   { key: "import", label: "ورود از اکسل", pageKey: "import" },
-  { key: "incoming", label: "موجودی در راه", pageKey: "incoming" },
-  { key: "substitutes", label: "کالای جایگزین", pageKey: "substitutes" },
 ];
+type Panel = "edit" | "subs" | "price" | "incoming";
 
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
@@ -91,39 +106,64 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [whs, setWhs] = useState<Wh[]>([]);
+  const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [priceItems, setPriceItems] = useState<PriceItem[]>([]);
+  const [incomingItems, setIncomingItems] = useState<IncomingItem[]>([]);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [msg, setMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [subFor, setSubFor] = useState<string | null>(null);
+
+  // یک بخشِ بازِ کارت در هر لحظه (ویرایش/جایگزین‌ها/قیمت/موجودیِ در راه) — باز
+  // کردنِ یکی، بازمانده‌ی همان کارت را می‌بندد تا کارت غول‌پیکر نشود.
+  const [openFor, setOpenFor] = useState<{ id: string; panel: Panel } | null>(null);
+  const isOpen = (id: string, panel: Panel) => openFor?.id === id && openFor.panel === panel;
+  function togglePanel(id: string, panel: Panel) {
+    setOpenFor(isOpen(id, panel) ? null : { id, panel });
+  }
+
   const [subPick, setSubPick] = useState("");
   const [subNote, setSubNote] = useState("");
   const [subQuery, setSubQuery] = useState("");
-  const [editFor, setEditFor] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_EDIT);
   const [imgUrl, setImgUrl] = useState<Record<string, string>>({}); // URLِ درحال‌افزودن به گالریِ هر محصول
+
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [priceSaving, setPriceSaving] = useState<string | null>(null);
+
+  const [incWarehouseId, setIncWarehouseId] = useState("");
+  const [incQty, setIncQty] = useState("");
+  const [incWhen, setIncWhen] = useState<Jalali>(todayJalali);
+  const [incSource, setIncSource] = useState("production");
+  const [incNote, setIncNote] = useState("");
+  const [incArriving, setIncArriving] = useState<string | null>(null);
+  const [incBatch, setIncBatch] = useState("");
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async (tenantId: string) => {
-    const [p, s, w] = await Promise.all([
+    const [p, s, w, pr, inc] = await Promise.all([
       getJson<{ products: Product[] }>(`/api/products?tenantId=${tenantId}`),
       getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`),
       getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${tenantId}`),
+      getJson<{ lists: PriceList[]; items: PriceItem[] }>(`/api/prices?tenantId=${tenantId}`),
+      getJson<{ items: IncomingItem[] }>(`/api/incoming?tenantId=${tenantId}`),
     ]);
     if (p.ok) setProducts(p.data.products);
     if (s.ok) setSubs(s.data.items);
     if (w.ok) setWhs(w.data.warehouses);
-    const failed = [p, s, w].find((x) => !x.ok);
+    if (pr.ok) { setPriceLists(pr.data.lists); setPriceItems(pr.data.items); }
+    if (inc.ok) setIncomingItems(inc.data.items);
+    const failed = [p, s, w, pr, inc].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
 
   useEffect(() => { if (ctx) load(ctx.tenantId); }, [ctx, load]);
 
-  // آدرسِ ورودی (مثلاً از NavMenu: ?tab=prices) تبِ اولیه را تعیین می‌کند —
+  // آدرسِ ورودی (مثلاً از NavMenu: ?tab=import) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «catalog» است) ناسازگار نشود.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -198,14 +238,13 @@ export default function CatalogPage() {
   const removeImg = (productId: string, imageId: string) => galleryOp(productId, { imageId }, "DELETE");
 
   function startEdit(p: Product) {
-    setEditFor(p.id);
     setEditForm({
       name: p.name, color: p.color ?? "", glaze: p.glaze ?? "", punch: p.punch ?? "", body: p.body ?? "",
       size: p.size ?? "", thickness: p.thickness ?? "", usageArea: p.usageArea ?? "", description: p.description ?? "",
       boxesPerPallet: p.boxesPerPallet != null ? String(p.boxesPerPallet) : "",
       sqmPerBox: p.sqcmPerBox != null ? String(p.sqcmPerBox / 10000) : "",
     });
-    setSubFor(null); setMsg("");
+    setOpenFor({ id: p.id, panel: "edit" }); setMsg("");
   }
 
   async function saveEdit(p: Product) {
@@ -219,7 +258,7 @@ export default function CatalogPage() {
       boxesPerPallet: bpp.value, sqcmPerBox: spb.value != null ? Math.round(spb.value * 10000) : null,
     }, "PATCH");
     if (!res.ok) setMsg(actionError(res.status));
-    else { setEditFor(null); setMsg("محصول ویرایش شد."); await load(ctx.tenantId); }
+    else { setOpenFor(null); setMsg("محصول ویرایش شد."); await load(ctx.tenantId); }
     setPending(null);
   }
 
@@ -242,6 +281,56 @@ export default function CatalogPage() {
     setPending(null);
   }
 
+  async function savePrice(priceListId: string, variantId: string) {
+    if (!ctx) return;
+    const key = priceListId + variantId;
+    const raw = priceDraft[key];
+    const price = Number(raw);
+    if (!Number.isInteger(price) || price < 0) { setMsg("قیمت باید عددِ صحیحِ نامنفی باشد (ریال)."); return; }
+    setPriceSaving(key); setMsg("");
+    const res = await postJson("/api/prices", { tenantId: ctx.tenantId, priceListId, variantId, price });
+    if (!res.ok) setMsg(actionError(res.status));
+    else {
+      setPriceDraft((s) => { const n = { ...s }; delete n[key]; return n; });
+      await load(ctx.tenantId);
+    }
+    setPriceSaving(null);
+  }
+
+  async function addIncoming(variantId: string) {
+    if (!ctx || !incWarehouseId || Number(incQty) <= 0) return;
+    setPending("incadd"); setMsg("");
+    const res = await postJson("/api/incoming", {
+      tenantId: ctx.tenantId, variantId, warehouseId: incWarehouseId,
+      quantityBoxes: Number(incQty),
+      expectedAt: jalaliToDate(incWhen).toISOString().slice(0, 10),
+      source: incSource, note: incNote,
+    });
+    if (!res.ok) setMsg(actionError(res.status));
+    else {
+      setIncQty(""); setIncNote(""); setMsg("محموله ثبت شد.");
+      await load(ctx.tenantId);
+    }
+    setPending(null);
+  }
+
+  async function actIncoming(id: string, action: "arrive" | "confirm" | "cancel", batchNumber?: string) {
+    if (!ctx) return;
+    setPending(id + action); setMsg("");
+    const res = await postJson("/api/incoming", { tenantId: ctx.tenantId, id, action, batchNumber }, "PATCH");
+    if (!res.ok) setMsg(actionError(res.status));
+    else {
+      if (action === "arrive") {
+        const d = res.data as { offers?: number; notified?: number };
+        setMsg(`موجودی وارد شد.${d.offers ? ` ${money(d.offers)} نوبت از صف انتظار پر شد.` : ""}`
+          + `${d.notified ? ` ${money(d.notified)} اعلان «موجود شد» صف شد.` : ""}`);
+        setIncArriving(null); setIncBatch("");
+      } else setMsg("انجام شد.");
+      await load(ctx.tenantId);
+    }
+    setPending(null);
+  }
+
   if (state === "none")
     return (
       <main>
@@ -252,10 +341,13 @@ export default function CatalogPage() {
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
-  // v6: قیمت‌گذاری/ورودِ اکسل/موجودیِ در راه/جایگزین‌ها با «مدیریتِ محصول» ادغام
-  // شدند چون هر پنج تا دربارهِ یک محصول‌اند و پشتیبان مدام بینشان سوییچ می‌کرد —
-  // حالا زیرِ یک مسیرِ تب‌دار. هر تب دسترسیِ pageKeyِ خودش را جدا نگه می‌دارد
-  // (مثلِ قبل)، تا کسی که فقط «قیمت‌گذاری» دارد نه «مدیریتِ محصول» را نبیند.
+  // v6/v7: پنج صفحه‌ی جدا (کاتالوگ/قیمت‌گذاری/ورودِ اکسل/موجودیِ در راه/جایگزین‌ها)
+  // با «محصول و موجودی» ادغام شدند. قیمت‌گذاری/موجودیِ در راه/جایگزین‌ها دیگر
+  // تبِ خودشان را ندارند — روی کارتِ همان محصول باز می‌شوند — ولی pageKeyِ
+  // قبلی‌شان دست‌نخورده می‌ماند: هرکدام فقط وقتی دکمه‌اش را می‌بینی که آن دسترسی
+  // را داری. اینطور مدیر می‌تواند پشتیبانی را فقط به «قیمت‌گذاری» محدود کند،
+  // بدونِ اینکه او بتواند مشخصاتِ محصول را ویرایش کند.
+  const canSee = (key: string) => ctx.role === "admin" || hasPageAccess(ctx.allowedPages, key);
   const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
   if (tabs.length === 0)
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
@@ -326,7 +418,7 @@ export default function CatalogPage() {
         </div>
         <p className="subtle" style={{ marginTop: "var(--sp-1)" }}>
           این دو عدد فقط نسبتِ بسته‌بندی‌اند (برای فرمولِ تبدیلِ نماینده)، نه مقدارِ موجودی —
-          موجودیِ واقعی را از ورودِ اکسل یا کالای در راه اضافه کنید.
+          موجودیِ واقعی را از پایینِ همین کارت یا تبِ «ورود از اکسل» اضافه کنید.
         </p>
         {preview.length > 0 && (
           <p className="subtle" style={{ marginTop: "var(--sp-1)" }}>
@@ -353,10 +445,7 @@ export default function CatalogPage() {
 
       <TabBar tabs={tabs} active={activeTab} onChange={go} />
 
-      {activeTab === "prices" && <PricesSection ctx={ctx} />}
       {activeTab === "import" && <ImportSection ctx={ctx} />}
-      {activeTab === "incoming" && <IncomingSection ctx={ctx} />}
-      {activeTab === "substitutes" && <SubstitutesSection ctx={ctx} />}
       {activeTab === "catalog" && (
       <>
       <div className="banner banner--info">
@@ -364,22 +453,21 @@ export default function CatalogPage() {
         <span>
           محصول را همین‌جا بسازید (با عکس)، یا دسته‌جمعی از فایلِ اکسل. هر محصول می‌تواند
           <strong> گالریِ چند عکسی</strong> داشته باشد؛ عکسِ <strong>اصلی</strong> همان تامنیلی است که
-          همه‌جا دیده می‌شود. جایگزین و اطلاعاتِ بیشتر (ابعاد/توضیحات) هم همین‌جا.
+          همه‌جا دیده می‌شود. قیمت، بسته‌بندی، موجودیِ در راه و جایگزین هم روی کارتِ
+          همان محصول مدیریت می‌شوند.
           {" "}<span className="num">{withImage.toLocaleString("fa-IR")}</span> از{" "}
           <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
           {" "}می‌توانید <strong>موجودیِ اولیه</strong> را همین‌جا (پایینِ فرم) هم ثبت کنید؛ برای
-          واردات دسته‌جمعی یا محموله‌های در راه هم می‌توانید از تب‌های{" "}
+          واردات دسته‌جمعی هم تبِ{" "}
           <button type="button" onClick={() => go("import")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>ورودِ اکسل</button>
-          {" "}و{" "}
-          <button type="button" onClick={() => go("incoming")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>کالای در راه</button>
-          {" "}استفاده کنید. بدونِ هیچ‌کدام، محصول برای نماینده «ناموجود» دیده می‌شود.
+          {" "}هست. بدونِ هیچ‌کدام، محصول برای نماینده «ناموجود» دیده می‌شود.
         </span>
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
       {msg && (
-        <div className={`banner banner--${msg.startsWith("محصول") ? "ok" : "error"}`} role="status">
-          <Icon name={msg.startsWith("محصول") ? "check" : "alert"} /><span>{msg}</span>
+        <div className={`banner banner--${msg.startsWith("محصول") || msg.startsWith("ثبت") || msg.startsWith("موجودی") || msg.startsWith("انجام") ? "ok" : "error"}`} role="status">
+          <Icon name={msg.startsWith("محصول") || msg.startsWith("ثبت") || msg.startsWith("موجودی") || msg.startsWith("انجام") ? "check" : "alert"} /><span>{msg}</span>
         </div>
       )}
 
@@ -419,8 +507,8 @@ export default function CatalogPage() {
             {attrFields(form, (patch) => setForm((s) => ({ ...s, ...patch })), "new")}
 
             {/* موجودیِ اولیه (اختیاری) — همین‌جا هم می‌شود موجودی ثبت کرد، نه فقط
-                از ورودِ اکسل/کالای در راه. اگر خالی بماند، محصول «بدون موجودی» می‌ماند
-                تا بعداً از همان دو راه پر شود. */}
+                از ورودِ اکسل. اگر خالی بماند، محصول «بدون موجودی» می‌ماند تا بعداً
+                از پایینِ کارتِ همان محصول (موجودیِ در راه) پر شود. */}
             <div className="grid2" style={{ marginTop: "var(--sp-2)" }}>
               <div><label htmlFor="pw">انبار (برای موجودیِ اولیه)</label>
                 <select id="pw" value={form.stockWarehouseId} onChange={(e) => setForm({ ...form, stockWarehouseId: e.target.value })}>
@@ -452,7 +540,10 @@ export default function CatalogPage() {
       )}
       {loaded && products.length === 0 && <p className="empty">هنوز محصولی ساخته نشده.</p>}
 
-      {visible.map((p) => (
+      {visible.map((p) => {
+        const inFlight = p.variantId ? incomingItems.filter((i) => i.variantId === p.variantId
+          && (i.status === "planned" || i.status === "confirmed")) : [];
+        return (
         <div className="card" key={p.id}>
           <div className="lot-head">
             {p.imageUrl
@@ -466,7 +557,8 @@ export default function CatalogPage() {
                   {!p.hasStock && (
                     <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>
                       بدون موجودی —{" "}
-                      <button type="button" onClick={() => go("import")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>افزودنِ موجودی ←</button>
+                      <button type="button" onClick={() => togglePanel(p.id, "incoming")}
+                        style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>افزودنِ موجودی ←</button>
                     </span>
                   )}
                 </span>
@@ -480,9 +572,6 @@ export default function CatalogPage() {
                 {p.basePrice !== null
                   ? <>قیمتِ پایه: <span className="metric">{money(p.basePrice)}</span> ریال / کارتن</>
                   : <span className="subtle">قیمتی ثبت نشده</span>}
-                {" · "}
-                <button type="button" className="subtle" onClick={() => go("prices")}
-                  style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>ویرایش قیمت ←</button>
               </div>
 
               {/* بسته‌بندی: تبدیلِ کارتن⇄پالت⇄مترمربعی که نماینده در سفارش می‌بیند، همیشه دیده می‌شود
@@ -542,24 +631,31 @@ export default function CatalogPage() {
 
               <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
                 <button className="ghost" disabled={pending === "edit" + p.id}
-                  onClick={() => (editFor === p.id ? setEditFor(null) : startEdit(p))}>
-                  {editFor === p.id ? "بستن ویرایش" : "ویرایش"}
+                  onClick={() => (isOpen(p.id, "edit") ? setOpenFor(null) : startEdit(p))}>
+                  {isOpen(p.id, "edit") ? "بستن ویرایش" : "ویرایش"}
                 </button>
-                {p.variantId && (
-                  <button className="ghost"
-                    // یک بخشِ بازِ کارت کافی است — باز کردنِ جایگزین‌ها، ویرایشِ بازمانده را می‌بندد
-                    onClick={() => {
-                      setEditFor(null);
-                      setSubFor(subFor === p.variantId ? null : p.variantId);
-                      setSubPick(""); setSubNote(""); setSubQuery("");
-                    }}>
-                    جایگزین‌ها ({money(subs.filter((s) => s.variantId === p.variantId).length)})
+                {p.variantId && canSee("prices") && (
+                  <button className="ghost" onClick={() => togglePanel(p.id, "price")}>
+                    {isOpen(p.id, "price") ? "بستنِ قیمت" : "قیمت‌گذاری"}
+                  </button>
+                )}
+                {p.variantId && canSee("incoming") && (
+                  <button className="ghost" onClick={() => togglePanel(p.id, "incoming")}>
+                    {isOpen(p.id, "incoming") ? "بستنِ موجودیِ در راه" : `موجودی در راه${inFlight.length ? ` (${money(inFlight.length)})` : ""}`}
+                  </button>
+                )}
+                {p.variantId && canSee("substitutes") && (
+                  <button className="ghost" onClick={() => {
+                    setSubPick(""); setSubNote(""); setSubQuery("");
+                    togglePanel(p.id, "subs");
+                  }}>
+                    {isOpen(p.id, "subs") ? "بستنِ جایگزین‌ها" : `جایگزین‌ها (${money(subs.filter((s) => s.variantId === p.variantId).length)})`}
                   </button>
                 )}
                 {pending === "edit" + p.id && <span className="spinner" aria-hidden="true" />}
               </div>
 
-              {editFor === p.id && (
+              {isOpen(p.id, "edit") && (
                 <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
                   <div className="grid2">
                     <div><label htmlFor={`en-${p.id}`}>نام *</label>
@@ -576,12 +672,119 @@ export default function CatalogPage() {
                       onClick={() => saveEdit(p)}>
                       {pending === "edit" + p.id && <span className="spinner" aria-hidden="true" />}ذخیره
                     </button>
-                    <button className="ghost" onClick={() => setEditFor(null)}>انصراف</button>
+                    <button className="ghost" onClick={() => setOpenFor(null)}>انصراف</button>
                   </div>
                 </div>
               )}
 
-              {p.variantId && subFor === p.variantId && (
+              {p.variantId && isOpen(p.id, "price") && (
+                <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+                  {priceLists.length === 0
+                    ? <p className="subtle">هنوز لیست قیمتی ساخته نشده.</p>
+                    : priceLists.map((pl) => {
+                        const existing = priceItems.find((i) => i.priceListId === pl.id && i.variantId === p.variantId);
+                        const key = pl.id + p.variantId;
+                        const val = priceDraft[key] ?? (existing ? existing.price : "");
+                        const dirty = priceDraft[key] !== undefined && priceDraft[key] !== (existing ? existing.price : "");
+                        return (
+                          <div key={pl.id} className="row row--start row--stack-mobile" style={{ marginBottom: "var(--sp-2)" }}>
+                            <span className="subtle">{pl.name}</span>
+                            <label htmlFor={`price-${key}`} className="sr-only">قیمت {p.name} در {pl.name}</label>
+                            <input id={`price-${key}`} type="number" min={0} step={1} inputMode="numeric" placeholder="قیمت (ریال)"
+                              value={val} style={{ maxWidth: 200 }}
+                              onChange={(e) => setPriceDraft((s) => ({ ...s, [key]: e.target.value }))} />
+                            <button onClick={() => savePrice(pl.id, p.variantId!)} aria-busy={priceSaving === key}
+                              className={dirty ? "primary" : undefined}
+                              disabled={priceSaving === key || val === "" || !dirty}>
+                              {priceSaving === key && <span className="spinner" aria-hidden="true" />}
+                              {dirty ? "ذخیره" : "ذخیره شده"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                </div>
+              )}
+
+              {p.variantId && isOpen(p.id, "incoming") && (
+                <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+                  <div className="subtle" style={{ marginBottom: "var(--sp-2)" }}>
+                    محموله‌ی در راه قابلِ سفارش نیست و در موجودی شمرده نمی‌شود — فقط تاریخِ تقریبیِ رسیدن را
+                    به نماینده نشان می‌دهد. با زدنِ «رسید»، موجودیِ واقعی وارد می‌شود.
+                  </div>
+                  <div className="grid2">
+                    <div><label htmlFor={`iw-${p.id}`}>انبار مقصد</label>
+                      <select id={`iw-${p.id}`} value={incWarehouseId} onChange={(e) => setIncWarehouseId(e.target.value)}>
+                        <option value="">انتخاب انبار…</option>
+                        {whs.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+                      </select></div>
+                    <div><label htmlFor={`iq-${p.id}`}>تعداد کارتن</label>
+                      <input id={`iq-${p.id}`} type="number" min={1} inputMode="numeric" value={incQty}
+                        onChange={(e) => setIncQty(e.target.value)} /></div>
+                  </div>
+                  <label style={{ marginBottom: 0 }}>تاریخ تقریبی رسیدن</label>
+                  <JalaliDateInput label="" value={incWhen} onChange={setIncWhen} currentYear={todayJalali().jy + 1} />
+                  <div className="grid2">
+                    <div><label htmlFor={`is-${p.id}`}>منبع</label>
+                      <select id={`is-${p.id}`} value={incSource} onChange={(e) => setIncSource(e.target.value)}>
+                        <option value="production">تولید</option>
+                        <option value="transfer">انتقال بین انبار</option>
+                        <option value="purchase">خرید</option>
+                      </select></div>
+                    <div><label htmlFor={`in-${p.id}`}>توضیح (اختیاری)</label>
+                      <input id={`in-${p.id}`} value={incNote} onChange={(e) => setIncNote(e.target.value)} placeholder="مثلاً: بچ تولید مهر" /></div>
+                  </div>
+                  <button className="primary" onClick={() => addIncoming(p.variantId!)} aria-busy={pending === "incadd"}
+                    disabled={pending === "incadd" || !incWarehouseId || Number(incQty) <= 0}
+                    style={{ width: "100%", marginTop: "var(--sp-2)" }}>
+                    {pending === "incadd" && <span className="spinner" aria-hidden="true" />}ثبت محموله
+                  </button>
+
+                  {incomingItems.filter((i) => i.variantId === p.variantId).map((i) => (
+                    <div className="card" key={i.id} style={{ marginTop: "var(--sp-3)" }}>
+                      <div className="row">
+                        <span className={`badge ${i.status === "confirmed" ? "badge--ok" : "badge--warn"}`}>
+                          {INCOMING_STATUS_FA[i.status]}
+                        </span>
+                      </div>
+                      <div className="muted">
+                        <span className="metric">{money(i.quantityBoxes)}</span> کارتن → {i.warehouseName}
+                        {" · "}حدودِ {formatJalaliDate(i.expectedAt)}
+                        {" · "}{INCOMING_SOURCE_FA[i.source] ?? i.source}
+                      </div>
+                      {i.note && <div className="subtle">{i.note}</div>}
+
+                      {i.status === "arrived" || i.status === "cancelled" ? null : incArriving === i.id ? (
+                        <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
+                          <label htmlFor={`batch-${i.id}`} className="sr-only">شماره بچ برای {p.name}</label>
+                          <input id={`batch-${i.id}`} value={incBatch} onChange={(e) => setIncBatch(e.target.value)}
+                                 placeholder="شماره بچ (اختیاری)" style={{ maxWidth: 200 }} autoFocus />
+                          <button className="primary" onClick={() => actIncoming(i.id, "arrive", incBatch.trim() || undefined)}
+                                  aria-busy={pending === i.id + "arrive"} disabled={pending === i.id + "arrive"}>
+                            {pending === i.id + "arrive" && <span className="spinner" aria-hidden="true" />}تأیید رسیدن
+                          </button>
+                          <button className="ghost" onClick={() => { setIncArriving(null); setIncBatch(""); }}>انصراف</button>
+                        </div>
+                      ) : (
+                        <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
+                          <button className="primary" onClick={() => { setIncArriving(i.id); setIncBatch(""); }}>رسید</button>
+                          {i.status === "planned" && (
+                            <button className="ghost" onClick={() => actIncoming(i.id, "confirm")}
+                                    aria-busy={pending === i.id + "confirm"} disabled={pending === i.id + "confirm"}>
+                              قطعی شد
+                            </button>
+                          )}
+                          <button className="danger" onClick={() => actIncoming(i.id, "cancel")}
+                                  aria-busy={pending === i.id + "cancel"} disabled={pending === i.id + "cancel"}>
+                            لغو
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {p.variantId && isOpen(p.id, "subs") && (
                 <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
                   <div className="subtle" style={{ marginBottom: "var(--sp-2)" }}>
                     اگر <strong>{p.name}</strong> نبود، این‌ها پیشنهاد می‌شوند (فقط موجودها به نماینده می‌روند):
@@ -618,7 +821,8 @@ export default function CatalogPage() {
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
       </>
       )}
     </main>
