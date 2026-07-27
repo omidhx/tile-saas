@@ -6,7 +6,7 @@ import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
 import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
-import { useContexts } from "@/lib/useContexts";
+import { useContexts, type Ctx } from "@/lib/useContexts";
 import { matches, normalize } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
@@ -100,6 +100,9 @@ const ALL_TABS: (Tab & { pageKey: string })[] = [
 ];
 type Panel = "edit" | "subs" | "price" | "incoming";
 
+/** آیا این pageKey برای کاربر باز است؟ ادمین همیشه، وگرنه allowed_pages. */
+const canSeePage = (ctx: Ctx, key: string) => ctx.role === "admin" || hasPageAccess(ctx.allowedPages, key);
+
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
   const [tab, setTab] = useState("catalog");
@@ -112,7 +115,12 @@ export default function CatalogPage() {
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
-  const [msg, setMsg] = useState("");
+  // پیامِ نتیجه‌ی آخرین عملیات + نوعش (موفق/خطا) — صریح، نه با حدسِ startsWith
+  // روی متنِ فارسی. آن حدس یک‌بار واقعاً اشتباه زد: «محموله ثبت شد.» با «محصول»
+  // شروع نمی‌شود، پس پیامِ موفقیت قرمز و با آیکنِ خطا نشان داده می‌شد.
+  const [msg, setMsgText] = useState("");
+  const [msgOk, setMsgOk] = useState(false);
+  function setMsg(text: string, ok = false) { setMsgText(text); setMsgOk(ok); }
   const [loaded, setLoaded] = useState(false);
 
   // یک بخشِ بازِ کارت در هر لحظه (ویرایش/جایگزین‌ها/قیمت/موجودیِ در راه) — باز
@@ -120,6 +128,9 @@ export default function CatalogPage() {
   const [openFor, setOpenFor] = useState<{ id: string; panel: Panel } | null>(null);
   const isOpen = (id: string, panel: Panel) => openFor?.id === id && openFor.panel === panel;
   function togglePanel(id: string, panel: Panel) {
+    // بدونِ این، پیامِ باقی‌مانده از عملیاتِ کارتِ قبلی زیرِ پنلِ تازه‌بازشده‌ی
+    // این کارت می‌ماند — انگار همین الان همان اتفاق برای این کارت افتاده.
+    if (!isOpen(id, panel)) setMsg("");
     setOpenFor(isOpen(id, panel) ? null : { id, panel });
   }
 
@@ -143,13 +154,21 @@ export default function CatalogPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [uploading, setUploading] = useState(false);
 
-  const load = useCallback(async (tenantId: string) => {
+  // پرسیدنِ /api/substitutes|prices|incoming وقتی آن pageKey را نداری فقط ۴۰۳
+  // می‌گیرد — و چون همه‌ی این ۵ درخواست یک loadErr مشترک دارند، همان ۴۰۳ به‌عنوانِ
+  // «دسترسیِ این بخش را نداری» روی کلِ صفحه (که خودش کاملاً در دسترس است) می‌نشیند.
+  // پس هرکدام را فقط وقتی می‌پرسیم که واقعاً بخشِ نمایش‌دهنده‌اش دیده می‌شود.
+  const load = useCallback(async (c: Ctx) => {
+    const tenantId = c.tenantId;
+    const emptySubs = Promise.resolve({ ok: true as const, data: { items: [] as Sub[] } });
+    const emptyPrices = Promise.resolve({ ok: true as const, data: { lists: [] as PriceList[], items: [] as PriceItem[] } });
+    const emptyIncoming = Promise.resolve({ ok: true as const, data: { items: [] as IncomingItem[] } });
     const [p, s, w, pr, inc] = await Promise.all([
       getJson<{ products: Product[] }>(`/api/products?tenantId=${tenantId}`),
-      getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`),
+      canSeePage(c, "substitutes") ? getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`) : emptySubs,
       getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${tenantId}`),
-      getJson<{ lists: PriceList[]; items: PriceItem[] }>(`/api/prices?tenantId=${tenantId}`),
-      getJson<{ items: IncomingItem[] }>(`/api/incoming?tenantId=${tenantId}`),
+      canSeePage(c, "prices") ? getJson<{ lists: PriceList[]; items: PriceItem[] }>(`/api/prices?tenantId=${tenantId}`) : emptyPrices,
+      canSeePage(c, "incoming") ? getJson<{ items: IncomingItem[] }>(`/api/incoming?tenantId=${tenantId}`) : emptyIncoming,
     ]);
     if (p.ok) setProducts(p.data.products);
     if (s.ok) setSubs(s.data.items);
@@ -161,7 +180,7 @@ export default function CatalogPage() {
     setLoaded(true);
   }, []);
 
-  useEffect(() => { if (ctx) load(ctx.tenantId); }, [ctx, load]);
+  useEffect(() => { if (ctx) load(ctx); }, [ctx, load]);
 
   // آدرسِ ورودی (مثلاً از NavMenu: ?tab=import) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «catalog» است) ناسازگار نشود.
@@ -208,8 +227,8 @@ export default function CatalogPage() {
       setMsg(code === 409 ? "کد یا sku تکراری است." : code === 400 ? "نام، کد و sku الزامی‌اند." : actionError(code));
     } else {
       setForm(EMPTY_FORM);
-      setMsg("محصول ساخته شد.");
-      await load(ctx.tenantId);
+      setMsg("محصول ساخته شد.", true);
+      await load(ctx);
     }
     setPending(null);
   }
@@ -223,7 +242,7 @@ export default function CatalogPage() {
     setPending("img" + productId); setMsg("");
     const res = await postJson("/api/product-images", { tenantId: ctx.tenantId, ...body }, method);
     if (!res.ok) setMsg(actionError(res.status));
-    else await load(ctx.tenantId);
+    else await load(ctx);
     setPending(null);
   }
   function addImg(product: Product, url: string) {
@@ -258,7 +277,7 @@ export default function CatalogPage() {
       boxesPerPallet: bpp.value, sqcmPerBox: spb.value != null ? Math.round(spb.value * 10000) : null,
     }, "PATCH");
     if (!res.ok) setMsg(actionError(res.status));
-    else { setOpenFor(null); setMsg("محصول ویرایش شد."); await load(ctx.tenantId); }
+    else { setOpenFor(null); setMsg("محصول ویرایش شد.", true); await load(ctx); }
     setPending(null);
   }
 
@@ -268,7 +287,7 @@ export default function CatalogPage() {
     const res = await postJson("/api/substitutes",
       { tenantId: ctx.tenantId, variantId, substituteVariantId: subPick, note: subNote });
     if (!res.ok) setMsg(actionError(res.status));
-    else { setSubPick(""); setSubNote(""); await load(ctx.tenantId); }
+    else { setSubPick(""); setSubNote(""); await load(ctx); }
     setPending(null);
   }
 
@@ -277,7 +296,7 @@ export default function CatalogPage() {
     setPending("subdel" + id); setMsg("");
     const res = await postJson("/api/substitutes", { tenantId: ctx.tenantId, id }, "DELETE");
     if (!res.ok) setMsg(actionError(res.status));
-    else await load(ctx.tenantId);
+    else await load(ctx);
     setPending(null);
   }
 
@@ -292,7 +311,7 @@ export default function CatalogPage() {
     if (!res.ok) setMsg(actionError(res.status));
     else {
       setPriceDraft((s) => { const n = { ...s }; delete n[key]; return n; });
-      await load(ctx.tenantId);
+      await load(ctx);
     }
     setPriceSaving(null);
   }
@@ -308,8 +327,8 @@ export default function CatalogPage() {
     });
     if (!res.ok) setMsg(actionError(res.status));
     else {
-      setIncQty(""); setIncNote(""); setMsg("محموله ثبت شد.");
-      await load(ctx.tenantId);
+      setIncQty(""); setIncNote(""); setMsg("محموله ثبت شد.", true);
+      await load(ctx);
     }
     setPending(null);
   }
@@ -323,10 +342,10 @@ export default function CatalogPage() {
       if (action === "arrive") {
         const d = res.data as { offers?: number; notified?: number };
         setMsg(`موجودی وارد شد.${d.offers ? ` ${money(d.offers)} نوبت از صف انتظار پر شد.` : ""}`
-          + `${d.notified ? ` ${money(d.notified)} اعلان «موجود شد» صف شد.` : ""}`);
+          + `${d.notified ? ` ${money(d.notified)} اعلان «موجود شد» صف شد.` : ""}`, true);
         setIncArriving(null); setIncBatch("");
-      } else setMsg("انجام شد.");
-      await load(ctx.tenantId);
+      } else setMsg("انجام شد.", true);
+      await load(ctx);
     }
     setPending(null);
   }
@@ -347,7 +366,7 @@ export default function CatalogPage() {
   // قبلی‌شان دست‌نخورده می‌ماند: هرکدام فقط وقتی دکمه‌اش را می‌بینی که آن دسترسی
   // را داری. اینطور مدیر می‌تواند پشتیبانی را فقط به «قیمت‌گذاری» محدود کند،
   // بدونِ اینکه او بتواند مشخصاتِ محصول را ویرایش کند.
-  const canSee = (key: string) => ctx.role === "admin" || hasPageAccess(ctx.allowedPages, key);
+  const canSee = (key: string) => canSeePage(ctx, key);
   const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
   if (tabs.length === 0)
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
@@ -466,8 +485,8 @@ export default function CatalogPage() {
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
       {msg && (
-        <div className={`banner banner--${msg.startsWith("محصول") || msg.startsWith("ثبت") || msg.startsWith("موجودی") || msg.startsWith("انجام") ? "ok" : "error"}`} role="status">
-          <Icon name={msg.startsWith("محصول") || msg.startsWith("ثبت") || msg.startsWith("موجودی") || msg.startsWith("انجام") ? "check" : "alert"} /><span>{msg}</span>
+        <div className={`banner banner--${msgOk ? "ok" : "error"}`} role="status">
+          <Icon name={msgOk ? "check" : "alert"} /><span>{msg}</span>
         </div>
       )}
 
@@ -556,9 +575,14 @@ export default function CatalogPage() {
                   <span className="subtle num">{p.code}</span>
                   {!p.hasStock && (
                     <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>
-                      بدون موجودی —{" "}
-                      <button type="button" onClick={() => togglePanel(p.id, "incoming")}
-                        style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>افزودنِ موجودی ←</button>
+                      بدون موجودی
+                      {p.variantId && canSee("incoming") && (
+                        <>
+                          {" — "}
+                          <button type="button" onClick={() => togglePanel(p.id, "incoming")}
+                            style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>افزودنِ موجودی ←</button>
+                        </>
+                      )}
                     </span>
                   )}
                 </span>
@@ -654,6 +678,16 @@ export default function CatalogPage() {
                 )}
                 {pending === "edit" + p.id && <span className="spinner" aria-hidden="true" />}
               </div>
+
+              {/* پیامِ نتیجه‌ی عملیات اینجا هم تکرار می‌شود، نه فقط بالای صفحه — چون
+                  این کارت ممکن است خیلی پایین‌تر از بنرِ سراسری باشد و کاربر هرگز آن
+                  را نبیند (مثلاً بعد از «تأیید رسیدن» در فهرستی بلند از محصولات). */}
+              {msg && openFor?.id === p.id && (
+                <div className={`banner banner--${msgOk ? "ok" : "error"}`}
+                  role="status" style={{ marginTop: "var(--sp-3)" }}>
+                  <Icon name={msgOk ? "check" : "alert"} /><span>{msg}</span>
+                </div>
+              )}
 
               {isOpen(p.id, "edit") && (
                 <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
