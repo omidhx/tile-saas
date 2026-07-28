@@ -58,9 +58,22 @@ function QtyPicker({
   const [unit, setUnit] = useState<Unit>("box");
   const [text, setText] = useState(value > 0 ? String(value) : "");
   const hasFactor = boxesPerPallet != null || sqcmPerBox != null;
+  // آخرین مقداری که خودِ این کامپوننت به بیرون فرستاده — برای تشخیصِ اینکه
+  // آیا `value` از بیرون عوض شده (مثلاً سبد بر اساسِ موجودیِ تازه کلمپ شد)
+  // یا فقط اکوی همان چیزی است که خودمان لحظه‌ای پیش فرستادیم.
+  const lastPushed = useRef(value);
 
-  // بعدِ صفرشدنِ سبد از بیرون (مثلاً ثبتِ موفقِ سفارش)، ورودیِ محلی هم پاک شود
-  useEffect(() => { if (value === 0) setText(""); }, [value]);
+  // اگر `value` از بیرون تغییر کرد (نه در واکنش به تایپِ خودِ کاربر اینجا)،
+  // متنِ محلی هم باید هم‌گام شود — وگرنه کادر عددی نشان می‌دهد که دیگر واقعی نیست
+  // (مثلاً بعدِ کلمپ‌شدنِ سبد، ورودی هنوز مقدارِ قدیمیِ بزرگ‌تر را نشان می‌دهد).
+  useEffect(() => {
+    if (value === lastPushed.current) return;
+    lastPushed.current = value;
+    if (value === 0) setText("");
+    else if (unit === "box") setText(String(value));
+    else if (unit === "pallet") setText(fmtUnit(value / (boxesPerPallet ?? 1)));
+    else setText(fmtUnit((value * (sqcmPerBox ?? 0)) / 10000));
+  }, [value]);
 
   function toBoxes(n: number, u: Unit): number {
     if (u === "box") return Math.floor(n);
@@ -71,9 +84,10 @@ function QtyPicker({
   function commit(raw: string, u: Unit) {
     setText(raw);
     const n = Number(normalize(raw).replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(n) || n <= 0) { onChange(0); return; }
+    if (!Number.isFinite(n) || n <= 0) { lastPushed.current = 0; onChange(0); return; }
     const boxes = toBoxes(n, u);
     const clamped = Math.max(0, Math.min(max, boxes));
+    lastPushed.current = clamped;
     onChange(clamped);
     if (clamped !== boxes) {
       // به سقفِ موجودی خورد — متن باید معادلِ واقعیِ رزروشده را نشان دهد، نه عددِ خام‌تایپ‌شده
@@ -163,7 +177,27 @@ export default function ReservePage() {
       getJson<{ entries: WaitlistEntry[] }>(
         `/api/waitlist?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
     ]);
-    if (lotsRes.ok) setLots(lotsRes.data.lots);
+    if (lotsRes.ok) {
+      setLots(lotsRes.data.lots);
+      // اگر لاتی که در سبد بود از فهرست افتاد (مثلاً موجودی‌اش صفر شد چون نمایندهٔ
+      // دیگری زودتر رزرو کرد)، سبد باید هم‌گام بماند — وگرنه یک ردیفِ نامرئی در
+      // جمعِ سبد می‌ماند که کاربر نه می‌بیند نه می‌تواند حذفش کند، و همان مقدار در
+      // «ثبت رزرو» فرستاده می‌شود و کلِ سبد (همه‌یا‌هیچ) را بی‌دلیل رد می‌کند.
+      let staleDropped = false;
+      setCart((prev) => {
+        const next: Record<string, number> = {};
+        for (const [lotId, qty] of Object.entries(prev)) {
+          const lot = lotsRes.data.lots.find((l) => l.lot_id === lotId);
+          if (!lot) { staleDropped = true; continue; }
+          const clamped = Math.min(qty, lot.available);
+          if (clamped !== qty) staleDropped = true;
+          if (clamped > 0) next[lotId] = clamped;
+        }
+        return staleDropped ? next : prev;
+      });
+      if (staleDropped)
+        setMsg({ kind: "err", text: "موجودیِ بعضی اقلامِ سبد تغییر کرد — سبد به‌روزرسانی شد، دوباره بررسی کن." });
+    }
     if (alertsRes.ok) {
       setSubscribed(alertsRes.data.subscribed);
       setOutOfStock(alertsRes.data.outOfStock);
