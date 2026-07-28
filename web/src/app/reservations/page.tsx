@@ -5,7 +5,7 @@ import Icon from "../Icon";
 import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
-import { formatJalaliDateTime } from "@/lib/date";
+import { formatJalaliDateTime, remainingTime } from "@/lib/date";
 
 type Item = { name: string; code: string; quantityBoxes: number };
 type Resv = { id: string; status: string; expiresAt: string; items: Item[] };
@@ -62,14 +62,6 @@ export default function MyReservationsPage() {
     setCancelling(null);
   }
 
-  /** مهلتِ باقی‌مانده + اینکه آیا کم است (برای هشدارِ بصری). */
-  const remaining = (iso: string) => {
-    const min = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
-    if (min <= 0) return { text: "منقضی", low: true };
-    if (min < 60) return { text: `${n(min)} دقیقه`, low: true }; // زیر یک ساعت = کم
-    return { text: `${n(Math.floor(min / 60))} ساعت`, low: false };
-  };
-
   if (state === "none")
     return (
       <main>
@@ -87,7 +79,7 @@ export default function MyReservationsPage() {
   const history = rows.filter((r) => r.status !== "active");
 
   const card = (r: Resv) => {
-    const rem = r.status === "active" ? remaining(r.expiresAt) : null;
+    const rem = r.status === "active" ? remainingTime(r.expiresAt) : null;
     return (
       <div className="card" key={r.id}>
         <div className="row">

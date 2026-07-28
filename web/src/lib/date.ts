@@ -25,6 +25,16 @@ export const formatJalaliDate = (iso: string | Date) =>
   new Intl.DateTimeFormat("fa-IR", { timeZone: TZ, dateStyle: "medium" })
     .format(typeof iso === "string" ? new Date(iso) : iso);
 
+/** مهلتِ باقی‌مانده تا یک زمان (مثلاً انقضای رزرو) + اینکه آیا کم است (هشدارِ بصری).
+ *  هم در «رزروهای من» (نماینده) هم در صفِ تأییدِ پنلِ پشتیبان استفاده می‌شود. */
+export function remainingTime(iso: string): { text: string; low: boolean } {
+  const min = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  const n = (v: number) => v.toLocaleString("fa-IR");
+  if (min <= 0) return { text: "منقضی", low: true };
+  if (min < 60) return { text: `${n(min)} دقیقه`, low: true }; // زیر یک ساعت = کم
+  return { text: `${n(Math.floor(min / 60))} ساعت`, low: false };
+}
+
 export type Jalali = { jy: number; jm: number; jd: number };
 
 /** اجزای شمسیِ یک لحظه، به‌وقت تهران. ارقام لاتین چون برای محاسبه است نه نمایش. */

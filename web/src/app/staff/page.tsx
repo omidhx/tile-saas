@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
+import { remainingTime } from "@/lib/date";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import NavMenu from "../NavMenu";
@@ -16,7 +17,7 @@ type ResvItem = {
   /** برای نمایشِ معادلِ پالت/مترمربع کنارِ عددِ کارتن — بسته‌بندی مشخصه‌ی ثابتِ محصول است. */
   boxesPerPallet: number | null; sqcmPerBox: number | null;
 };
-type Resv = { id: string; status: string; agentName: string; assignedStaffName: string | null; assignedStaffPhone: string | null; items: ResvItem[] };
+type Resv = { id: string; status: string; expiresAt: string; agentName: string; assignedStaffName: string | null; assignedStaffPhone: string | null; items: ResvItem[] };
 type Req = {
   id: string; status: string; agentName: string; approvalMode: "manual" | "auto";
   assignedStaffName: string | null; assignedStaffPhone: string | null;
@@ -192,14 +193,23 @@ export default function StaffPage() {
         {pendingResvs.length > 0 && <span className="badge badge--warn">{num(pendingResvs.length)}</span>}
       </h2>
       {loaded && !loadErr && pendingResvs.length === 0 && <p className="empty">رزروِ فعالی برای تأیید نیست.</p>}
-      {pendingResvs.map((r) => (
+      {pendingResvs.map((r) => {
+        // مهلتِ باقی‌مانده تا انقضا — صف حالا با همین ترتیب دارد (زودترین انقضا اول)،
+        // پس دیدنِ خودِ عدد هم لازم است، وگرنه ترتیب بی‌توضیح می‌ماند.
+        const rem = remainingTime(r.expiresAt);
+        return (
         <div className="card" key={r.id}>
           <div className="row">
             <strong>{r.agentName}</strong>
-            {/* پشتیبانِ ثابت: پورسانتِ این سفارش دستِ کیست — هر staffی که صف را می‌بیند باید بداند */}
-            {(r.assignedStaffName || r.assignedStaffPhone) && (
-              <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
-            )}
+            <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
+              {/* پشتیبانِ ثابت: پورسانتِ این سفارش دستِ کیست — هر staffی که صف را می‌بیند باید بداند */}
+              {(r.assignedStaffName || r.assignedStaffPhone) && (
+                <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
+              )}
+              <span className={rem.low ? "err" : "subtle"} style={{ display: "inline-flex", gap: ".3em", alignItems: "center" }}>
+                <Icon name="clock" size={13} />{rem.text}{!rem.low ? " مانده" : ""}
+              </span>
+            </span>
           </div>
           <div className="muted">
             {/* معادلِ پالت/مترمربع کنارِ هر قلم — سنجشِ سریعِ سفارش‌های بزرگ بدونِ محاسبه‌ی ذهنی */}
@@ -230,7 +240,8 @@ export default function StaffPage() {
             </button>
           </div>
         </div>
-      ))}
+        );
+      })}
 
       <h2>
         درخواست‌های تأییدشده

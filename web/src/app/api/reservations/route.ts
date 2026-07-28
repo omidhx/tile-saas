@@ -54,7 +54,10 @@ export async function GET(req: Request) {
             ? tx`r.status = 'active' AND r.expires_at > now()`
             : tx`r.agent_account_id = ${agentAccountId}`}
       GROUP BY r.id, aa.legal_name, su.full_name, su.phone
-      ORDER BY r.created_at DESC
+      -- صفِ تأیید یعنی صفِ کار: چیزی که زودتر منقضی می‌شود باید اول دیده شود،
+      -- وگرنه رزروِ قدیمی زیرِ رزروهای تازه‌تر گم می‌شود و بدونِ تأیید منقضی می‌شود.
+      -- «رزروهای من» (agent view) نیازی به این ترتیب ندارد چون صفِ کار نیست.
+      ORDER BY ${staffView ? tx`r.expires_at ASC` : tx`r.created_at DESC`}
       LIMIT 50`,
   );
   return NextResponse.json({ reservations });

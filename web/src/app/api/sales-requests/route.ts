@@ -39,7 +39,9 @@ export async function GET(req: Request) {
                         WHERE sd.tenant_id = sr.tenant_id AND sd.sales_request_id = sr.id
                           AND sd.status <> 'cancelled')
       GROUP BY sr.id, aa.legal_name, sr.approval_mode, su.full_name, su.phone
-      ORDER BY sr.created_at DESC
+      -- صفِ کار یعنی FIFO: درخواستِ قدیمی‌تر باید زودتر به حواله تبدیل شود،
+      -- وگرنه نمایندهٔ اول ممکن است پشتِ نماینده‌های تازه‌تر گم بماند.
+      ORDER BY sr.created_at ASC
       LIMIT 50`,
   );
   return NextResponse.json({ requests });
