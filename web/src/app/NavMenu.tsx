@@ -46,12 +46,6 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "کار روزمره",
-    items: [
-      { href: "/staff/customers", label: "مشتریان", pageKey: "customers" },
-    ],
-  },
-  {
     // v6: گزارش‌ها/دفترِ حرکات/دفترِ تغییرات هم همین‌طور زیرِ یک صفحه‌ی تب‌دارند.
     title: "گزارش و ردیابی",
     items: [
@@ -65,6 +59,7 @@ const GROUPS: Group[] = [
     // این لینک‌ها فقط میان‌بُرِ «همان صفحه، همان تب»اند، هرکدام با گیتِ خودشان.
     title: "راه‌اندازی و دسترسی",
     items: [
+      { href: "/staff/customers", label: "مشتریان", pageKey: "customers" },
       { href: "/staff/team", label: "تیمِ کارخانه", deputyOnly: true },
       { href: "/staff/team?tab=agents", label: "نمایندگی‌ها", adminOnly: true },
       { href: "/staff/team?tab=warehouses", label: "انبارها", adminOnly: true },
