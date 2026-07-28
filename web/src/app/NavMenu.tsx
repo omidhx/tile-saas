@@ -52,12 +52,6 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "تنظیمات فروش",
-    items: [
-      { href: "/staff/auto-approve", label: "تأیید خودکار", pageKey: "auto-approve" },
-    ],
-  },
-  {
     // v6: گزارش‌ها/دفترِ حرکات/دفترِ تغییرات هم همین‌طور زیرِ یک صفحه‌ی تب‌دارند.
     title: "گزارش و ردیابی",
     items: [
@@ -67,11 +61,14 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    // v8: تیم/نمایندگی‌ها/انبارها/تأییدِ خودکار زیرِ یک هابِ تب‌دار (/staff/team)اند —
+    // این لینک‌ها فقط میان‌بُرِ «همان صفحه، همان تب»اند، هرکدام با گیتِ خودشان.
     title: "راه‌اندازی و دسترسی",
     items: [
       { href: "/staff/team", label: "تیمِ کارخانه", deputyOnly: true },
-      { href: "/staff/agents", label: "نمایندگی‌ها", adminOnly: true },
-      { href: "/staff/warehouses", label: "انبارها", adminOnly: true },
+      { href: "/staff/team?tab=agents", label: "نمایندگی‌ها", adminOnly: true },
+      { href: "/staff/team?tab=warehouses", label: "انبارها", adminOnly: true },
+      { href: "/staff/team?tab=auto-approve", label: "تأیید خودکار", pageKey: "auto-approve" },
     ],
   },
   {
