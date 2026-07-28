@@ -26,10 +26,14 @@ context‌های کاربر (کدام tenant/نمایندگی). از `user_conte
 ```jsonc
 // 200
 { "contexts": [
-  { "tenantId": "…", "tenantName": "…", "agentAccountId": "…", "agentLegalName": "…" }
+  { "tenantId": "…", "tenantName": "…", "agentAccountId": "…", "agentLegalName": "…",
+    "role": "staff", "canManageAccess": false, "allowedPages": [],
+    "assignedStaffName": null, "assignedStaffPhone": null }
 ] }
 // 401 → { "error": "unauthenticated" }
 ```
+- `allowedPages` خالی یعنی دسترسیِ کامل (پیش‌فرضِ سازگار با قبل)؛ `canManageAccess` فقط برای `role="admin"` معنا دارد.
+- `assignedStaffName`/`assignedStaffPhone` فقط وقتی `agentAccountId` پر است معنا دارند (پشتیبانِ ثابتِ همان نمایندگی).
 
 ## `GET /api/lots?tenantId=…&agentAccountId=…`
 Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **هرگز `bin_location` برنمی‌گرداند.**
@@ -121,7 +125,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/prices` | staff | قیمت‌گذاری (تغییر در `audit_log` ثبت می‌شود) |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
 | `/api/substitutes` | staff | تعریفِ کالای جایگزین |
-| `/api/products` | staff | مدیریتِ محصول: فهرست (با قیمت/گالری/فیلدهای بیشتر/بسته‌بندی)، `POST` ساخت، `PATCH` ویرایشِ ویژگی‌ها + بسته‌بندیِ variant اول (`boxesPerPallet`/`sqcmPerBox`، برای فرمولِ تبدیلِ کارتن⇄پالت⇄مترمربع در `/reserve`؛ کد/sku قفل؛ عکس‌ها در `/api/product-images`) |
+| `/api/products` | staff | مدیریتِ محصول: فهرست (با قیمت/گالری/فیلدهای بیشتر/بسته‌بندی)، `POST` ساخت، `PATCH` ویرایشِ ویژگی‌ها + بسته‌بندیِ variant اول (`boxesPerPallet`/`sqcmPerBox`، برای فرمولِ تبدیلِ کارتن⇄پالت⇄مترمربع در `/reserve`؛ کد/sku قفل؛ عکس‌ها در `/api/product-images`). `POST` اختیاراً `initialStock: {warehouseId, quantityBoxes}` می‌گیرد — موجودیِ اولیه از همان مسیرِ لجرِ import/incoming (`transaction_type='initial_stock'`)، نه UPDATE مستقیم |
 | `/api/upload` | staff | آپلودِ عکس (multipart) → URL برمی‌گرداند |
 | `/api/product-images` | staff | گالریِ محصول: `POST` افزودن، `PATCH` اصلی‌کردن، `DELETE` حذف |
 | `/api/shared-catalog` | agent | کاتالوگِ سفارشیِ نماینده: فهرست/ساخت/باطل‌کردن/حذف. صفحه‌ی عمومیِ مشتری در `/c/<slug>/<token>` (بدونِ لاگین، فقط عکس/مشخصات/موجود، بدونِ قیمت) |
@@ -131,9 +135,9 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/ledger` | staff | دفتر حرکات + تطبیق (drift) |
 | `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی |
 | `/api/catalog` | staff | فهرستِ کمکیِ محصولات |
-| `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر) برای admin |
-| `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`) | فهرست؛ ساخت/تغییرِ نام برای admin (بدونِ حذف — `inventory_lot` FK دارد) |
-| `/api/team` | admin + مدیرِ دسترسی (`can_manage_access`) | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن/دسترسیِ ریزدانه، حذفِ واقعی (گاردِ last_admin/last_deputy/linked_to_agent) |
+| `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`، `DELETE`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر، تخصیصِ `assignedStaffUserId` به‌عنوانِ پشتیبانِ ثابت، حذفِ واقعی با گاردِ سابقه) برای admin. `detail=1` یک `staffOptions` هم برمی‌گرداند (برای دراپ‌داونِ انتخابِ پشتیبان) |
+| `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`/`DELETE`) | فهرست؛ ساخت/تغییرِ نام/حذف برای admin (حذف فقط بدونِ سابقه — گاردِ `has_history`) |
+| `/api/team` | admin + مدیرِ دسترسی (`can_manage_access`) | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری+نامِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن/دسترسیِ ریزدانه (`allowedPages`)/نام، حذفِ واقعی (گاردِ last_admin/last_deputy/linked_to_agent) |
 
 ## Rate limits
 پیاده‌شده روی: `login`، `reservations` (۳۰/دقیقه per user)، `auth/password` (۵/۱۵دقیقه)،

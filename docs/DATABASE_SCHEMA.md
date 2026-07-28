@@ -4,9 +4,9 @@
 
 ## نقشه‌ی جدول‌ها (ERD خلاصه)
 ```
-app_user (سراسری) ──< tenant_membership >── tenant
+app_user (سراسری، full_name nullable) ──< tenant_membership (can_manage_access, allowed_pages) >── tenant
                           │                   │
-tenant ──< agent_account ──< agent_account_user (FK به membership: کاربر باید عضو tenant باشه)
+tenant ──< agent_account (assigned_staff_user_id → app_user) ──< agent_account_user (FK به membership)
    │
    ├─ brand ──< product ──< product_variant ──< inventory_lot ──1:1─ inventory_balance
    │              └──< product_image (گالری؛ اصلی = کمترین sort_order، کَش در product.image_url) (v2)
@@ -48,6 +48,9 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
 | سقفِ تأییدِ خودکار: NULL=ارث/خاموش، ۰=هرگز | `auto_approve_limit` روی tenant و agent_account |
 | چرا سفارش تأیید شد | `sales_request.approval_mode` + `auto_approve_limit_applied` (snapshot) |
 | نشستِ باطل‌شده | `app_user.session_epoch` (شمارنده، نه timestamp — مرزِ ثانیه ندارد) |
+| دسترسیِ ریزدانه‌ی صفحه برای staff | `tenant_membership.allowed_pages` (TEXT[]، خالی=کامل) + `can_manage_access` (فقط برای role='admin' معنا دارد) |
+| پشتیبانِ ثابتِ نمایندگی (بدونِ composite FK چون app_user سراسری است) | `agent_account.assigned_staff_user_id UUID REFERENCES app_user(id)`؛ عضویتِ tenant در لایه‌ی app چک می‌شود (`isActiveStaffMember`) |
+| موجودیِ اولیه از مسیرِ لجر می‌آید، نه UPDATE مستقیم | `inventory_transaction.transaction_type='initial_stock'` هنگامِ ساختِ محصول با انبار+تعداد |
 
 ## ایندکس‌های حیاتی
 `idx_reservation_item_lot` و `idx_active_reservation_expiry` (partial، `WHERE status='active'`) و `idx_reservation_items_lot_qty` (covering) — همه برای کوئریِ `held`. بقیه در schema.sql بخش ۵.۱۰.
