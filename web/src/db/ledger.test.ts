@@ -57,7 +57,7 @@ test("کلِ زنجیره (import→رزرو→تأیید→بارگیری) لج
   // (طولِ نتیجه چک می‌شود نه deepEqual: postgres.js زیرکلاسِ Result برمی‌گرداند نه آرایه‌ی ساده)
   assert.equal((await findDrift(T)).length, 0, "بعد از کلِ زنجیره نباید هیچ ناترازی باشد");
 
-  const moves = await listMovements({ tenantId: T });
+  const { items: moves } = await listMovements({ tenantId: T });
   const types = moves.map((m) => m.type);
   assert.ok(types.includes("import_snapshot"), "ورود اکسل ثبت شده");
   assert.ok(types.includes("reservation_convert"), "تأیید ثبت شده");
@@ -75,4 +75,22 @@ test("ناترازی را می‌گیرد: UPDATE دستی روی موجودی �
 
   await sql`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes - 5 WHERE lot_id = ${lot.id}`;
   assert.equal((await findDrift(T)).length, 0, "بعد از برگرداندن، دوباره تراز");
+});
+
+test("listMovements: صفحه‌بندی (hasMore) + جستجو روی نامِ کالا", async () => {
+  const total = (await listMovements({ tenantId: T, limit: 1000 })).items.length;
+  assert.ok(total >= 3, "تستِ قبلی چند حرکت ثبت کرده باشد");
+
+  const page1 = await listMovements({ tenantId: T, limit: total - 1 });
+  assert.equal(page1.items.length, total - 1);
+  assert.equal(page1.hasMore, true);
+
+  const page2 = await listMovements({ tenantId: T, limit: total - 1, offset: total - 1 });
+  assert.equal(page2.items.length, 1);
+  assert.equal(page2.hasMore, false);
+
+  const found = await listMovements({ tenantId: T, q: "گرانیت" });
+  assert.equal(found.items.length, total, "همه‌ی حرکات همین یک کالا را دارند");
+  const notFound = await listMovements({ tenantId: T, q: "چیزیِ نامرتبط" });
+  assert.equal(notFound.items.length, 0);
 });

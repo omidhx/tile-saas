@@ -126,8 +126,8 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/alerts` | نماینده | «خبرم کن» + ناموجودها + **جایگزین‌ها** + **موجودی در راه** |
 | `/api/waitlist` | نماینده | صف انتظار (نوبت گرفتن/انصراف) |
 | `/api/sales-requests` | staff | سفارش‌های تأییدشده (+`approvalMode`) |
-| `/api/sales-dispatches` (+`/:id/status`) | staff | حواله (**آرایه** — چندانباره) و گذارِ وضعیت |
-| `/api/backorders` (+`/:itemId/status`) | staff | backorder |
+| `/api/sales-dispatches` (+`/:id/status`) | staff | حواله (**آرایه** — چندانباره) و گذارِ وضعیت؛ GET صفحه‌بندی‌شده (`&offset`) + جستجو (`&q`) با `hasMore` |
+| `/api/backorders` (+`/:itemId/status`) | staff | backorder؛ GET صفحه‌بندی‌شده (`&offset`) + جستجو (`&q`) با `hasMore` |
 | `/api/imports` | staff | ورودِ اکسل snapshot |
 | `/api/prices` | staff | قیمت‌گذاری (تغییر در `audit_log` ثبت می‌شود) |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
@@ -139,8 +139,8 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
 | `/api/reports` | staff | گزارش‌های مدیریتی |
-| `/api/ledger` | staff | دفتر حرکات + تطبیق (drift) |
-| `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی |
+| `/api/ledger` | staff | دفتر حرکات (صفحه‌بندی‌شده، `&offset`/`&q`، `hasMore`) + تطبیق (drift) |
+| `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی؛ صفحه‌بندی‌شده (`&offset`/`&q`)، `hasMore` |
 | `/api/catalog` | staff | فهرستِ کمکیِ محصولات |
 | `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`، `DELETE`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر، تخصیصِ `assignedStaffUserId` به‌عنوانِ پشتیبانِ ثابت، حذفِ واقعی با گاردِ سابقه) برای admin. `detail=1` یک `staffOptions` هم برمی‌گرداند (برای دراپ‌داونِ انتخابِ پشتیبان) |
 | `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`/`DELETE`) | فهرست؛ ساخت/تغییرِ نام/حذف برای admin (حذف فقط بدونِ سابقه — گاردِ `has_history`) |

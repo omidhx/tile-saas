@@ -11,6 +11,42 @@ export type CreateDispatchResult =
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
 
+export type DispatchListItem = {
+  id: string; dispatchCode: string; status: DispatchStatus;
+  customerName: string | null; items: number; warehouseName: string | null;
+};
+
+/**
+ * فهرستِ حواله‌ها برای پنلِ staff — صفحه‌بندی‌شده و اختیاراً فیلترشده با جستجو
+ * (کدِ حواله/نامِ مشتری/نمایندگی)، چون بدونِ آن بعدِ چند ماه کار، `LIMIT` ثابت
+ * حواله‌های قدیمی را از دیدِ پشتیبان کاملاً بیرون می‌انداخت — نه خطا، نه نشانه،
+ * فقط دیگر «آنجا» نبودند.
+ *
+ * الگوی limit+1: یک ردیفِ اضافه می‌گیریم؛ اگر برگشت یعنی صفحه‌ی بعدی هست
+ * (`hasMore`) — بدونِ یک COUNT(*) جداگانه روی جدولی که می‌تواند بزرگ باشد.
+ */
+export async function listDispatches(p: {
+  tenantId: string; q?: string; limit?: number; offset?: number;
+}): Promise<{ items: DispatchListItem[]; hasMore: boolean }> {
+  const limit = p.limit ?? 50, offset = p.offset ?? 0, q = p.q?.trim();
+  const rows = await withTenant(p.tenantId, (tx) =>
+    tx<DispatchListItem[]>`
+      SELECT sd.id, sd.dispatch_code AS "dispatchCode", sd.status,
+             sd.customer_name AS "customerName", count(sdi.id)::int AS items,
+             w.name AS "warehouseName"
+      FROM sales_dispatch sd
+      LEFT JOIN sales_dispatch_item sdi ON sdi.dispatch_id = sd.id
+      LEFT JOIN warehouse w ON w.id = sd.warehouse_id
+      LEFT JOIN agent_account aa ON aa.id = sd.agent_account_id
+      WHERE sd.tenant_id = ${p.tenantId}
+        AND ${q ? tx`(sd.dispatch_code ILIKE ${"%" + q + "%"} OR sd.customer_name ILIKE ${"%" + q + "%"} OR aa.legal_name ILIKE ${"%" + q + "%"})` : tx`TRUE`}
+      GROUP BY sd.id, w.name
+      ORDER BY sd.created_at DESC
+      LIMIT ${limit + 1} OFFSET ${offset}`,
+  );
+  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
+}
+
 /**
  * کدِ بعدیِ حواله برای این tenant: D-1404-003 (یا BO-... برای backorder).
  * schema از اول گفته «auto-generated سمت اپ» ولی فرانت `D-${Date.now()}` می‌فرستاد —
@@ -272,6 +308,33 @@ export async function createBackorderDispatch(params: {
         VALUES (${tenantId}, ${d.id}, NULL, 'backorder', 'pending_production', ${it.variantId}, ${it.quantityBoxes})`;
     return { ok: true, dispatchId: d.id };
   });
+}
+
+export type BackorderListItem = {
+  id: string; status: BackorderStatus; qty: number; name: string; code: string;
+  dispatchCode: string; agentName: string;
+};
+
+/** فهرستِ اقلامِ backorder، صفحه‌بندی‌شده + جستجو (کالا/کد/نمایندگی/کدِ حواله) — همان دلیلِ listDispatches. */
+export async function listBackorderItems(p: {
+  tenantId: string; q?: string; limit?: number; offset?: number;
+}): Promise<{ items: BackorderListItem[]; hasMore: boolean }> {
+  const limit = p.limit ?? 100, offset = p.offset ?? 0, q = p.q?.trim();
+  const rows = await withTenant(p.tenantId, (tx) =>
+    tx<BackorderListItem[]>`
+      SELECT sdi.id, sdi.backorder_status AS status, sdi.quantity_boxes AS qty,
+             p.name, p.code, sd.dispatch_code AS "dispatchCode", aa.legal_name AS "agentName"
+      FROM sales_dispatch_item sdi
+      JOIN sales_dispatch sd ON sd.id = sdi.dispatch_id
+      JOIN agent_account aa ON aa.id = sd.agent_account_id
+      JOIN product_variant pv ON pv.id = sdi.variant_id
+      JOIN product p ON p.id = pv.product_id
+      WHERE sdi.tenant_id = ${p.tenantId} AND sdi.fulfillment_type = 'backorder'
+        AND ${q ? tx`(p.name ILIKE ${"%" + q + "%"} OR p.code ILIKE ${"%" + q + "%"} OR aa.legal_name ILIKE ${"%" + q + "%"} OR sd.dispatch_code ILIKE ${"%" + q + "%"})` : tx`TRUE`}
+      ORDER BY sd.created_at DESC
+      LIMIT ${limit + 1} OFFSET ${offset}`,
+  );
+  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
 }
 
 /** گذارِ backorder_status یک item (pending_production → ready → fulfilled | cancelled). بدون اثر موجودی. */

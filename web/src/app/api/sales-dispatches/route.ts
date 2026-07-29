@@ -1,35 +1,24 @@
 import { NextResponse } from "next/server";
-import { withTenant } from "@/db/client";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
-import { createDispatchFromRequest, createBackorderDispatch } from "@/db/dispatches";
+import { createDispatchFromRequest, createBackorderDispatch, listDispatches } from "@/db/dispatches";
 
-/** GET /api/sales-dispatches?tenantId — لیست حواله‌ها برای پنل staff. */
+/** GET /api/sales-dispatches?tenantId[&q][&offset] — لیستِ حواله‌ها برای پنل staff، صفحه‌بندی‌شده. */
 export async function GET(req: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
+  const u = new URL(req.url);
+  const tenantId = u.searchParams.get("tenantId") ?? "";
+  const q = u.searchParams.get("q") ?? undefined;
+  const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
   try {
     await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
   }
-  const dispatches = await withTenant(tenantId, (tx) =>
-    tx`
-      SELECT sd.id, sd.dispatch_code AS "dispatchCode", sd.status,
-             sd.customer_name AS "customerName", count(sdi.id)::int AS items,
-             -- انباردار باید بداند این حواله در کدام انبار بار می‌زند (backorder: NULL)
-             w.name AS "warehouseName"
-      FROM sales_dispatch sd
-      LEFT JOIN sales_dispatch_item sdi ON sdi.dispatch_id = sd.id
-      LEFT JOIN warehouse w ON w.id = sd.warehouse_id
-      WHERE sd.tenant_id = ${tenantId}
-      GROUP BY sd.id, w.name
-      ORDER BY sd.created_at DESC
-      LIMIT 50`,
-  );
-  return NextResponse.json({ dispatches });
+  const { items: dispatches, hasMore } = await listDispatches({ tenantId, q, offset });
+  return NextResponse.json({ dispatches, hasMore });
 }
 
 /**

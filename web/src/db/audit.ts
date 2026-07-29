@@ -63,9 +63,12 @@ export type AuditRow = {
   label: string | null;
 };
 
-/** آخرین تغییرات، تازه‌ترین اول. */
-export async function listAudit(p: { tenantId: string; limit?: number }): Promise<AuditRow[]> {
-  return withTenant(p.tenantId, (tx) => tx<AuditRow[]>`
+/** آخرین تغییرات، تازه‌ترین اول، صفحه‌بندی‌شده + جستجو (نامِ کالا/نمایندگی/شماره‌ی عامل). */
+export async function listAudit(p: {
+  tenantId: string; q?: string; limit?: number; offset?: number;
+}): Promise<{ items: AuditRow[]; hasMore: boolean }> {
+  const limit = p.limit ?? 100, offset = p.offset ?? 0, q = p.q?.trim();
+  const rows = await withTenant(p.tenantId, (tx) => tx<AuditRow[]>`
     SELECT a.id, a.action, a.entity, a.entity_id AS "entityId",
            a.old_value AS "oldValue", a.new_value AS "newValue",
            a.created_at AS "createdAt", u.phone AS "actorPhone",
@@ -78,6 +81,8 @@ export async function listAudit(p: { tenantId: string; limit?: number }): Promis
     LEFT JOIN agent_account aa   ON aa.id = a.entity_id AND a.entity = 'agent_account'
     LEFT JOIN tenant t           ON t.id = a.entity_id AND a.entity = 'tenant'
     WHERE a.tenant_id = ${p.tenantId}
+      AND ${q ? tx`(p.name ILIKE ${"%" + q + "%"} OR aa.legal_name ILIKE ${"%" + q + "%"} OR t.name ILIKE ${"%" + q + "%"} OR u.phone ILIKE ${"%" + q + "%"})` : tx`TRUE`}
     ORDER BY a.created_at DESC
-    LIMIT ${p.limit ?? 100}`);
+    LIMIT ${limit + 1} OFFSET ${offset}`);
+  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
 }

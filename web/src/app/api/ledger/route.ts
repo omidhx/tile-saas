@@ -4,7 +4,7 @@ import { authorizeStaffPage, AuthzError } from "@/auth/authz";
 import { listMovements, findDrift } from "@/db/ledger";
 
 /**
- * GET /api/ledger?tenantId[&lotId] — حرکات لجر + گزارش ناترازی (staff).
+ * GET /api/ledger?tenantId[&lotId][&q][&offset] — حرکات لجر (صفحه‌بندی‌شده) + گزارش ناترازی (staff).
  * staff-only: لجر شاملِ همه‌ی نمایندگی‌هاست.
  */
 export async function GET(req: Request) {
@@ -14,6 +14,8 @@ export async function GET(req: Request) {
   const u = new URL(req.url);
   const tenantId = u.searchParams.get("tenantId") ?? "";
   const lotId = u.searchParams.get("lotId") ?? undefined;
+  const q = u.searchParams.get("q") ?? undefined;
+  const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
   try {
     await authorizeStaffPage(userId, tenantId, "ledger");
   } catch (e) {
@@ -21,9 +23,9 @@ export async function GET(req: Request) {
     throw e;
   }
 
-  const [movements, drift] = await Promise.all([
-    listMovements({ tenantId, lotId }),
+  const [{ items: movements, hasMore }, drift] = await Promise.all([
+    listMovements({ tenantId, lotId, q, offset }),
     findDrift(tenantId),
   ]);
-  return NextResponse.json({ movements, drift });
+  return NextResponse.json({ movements, hasMore, drift });
 }

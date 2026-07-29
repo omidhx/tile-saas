@@ -12,9 +12,16 @@ export type Movement = {
   name: string; code: string; batch: string | null; actor: string | null;
 };
 
-/** حرکات اخیر (اختیاراً فیلترشده روی یک lot). */
-export async function listMovements(p: { tenantId: string; lotId?: string; limit?: number }) {
-  return withTenant(p.tenantId, (tx) =>
+/**
+ * حرکات اخیر (اختیاراً فیلترشده روی یک lot)، صفحه‌بندی‌شده + جستجو (کالا/کد/بچ) —
+ * `inventory_transaction` append-only است و فقط بزرگ‌تر می‌شود؛ بدونِ صفحه‌بندی،
+ * بعدِ چند ماه حرکتِ قدیمی از `LIMIT` ثابت بیرون می‌افتد و دیگر قابلِ دیدن نیست.
+ */
+export async function listMovements(p: {
+  tenantId: string; lotId?: string; q?: string; limit?: number; offset?: number;
+}): Promise<{ items: Movement[]; hasMore: boolean }> {
+  const limit = p.limit ?? 100, offset = p.offset ?? 0, q = p.q?.trim();
+  const rows = await withTenant(p.tenantId, (tx) =>
     tx<Movement[]>`
       SELECT t.id, t.transaction_type AS type,
              t.on_hand_delta_boxes AS "onHandDelta", t.allocated_delta_boxes AS "allocatedDelta",
@@ -27,9 +34,11 @@ export async function listMovements(p: { tenantId: string; lotId?: string; limit
       LEFT JOIN app_user u     ON u.id = t.actor_user_id
       WHERE t.tenant_id = ${p.tenantId}
         AND ${p.lotId ? tx`t.lot_id = ${p.lotId}` : tx`TRUE`}
+        AND ${q ? tx`(p.name ILIKE ${"%" + q + "%"} OR p.code ILIKE ${"%" + q + "%"} OR l.batch_number ILIKE ${"%" + q + "%"})` : tx`TRUE`}
       ORDER BY t.created_at DESC
-      LIMIT ${p.limit ?? 100}`,
+      LIMIT ${limit + 1} OFFSET ${offset}`,
   );
+  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
 }
 
 export type Drift = {

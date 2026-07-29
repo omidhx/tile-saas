@@ -4,7 +4,7 @@ import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
-import { createDispatchFromRequest, setDispatchStatus } from "./dispatches";
+import { createDispatchFromRequest, setDispatchStatus, listDispatches } from "./dispatches";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const AG = "a5555555-5555-5555-5555-555555555555";
@@ -111,4 +111,28 @@ test("guard: حواله‌ی دوم برای همان request → already_dispat
   // cancel، request را هم cancelled می‌کند؛ برای تستِ گارد کافی است دلیلِ رد عوض شده باشد
   const d3 = await createDispatchFromRequest({ tenantId: T, salesRequestId: reqId, createdByUserId: U });
   assert.equal(!d3.ok && d3.reason, "request_not_approved", "بعد از لغو، دیگر already_dispatched نیست");
+});
+
+test("listDispatches: صفحه‌بندی با limit+1 (hasMore درست) + جستجو روی کدِ حواله", async () => {
+  for (const code of ["D-PAGE-1", "D-PAGE-2", "D-PAGE-3"]) {
+    const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: code, items: [{ lotId: LOT, quantityBoxes: 1 }] });
+    const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+    await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: code });
+  }
+
+  // تستِ قبلی هم در همین tenant حواله ساخته — به‌جای عددِ ثابت، نسبت به کلِ فعلی می‌سنجیم
+  const total = (await listDispatches({ tenantId: T, limit: 1000 })).items.length;
+  assert.ok(total >= 3);
+
+  const page1 = await listDispatches({ tenantId: T, limit: total - 1 });
+  assert.equal(page1.items.length, total - 1, "فقط limit تا برمی‌گرده، نه limit+1");
+  assert.equal(page1.hasMore, true, "ردیفِ اضافه‌ی limit+1 باید hasMore=true بدهد");
+
+  const page2 = await listDispatches({ tenantId: T, limit: total - 1, offset: total - 1 });
+  assert.equal(page2.items.length, 1, "صفحه‌ی دوم باید دقیقاً بقیه را بدهد");
+  assert.equal(page2.hasMore, false, "بعدِ آخرین صفحه دیگه hasMore نیست");
+
+  const found = await listDispatches({ tenantId: T, q: "PAGE-2" });
+  assert.equal(found.items.length, 1);
+  assert.equal(found.items[0].dispatchCode, "D-PAGE-2");
 });

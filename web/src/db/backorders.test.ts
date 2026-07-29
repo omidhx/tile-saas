@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
-import { createBackorderDispatch, setBackorderItemStatus } from "./dispatches";
+import { createBackorderDispatch, setBackorderItemStatus, listBackorderItems } from "./dispatches";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const AG = "a5555555-5555-5555-5555-555555555555";
@@ -82,4 +82,18 @@ test("no_items رد می‌شه", async () => {
   const d = await createBackorderDispatch({ tenantId: T, agentAccountId: AG, createdByUserId: U, dispatchCode: "BO-4", items: [] });
   assert.equal(d.ok, false);
   assert.equal(!d.ok && d.reason, "no_items");
+});
+
+test("listBackorderItems: صفحه‌بندی (hasMore) + جستجو روی کدِ حواله", async () => {
+  await createBackorderDispatch({ tenantId: T, agentAccountId: AG, createdByUserId: U, dispatchCode: "BO-SRCH", items: [{ variantId: VAR, quantityBoxes: 3 }] });
+
+  const total = (await listBackorderItems({ tenantId: T, limit: 1000 })).items.length;
+  assert.ok(total >= 1);
+
+  const page1 = await listBackorderItems({ tenantId: T, limit: total - 1 || 1 });
+  assert.equal(page1.hasMore, total > 1, "hasMore فقط وقتی بیشتر از limit مانده باشد");
+
+  const found = await listBackorderItems({ tenantId: T, q: "BO-SRCH" });
+  assert.equal(found.items.length, 1);
+  assert.equal(found.items[0].dispatchCode, "BO-SRCH");
 });

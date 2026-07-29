@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import Link from "next/link";
@@ -51,9 +51,17 @@ export default function StaffPage() {
   const [pendingResvs, setPendingResvs] = useState<Resv[]>([]);
   const [reqs, setReqs] = useState<Req[]>([]);
   const [disps, setDisps] = useState<Disp[]>([]);
+  const [dispsQ, setDispsQ] = useState("");
+  const [dispsHasMore, setDispsHasMore] = useState(false);
+  const [dispsBusy, setDispsBusy] = useState(false);
+  const dispsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [backorders, setBackorders] = useState<Backorder[]>([]);
+  const [boListQ, setBoListQ] = useState("");
+  const [boHasMore, setBoHasMore] = useState(false);
+  const [boBusy, setBoBusy] = useState(false);
+  const boListDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [boAgent, setBoAgent] = useState("");
   const [boVariant, setBoVariant] = useState("");
   const [boQty, setBoQty] = useState("");
@@ -63,26 +71,75 @@ export default function StaffPage() {
   const [note, setNote] = useState("");
   const [loaded, setLoaded] = useState(false);
 
+  /** حواله‌ها و backorderها append-only-اند و فقط بزرگ‌تر می‌شوند — صفحه‌بندی‌شده
+   *  می‌آیند تا بعدِ چند ماه کار، تاریخچه‌ی قدیمی زیرِ LIMIT ثابت گم نشود. */
+  const fetchDispatches = useCallback((tenantId: string, q: string, offset: number) =>
+    getJson<{ dispatches: Disp[]; hasMore: boolean }>(
+      `/api/sales-dispatches?tenantId=${tenantId}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ""}`), []);
+
+  const fetchBackorders = useCallback((tenantId: string, q: string, offset: number) =>
+    getJson<{ items: Backorder[]; hasMore: boolean }>(
+      `/api/backorders?tenantId=${tenantId}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ""}`), []);
+
   const load = useCallback(async (c: Ctx) => {
     const [rv, r, d, ag, cat, bo] = await Promise.all([
       getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`), // staff view: active همه
       getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
-      getJson<{ dispatches: Disp[] }>(`/api/sales-dispatches?tenantId=${c.tenantId}`),
+      fetchDispatches(c.tenantId, "", 0),
       getJson<{ agents: Agent[] }>(`/api/agents?tenantId=${c.tenantId}`),
       getJson<{ variants: Variant[] }>(`/api/catalog?tenantId=${c.tenantId}`),
-      getJson<{ items: Backorder[] }>(`/api/backorders?tenantId=${c.tenantId}`),
+      fetchBackorders(c.tenantId, "", 0),
     ]);
     if (rv.ok) setPendingResvs(rv.data.reservations);
     if (r.ok) setReqs(r.data.requests);
-    if (d.ok) setDisps(d.data.dispatches);
+    // اکشن یعنی «برگرد به نمای پیش‌فرض» — جستجوی فعال هم همین‌جا ریست می‌شود
+    if (d.ok) { setDisps(d.data.dispatches); setDispsHasMore(d.data.hasMore); setDispsQ(""); }
     if (ag.ok) setAgents(ag.data.agents);
     if (cat.ok) setVariants(cat.data.variants);
-    if (bo.ok) setBackorders(bo.data.items);
+    if (bo.ok) { setBackorders(bo.data.items); setBoHasMore(bo.data.hasMore); setBoListQ(""); }
     // هر شکستی را صریح نشان بده — وگرنه صفحه «چیزی برای تأیید نیست» می‌گوید در حالی که نگرفته
     const failed = [rv, r, d, ag, cat, bo].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
-  }, []);
+  }, [fetchDispatches, fetchBackorders]);
+
+  function searchDispatches(v: string) {
+    setDispsQ(v);
+    if (dispsDebounce.current) clearTimeout(dispsDebounce.current);
+    dispsDebounce.current = setTimeout(async () => {
+      if (!ctx) return;
+      const res = await fetchDispatches(ctx.tenantId, v, 0);
+      if (res.ok) { setDisps(res.data.dispatches); setDispsHasMore(res.data.hasMore); }
+    }, 300);
+  }
+
+  async function loadMoreDispatches() {
+    if (!ctx) return;
+    setDispsBusy(true);
+    try {
+      const res = await fetchDispatches(ctx.tenantId, dispsQ, disps.length);
+      if (res.ok) { setDisps((prev) => [...prev, ...res.data.dispatches]); setDispsHasMore(res.data.hasMore); }
+    } finally { setDispsBusy(false); }
+  }
+
+  function searchBackorders(v: string) {
+    setBoListQ(v);
+    if (boListDebounce.current) clearTimeout(boListDebounce.current);
+    boListDebounce.current = setTimeout(async () => {
+      if (!ctx) return;
+      const res = await fetchBackorders(ctx.tenantId, v, 0);
+      if (res.ok) { setBackorders(res.data.items); setBoHasMore(res.data.hasMore); }
+    }, 300);
+  }
+
+  async function loadMoreBackorders() {
+    if (!ctx) return;
+    setBoBusy(true);
+    try {
+      const res = await fetchBackorders(ctx.tenantId, boListQ, backorders.length);
+      if (res.ok) { setBackorders((prev) => [...prev, ...res.data.items]); setBoHasMore(res.data.hasMore); }
+    } finally { setBoBusy(false); }
+  }
 
   /** هر عملِ نوشتن از این عبور می‌کند: شکست را صریح نشان می‌دهد، نه اینکه فقط
    *  load() صدا بزند و رزروِ تأییدنشده را همان‌جا بگذارد. note هم اینجا پاک
@@ -274,7 +331,9 @@ export default function StaffPage() {
       <div className="col">
 
       <h2>حواله‌ها</h2>
-      {loaded && !loadErr && disps.length === 0 && <p className="empty">حواله‌ای نیست.</p>}
+      <input type="search" aria-label="جستجوی حواله" placeholder="جستجو: کدِ حواله، مشتری، نمایندگی…"
+        value={dispsQ} onChange={(e) => searchDispatches(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
+      {loaded && !loadErr && disps.length === 0 && <p className="empty">{dispsQ ? "چیزی پیدا نشد." : "حواله‌ای نیست."}</p>}
       {disps.map((d) => (
         <div className="card" key={d.id}>
           <div className="row">
@@ -303,6 +362,11 @@ export default function StaffPage() {
           </div>
         </div>
       ))}
+      {dispsHasMore && (
+        <button onClick={loadMoreDispatches} aria-busy={dispsBusy} disabled={dispsBusy} style={{ width: "100%" }}>
+          {dispsBusy && <span className="spinner" aria-hidden="true" />}بیشتر
+        </button>
+      )}
 
       <h2>Backorder (محصول ناموجود)</h2>
       <div className="card">
@@ -326,7 +390,9 @@ export default function StaffPage() {
           </button>
         </div>
       </div>
-      {loaded && !loadErr && backorders.length === 0 && <p className="empty">backorderی نیست.</p>}
+      <input type="search" aria-label="جستجوی backorder" placeholder="جستجو: کالا، کد، نمایندگی، کدِ حواله…"
+        value={boListQ} onChange={(e) => searchBackorders(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
+      {loaded && !loadErr && backorders.length === 0 && <p className="empty">{boListQ ? "چیزی پیدا نشد." : "backorderی نیست."}</p>}
       {backorders.map((b) => (
         <div className="card" key={b.id}>
           <div className="row">
@@ -347,6 +413,11 @@ export default function StaffPage() {
           </div>
         </div>
       ))}
+      {boHasMore && (
+        <button onClick={loadMoreBackorders} aria-busy={boBusy} disabled={boBusy} style={{ width: "100%" }}>
+          {boBusy && <span className="spinner" aria-hidden="true" />}بیشتر
+        </button>
+      )}
 
       </div>{/* /col — پیگیری */}
       </div>{/* /cols */}

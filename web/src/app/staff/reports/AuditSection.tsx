@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "../../Icon";
 import { getJson, loadError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
@@ -28,17 +28,42 @@ function money(v: number | null, action: string) {
 
 export default function AuditSection({ ctx, onLedger }: { ctx: Ctx; onLedger: () => void }) {
   const [rows, setRows] = useState<Entry[]>([]);
+  const [q, setQ] = useState("");
+  const [hasMore, setHasMore] = useState(false);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [loaded, setLoaded] = useState(false);
 
+  const fetchEntries = useCallback((tenantId: string, query: string, offset: number) =>
+    getJson<{ entries: Entry[]; hasMore: boolean }>(
+      `/api/audit?tenantId=${tenantId}&offset=${offset}${query ? `&q=${encodeURIComponent(query)}` : ""}`), []);
+
   const load = useCallback(async (tenantId: string) => {
-    const res = await getJson<{ entries: Entry[] }>(`/api/audit?tenantId=${tenantId}`);
-    if (res.ok) { setRows(res.data.entries); setLoadErr(""); }
+    const res = await fetchEntries(tenantId, "", 0);
+    if (res.ok) { setRows(res.data.entries); setHasMore(res.data.hasMore); setQ(""); setLoadErr(""); }
     else setLoadErr(loadError(res.status));
     setLoaded(true);
-  }, []);
+  }, [fetchEntries]);
 
   useEffect(() => { load(ctx.tenantId); }, [ctx.tenantId, load]);
+
+  function search(v: string) {
+    setQ(v);
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(async () => {
+      const res = await fetchEntries(ctx.tenantId, v, 0);
+      if (res.ok) { setRows(res.data.entries); setHasMore(res.data.hasMore); }
+    }, 300);
+  }
+
+  async function loadMore() {
+    setMoreBusy(true);
+    try {
+      const res = await fetchEntries(ctx.tenantId, q, rows.length);
+      if (res.ok) { setRows((prev) => [...prev, ...res.data.entries]); setHasMore(res.data.hasMore); }
+    } finally { setMoreBusy(false); }
+  }
 
   return (
     <>
@@ -62,8 +87,10 @@ export default function AuditSection({ ctx, onLedger }: { ctx: Ctx; onLedger: ()
         </div>
       )}
 
+      <input type="search" aria-label="جستجوی دفترِ تغییرات" placeholder="جستجو: کالا، نمایندگی، شماره‌ی عامل…"
+        value={q} onChange={(e) => search(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
       {loaded && !loadErr && rows.length === 0 && (
-        <p className="empty">هنوز تغییری در قیمت یا سقفِ تأیید خودکار ثبت نشده.</p>
+        <p className="empty">{q ? "چیزی پیدا نشد." : "هنوز تغییری در قیمت یا سقفِ تأیید خودکار ثبت نشده."}</p>
       )}
 
       {rows.map((r) => {
@@ -89,6 +116,11 @@ export default function AuditSection({ ctx, onLedger }: { ctx: Ctx; onLedger: ()
           </div>
         );
       })}
+      {hasMore && (
+        <button onClick={loadMore} aria-busy={moreBusy} disabled={moreBusy} style={{ width: "100%" }}>
+          {moreBusy && <span className="spinner" aria-hidden="true" />}بیشتر
+        </button>
+      )}
     </>
   );
 }

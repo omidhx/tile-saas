@@ -34,7 +34,7 @@ test("ردپا با مقدارِ قبلی و بعدی ثبت می‌شود", asy
     entity: "price_list_item", entityId: V, oldValue: 8_500_000, newValue: 850_000,
   }));
 
-  const [row] = await listAudit({ tenantId: T });
+  const [row] = (await listAudit({ tenantId: T })).items;
   assert.equal(row.action, "price.set");
   assert.equal(row.oldValue, 8_500_000, "«از چند آمد» مهم‌ترین بخشِ ردپاست");
   assert.equal(row.newValue, 850_000);
@@ -57,7 +57,7 @@ test("🔴 ردپا با تغییر در یک تراکنش است — رول‌�
 
   const prices = await sql`SELECT 1 FROM price_list_item WHERE tenant_id = ${T}`;
   assert.equal(prices.length, 0, "قیمت نباید مانده باشد");
-  assert.equal((await listAudit({ tenantId: T })).length, 0,
+  assert.equal((await listAudit({ tenantId: T })).items.length, 0,
     "و ردپا هم نه — تغییرِ موفق با ردپای گم‌شده نباید ممکن باشد");
 });
 
@@ -68,7 +68,7 @@ test("NULL معنیِ خودش را دارد و با صفر یکی نمی‌شو
       entity: "tenant", entityId: T, oldValue: null, newValue: 0,
     });
   });
-  const [row] = await listAudit({ tenantId: T });
+  const [row] = (await listAudit({ tenantId: T })).items;
   assert.equal(row.oldValue, null, "«خاموش» باید NULL بماند");
   assert.equal(row.newValue, 0, "«هرگز خودکار» صفر است — و این دو یکی نیستند");
 });
@@ -79,7 +79,7 @@ test("تازه‌ترین اول می‌آید", async () => {
       tenantId: T, actorUserId: U, action: "price.set",
       entity: "price_list_item", entityId: V, oldValue: null, newValue: p,
     }));
-  const rows = await listAudit({ tenantId: T });
+  const rows = (await listAudit({ tenantId: T })).items;
   assert.equal(rows[0].newValue, 300, "آخرین تغییر باید بالای فهرست باشد");
 });
 
@@ -90,6 +90,30 @@ test("دفترِ یک کارخانه به کارخانه‌ی دیگر نشت ن
     tenantId: T, actorUserId: U, action: "price.set",
     entity: "price_list_item", entityId: V, oldValue: 1, newValue: 2,
   }));
-  assert.equal((await listAudit({ tenantId: T2 })).length, 0);
-  assert.equal((await listAudit({ tenantId: T })).length, 1);
+  assert.equal((await listAudit({ tenantId: T2 })).items.length, 0);
+  assert.equal((await listAudit({ tenantId: T })).items.length, 1);
+});
+
+test("listAudit: صفحه‌بندی (hasMore) + جستجو روی برچسبِ کالا", async () => {
+  for (const p of [10, 20, 30])
+    await withTenant(T, (tx) => writeAudit(tx, {
+      tenantId: T, actorUserId: U, action: "price.set",
+      entity: "price_list_item", entityId: V, oldValue: null, newValue: p,
+    }));
+
+  const total = (await listAudit({ tenantId: T, limit: 1000 })).items.length;
+  assert.ok(total >= 3);
+
+  const page1 = await listAudit({ tenantId: T, limit: total - 1 });
+  assert.equal(page1.items.length, total - 1);
+  assert.equal(page1.hasMore, true);
+
+  const page2 = await listAudit({ tenantId: T, limit: total - 1, offset: total - 1 });
+  assert.equal(page2.items.length, 1);
+  assert.equal(page2.hasMore, false);
+
+  const found = await listAudit({ tenantId: T, q: "گرانیت" });
+  assert.equal(found.items.length, total, "همه روی همین یک کالا نوشته شده‌اند");
+  const notFound = await listAudit({ tenantId: T, q: "چیزیِ نامرتبط" });
+  assert.equal(notFound.items.length, 0);
 });
