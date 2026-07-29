@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
+import Link from "next/link";
 import { remainingTime } from "@/lib/date";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
@@ -295,6 +296,10 @@ export default function StaffPage() {
                 {pending === d.id + s && <span className="spinner" aria-hidden="true" />}{FA[s]}
               </button>
             ))}
+            {/* انباردار روی کاغذ کار می‌کند نه صفحه‌نمایش — لینکِ برگه‌ی چاپی همیشه در دسترس است، حتی حواله‌ی نهایی‌شده */}
+            <Link href={`/staff/dispatch/${d.id}/print`} target="_blank">
+              <button type="button"><Icon name="printer" size={13} />چاپ</button>
+            </Link>
           </div>
         </div>
       ))}

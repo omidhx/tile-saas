@@ -101,6 +101,13 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 ```
 - گذارها: registered→ready_for_loading→loaded→delivered؛ لغو فقط قبل از loaded (allocated آزاد می‌شه + request مرتبط cancelled). `loaded→cancelled` ممنوع. الگوریتم: [dispatches.ts](../web/src/db/dispatches.ts).
 
+## `GET /api/sales-dispatches/:id?tenantId` (staff)
+جزئیاتِ یک حواله برای برگه‌ی چاپیِ انباردار (`/staff/dispatch/:id/print`) — سرِ حواله + هر قلم با کد/نام/درجه/بچ/شید/کالیبر/محلِ انبار/تعدادِ کارتن.
+```jsonc
+// 200 → { "dispatch": { "dispatchCode": "…", "status": "…", "items": [...] } }
+// 404 not_found · 401 · 403
+```
+
 ---
 
 ## فهرست کاملِ endpointها

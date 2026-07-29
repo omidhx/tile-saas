@@ -117,6 +117,60 @@ export async function createDispatchFromRequest(params: {
   });
 }
 
+export type DispatchDetail = {
+  dispatchCode: string; status: DispatchStatus; customerName: string | null;
+  destination: string | null; referenceNumber: string | null;
+  agentLegalName: string; warehouseName: string | null; createdAt: string;
+  items: {
+    productName: string; productCode: string; sku: string; grade: string | null;
+    batchNumber: string | null; shadeCode: string | null; caliberCode: string | null;
+    binLocation: string | null; quantityBoxes: number;
+  }[];
+};
+
+/** برگه‌ی چاپیِ حواله (لیستِ برداشتِ انباردار): سرِ حواله + هر قلم با بچ/شید/کالیبر/بین. */
+export async function getDispatchDetail(tenantId: string, dispatchId: string): Promise<DispatchDetail | null> {
+  return withTenant(tenantId, async (tx) => {
+    const [d] = await tx<{
+      dispatch_code: string; status: DispatchStatus; customer_name: string | null;
+      destination: string | null; reference_number: string | null;
+      agent_legal_name: string; warehouse_name: string | null; created_at: string;
+    }[]>`
+      SELECT sd.dispatch_code, sd.status, sd.customer_name, sd.destination, sd.reference_number,
+             aa.legal_name AS agent_legal_name, w.name AS warehouse_name, sd.created_at
+      FROM sales_dispatch sd
+      JOIN agent_account aa ON aa.id = sd.agent_account_id
+      LEFT JOIN warehouse w ON w.id = sd.warehouse_id
+      WHERE sd.id = ${dispatchId} AND sd.tenant_id = ${tenantId}`;
+    if (!d) return null;
+
+    const items = await tx<{
+      product_name: string; product_code: string; sku: string; grade: string | null;
+      batch_number: string | null; shade_code: string | null; caliber_code: string | null;
+      bin_location: string | null; quantity_boxes: number;
+    }[]>`
+      SELECT p.name AS product_name, p.code AS product_code, pv.sku, pv.grade,
+             l.batch_number, l.shade_code, l.caliber_code, sdi.bin_location, sdi.quantity_boxes
+      FROM sales_dispatch_item sdi
+      JOIN product_variant pv ON pv.id = sdi.variant_id
+      JOIN product p ON p.id = pv.product_id
+      LEFT JOIN inventory_lot l ON l.id = sdi.lot_id
+      WHERE sdi.dispatch_id = ${dispatchId} AND sdi.tenant_id = ${tenantId}
+      ORDER BY p.code`;
+
+    return {
+      dispatchCode: d.dispatch_code, status: d.status, customerName: d.customer_name,
+      destination: d.destination, referenceNumber: d.reference_number,
+      agentLegalName: d.agent_legal_name, warehouseName: d.warehouse_name, createdAt: d.created_at,
+      items: items.map((i) => ({
+        productName: i.product_name, productCode: i.product_code, sku: i.sku, grade: i.grade,
+        batchNumber: i.batch_number, shadeCode: i.shade_code, caliberCode: i.caliber_code,
+        binLocation: i.bin_location, quantityBoxes: i.quantity_boxes,
+      })),
+    };
+  });
+}
+
 /**
  * گذارِ وضعیت حواله. ردیف dispatch با FOR UPDATE قفل می‌شه (سریالایز، ضدِ double-transition).
  *   • loaded  (از ready_for_loading): برای هر item in_stock، balance را قفل و on_hand-=qty و
