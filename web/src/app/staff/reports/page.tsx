@@ -9,6 +9,7 @@ import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { toJalali, jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
+import { exportXlsx } from "@/lib/exportXlsx";
 import LedgerSection from "./LedgerSection";
 import AuditSection from "./AuditSection";
 
@@ -18,6 +19,8 @@ type DeadStock = { name: string; code: string; onHand: number };
 type Reports = { from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[] };
 
 const n = (v: number) => v.toLocaleString("fa-IR");
+/** برای نامِ فایل — نه formatJalaliDate که با «/» می‌نویسد و در ویندوز نامِ فایلِ نامعتبر می‌سازد. */
+const jstr = (j: Jalali) => `${j.jy}-${String(j.jm).padStart(2, "0")}-${String(j.jd).padStart(2, "0")}`;
 
 const ALL_TABS: (Tab & { pageKey: string })[] = [
   { key: "reports", label: "گزارش‌های مدیریتی", pageKey: "reports" },
@@ -85,6 +88,18 @@ export default function ReportsHubPage() {
   const totalValue = rep?.agents.reduce((s, a) => s + a.value, 0) ?? 0;
   const totalBoxes = rep?.topProducts.reduce((s, p) => s + p.boxes, 0) ?? 0;
 
+  function exportReports() {
+    if (!rep) return;
+    exportXlsx(`گزارش-مدیریتی-${jstr(from)}-تا-${jstr(to)}.xlsx`, {
+      "عملکرد نمایندگان": rep.agents.map((a) => ({
+        "نمایندگی": a.agentName, "تعداد سفارش": a.requests, "کارتن": a.boxes,
+        "ارزش (ریال)": a.value, "خطِ بی‌قیمت": a.unpricedLines,
+      })),
+      "پرفروش‌ها": rep.topProducts.map((p) => ({ "کالا": p.name, "کد": p.code, "کارتنِ بارگیری‌شده": p.boxes })),
+      "راکدها": rep.deadStock.map((d) => ({ "کالا": d.name, "کد": d.code, "موجودی (کارتن)": d.onHand })),
+    });
+  }
+
   return (
     <main>
       <div className="topbar">
@@ -92,20 +107,27 @@ export default function ReportsHubPage() {
           <h1>گزارش‌ها</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+        <nav className="no-print"><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
       </div>
 
-      <TabBar tabs={tabs} active={activeTab} onChange={go} />
+      <div className="no-print"><TabBar tabs={tabs} active={activeTab} onChange={go} /></div>
 
       {activeTab === "reports" && (
         <>
-          <div className="card">
+          <div className="card no-print">
             <div className="row" style={{ gap: ".5rem", justifyContent: "flex-start", flexWrap: "wrap" }}>
               <JalaliDateInput label="از" value={from} onChange={setFrom} currentYear={to.jy} />
               <JalaliDateInput label="تا" value={to} onChange={setTo} currentYear={todayJalali().jy} />
               {loading && <span className="muted"><span className="spinner" aria-hidden="true" />در حال محاسبه…</span>}
             </div>
           </div>
+
+          {rep && !loadErr && !inverted && (
+            <div className="row row--start no-print" style={{ gap: "var(--sp-2)", marginBottom: "var(--sp-3)" }}>
+              <button onClick={exportReports}><Icon name="download" size={13} />خروجیِ اکسل</button>
+              <button onClick={() => window.print()}><Icon name="printer" size={13} />خروجیِ PDF (چاپ)</button>
+            </div>
+          )}
 
           {inverted && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>تاریخِ «از» بعد از «تا» است — بازه را اصلاح کنید.</span></div>}
           {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}

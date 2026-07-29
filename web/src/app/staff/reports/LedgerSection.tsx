@@ -4,6 +4,7 @@ import Icon from "../../Icon";
 import { getJson, loadError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
 import { formatJalaliDateTime } from "@/lib/date";
+import { exportXlsx } from "@/lib/exportXlsx";
 
 type Movement = {
   id: string; type: string; onHandDelta: number; allocatedDelta: number;
@@ -73,6 +74,24 @@ export default function LedgerSection({ ctx }: { ctx: Ctx }) {
     } finally { setMoreBusy(false); }
   }
 
+  const [exporting, setExporting] = useState(false);
+  /** خروجی همیشه همه‌ی نتیجه‌ی جستجوی فعلی را می‌گیرد، نه فقط صفحه‌ی بارگذاری‌شده روی صفحه. */
+  async function exportAll() {
+    setExporting(true);
+    try {
+      const res = await getJson<{ movements: Movement[] }>(
+        `/api/ledger?tenantId=${ctx.tenantId}&offset=0&limit=20000${q ? `&q=${encodeURIComponent(q)}` : ""}`);
+      if (!res.ok) return;
+      exportXlsx(`دفتر-حرکات-${ctx.tenantId.slice(0, 8)}.xlsx`, {
+        "حرکات": res.data.movements.map((m) => ({
+          "تاریخ": formatJalaliDateTime(m.createdAt), "کالا": m.name, "کد": m.code, "بچ": m.batch ?? "",
+          "نوع": TYPE_FA[m.type] ?? m.type, "موجودی": m.onHandDelta, "تخصیص": m.allocatedDelta,
+          "عامل": m.actor ?? "", "یادداشت": m.note ?? "",
+        })),
+      });
+    } finally { setExporting(false); }
+  }
+
   return (
     <>
       <h2>تطبیق لجر با موجودی</h2>
@@ -109,7 +128,13 @@ export default function LedgerSection({ ctx }: { ctx: Ctx }) {
       )}
 
       <h2>حرکات اخیر</h2>
-      <input type="search" aria-label="جستجوی حرکات" placeholder="جستجو: کالا، کد، بچ…"
+      <div className="row row--start no-print" style={{ gap: "var(--sp-2)", marginBottom: "var(--sp-3)" }}>
+        <button onClick={exportAll} aria-busy={exporting} disabled={exporting}>
+          {exporting && <span className="spinner" aria-hidden="true" />}<Icon name="download" size={13} />خروجیِ اکسل (کلِ نتیجه)
+        </button>
+        <button onClick={() => window.print()}><Icon name="printer" size={13} />خروجیِ PDF (چاپ)</button>
+      </div>
+      <input type="search" aria-label="جستجوی حرکات" placeholder="جستجو: کالا، کد، بچ…" className="no-print"
         value={q} onChange={(e) => search(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
       {loaded && !loadErr && movements.length === 0 && <p className="empty">{q ? "چیزی پیدا نشد." : "حرکتی ثبت نشده."}</p>}
       {movements.map((m) => (
@@ -127,7 +152,7 @@ export default function LedgerSection({ ctx }: { ctx: Ctx }) {
         </div>
       ))}
       {hasMore && (
-        <button onClick={loadMore} aria-busy={moreBusy} disabled={moreBusy} style={{ width: "100%" }}>
+        <button className="no-print" onClick={loadMore} aria-busy={moreBusy} disabled={moreBusy} style={{ width: "100%" }}>
           {moreBusy && <span className="spinner" aria-hidden="true" />}بیشتر
         </button>
       )}

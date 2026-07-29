@@ -9,6 +9,7 @@ import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDate, jalaliToDate, todayJalali, toJalali, type Jalali } from "@/lib/date";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
+import { exportXlsx } from "@/lib/exportXlsx";
 
 type Customer = {
   id: string; name: string; phone: string | null; note: string | null;
@@ -29,6 +30,8 @@ const FA: Record<string, string> = {
   registered: "ثبت‌شده", ready_for_loading: "آماده بارگیری", loaded: "بارگیری‌شده",
   delivered: "تحویل‌شده", cancelled: "لغوشده",
 };
+/** برای نامِ فایل — نه formatJalaliDate که با «/» می‌نویسد و در ویندوز نامِ فایلِ نامعتبر می‌سازد. */
+const jstr = (j: Jalali) => `${j.jy}-${String(j.jm).padStart(2, "0")}-${String(j.jd).padStart(2, "0")}`;
 
 export default function CustomersPage() {
   const { ctx, state } = useContexts("staff");
@@ -135,6 +138,20 @@ export default function CustomersPage() {
   const totalValue = rows.reduce((s, r) => s + r.value, 0);
   const unlinked = rows.filter((r) => !r.linked).length;
 
+  function exportCustomers() {
+    exportXlsx(`مشتریان-${jstr(from)}-تا-${jstr(to)}.xlsx`, {
+      "پرخریدترین": rows.map((r) => ({
+        "مشتری": r.name, "وصل به رکورد": r.linked ? "بله" : "خیر",
+        "تعداد حواله": r.dispatches, "کارتن": r.boxes,
+        "ارزش (ریال)": r.value, "حواله‌ی بی‌ارزشِ معلوم": r.unknownValueDispatches,
+      })),
+      "همه‌ی مشتریان": customers.map((c) => ({
+        "نام": c.name, "شماره": c.phone ?? "", "نمایندگی": c.agentName ?? "مستقیمِ کارخانه",
+        "یادداشت": c.note ?? "", "وضعیت": c.isActive ? "فعال" : "غیرفعال",
+      })),
+    });
+  }
+
   return (
     <main>
       <div className="topbar">
@@ -142,7 +159,12 @@ export default function CustomersPage() {
           <h1>مشتریان</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+        <nav className="no-print"><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+      </div>
+
+      <div className="row row--start no-print" style={{ gap: "var(--sp-2)" }}>
+        <button onClick={exportCustomers}><Icon name="download" size={13} />خروجیِ اکسل</button>
+        <button onClick={() => window.print()}><Icon name="printer" size={13} />خروجیِ PDF (چاپ)</button>
       </div>
 
       <div className="banner banner--info">
@@ -156,8 +178,8 @@ export default function CustomersPage() {
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
       <MessageBanner msg={msg} />
 
-      <h2>ثبت مشتری</h2>
-      <div className="card">
+      <h2 className="no-print">ثبت مشتری</h2>
+      <div className="card no-print">
         <label htmlFor="nm">نام</label>
         <input id="nm" value={name} onChange={(e) => setName(e.target.value)} placeholder="نام مشتری نهایی" />
         <label htmlFor="ph">شماره تماس (اختیاری)</label>
@@ -175,7 +197,7 @@ export default function CustomersPage() {
       </div>
 
       <h2>پرخریدترین مشتریان</h2>
-      <div className="card">
+      <div className="card no-print">
         <div className="row row--start" style={{ flexWrap: "wrap" }}>
           <JalaliDateInput label="از" value={from} onChange={setFrom} currentYear={to.jy} />
           <JalaliDateInput label="تا" value={to} onChange={setTo} currentYear={todayJalali().jy} />
@@ -222,7 +244,7 @@ export default function CustomersPage() {
             </div>
           )}
           {r.customerId && (
-            <div style={{ marginTop: "var(--sp-3)" }}>
+            <div className="no-print" style={{ marginTop: "var(--sp-3)" }}>
               <button className="ghost" onClick={() => showHistory(r.customerId!)}
                       aria-busy={pending === "h" + r.customerId}>
                 {history[r.customerId] ? "بستن تاریخچه" : "تاریخچه"}
@@ -257,7 +279,7 @@ export default function CustomersPage() {
               {c.phone && <span className="subtle num"> · {c.phone}</span>}
               {!c.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
             </span>
-            <span className="row row--start">
+            <span className="row row--start no-print">
               <button className="ghost" disabled={pending === "edit" + c.id}
                       onClick={() => (editFor === c.id ? setEditFor(null) : startEdit(c))}>
                 {editFor === c.id ? "بستن ویرایش" : "ویرایش"}
@@ -271,7 +293,7 @@ export default function CustomersPage() {
           <div className="subtle">{c.agentName ?? "مشتری مستقیم کارخانه"}</div>
 
           {editFor === c.id && (
-            <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+            <div className="no-print" style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
               <label htmlFor={`en-${c.id}`}>نام</label>
               <input id={`en-${c.id}`} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
               <label htmlFor={`ep-${c.id}`}>شماره تماس</label>

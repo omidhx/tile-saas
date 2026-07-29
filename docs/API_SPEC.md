@@ -139,7 +139,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
 | `/api/reports` | staff | گزارش‌های مدیریتی |
-| `/api/ledger` | staff | دفتر حرکات (صفحه‌بندی‌شده، `&offset`/`&q`، `hasMore`) + تطبیق (drift) |
+| `/api/ledger` | staff | دفتر حرکات (صفحه‌بندی‌شده، `&offset`/`&q`، `hasMore`؛ `&limit` هم می‌گیرد — خروجیِ اکسل با آن کلِ نتیجه‌ی فیلترشده را می‌گیرد، سقفِ ۲۰٬۰۰۰) + تطبیق (drift) |
 | `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی؛ صفحه‌بندی‌شده (`&offset`/`&q`)، `hasMore` |
 | `/api/catalog` | staff | فهرستِ کمکیِ محصولات |
 | `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`، `DELETE`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر، تخصیصِ `assignedStaffUserId` به‌عنوانِ پشتیبانِ ثابت، حذفِ واقعی با گاردِ سابقه) برای admin. `detail=1` یک `staffOptions` هم برمی‌گرداند (برای دراپ‌داونِ انتخابِ پشتیبان) |
