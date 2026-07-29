@@ -71,7 +71,9 @@ export default function TeamSection({ ctx }: { ctx: Ctx }) {
       return;
     }
     const data = res.data as { created: boolean; tempPassword: string | null };
-    setPhone(""); setEmail(""); setFullName(""); setDeputy(false); setPages([]);
+    // نقش هم باید به پیش‌فرض برگردد — وگرنه بعدِ دعوتِ یک «مدیر»، عضوِ بعدی هم
+    // بی‌آنکه کسی متوجه شود با همان نقشِ مدیر دعوت می‌شود.
+    setPhone(""); setEmail(""); setFullName(""); setRole("staff"); setDeputy(false); setPages([]);
     if (data.created && data.tempPassword) setTempPassword({ phone, password: data.tempPassword });
     setMsg(data.created ? "عضو ساخته شد." : "دسترسی به کاربرِ موجود اضافه شد.");
     await load(ctx.tenantId);
