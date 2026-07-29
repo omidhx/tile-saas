@@ -74,21 +74,21 @@
 
 ## ۶. راه‌اندازی داده‌ی اولیه (bootstrap)
 
-بدون فرم ثبت‌نام، اولین کارخانه و کاربران با SQL ساخته می‌شوند. هش رمز:
+**(v9) دیگر SQL دستی لازم نیست.** یک حسابِ «مدیرِ پلتفرم» (`app_user.is_platform_admin = true`،
+فقط با SQL/psql یک‌بار در بدوِ راه‌اندازیِ خودِ SaaS ساخته می‌شود — نه به‌ازای هر
+مشتری) از صفحه‌ی `/platform/tenants` کارخانه‌ی تازه + اولین مدیرش را می‌سازد.
+مدیرِ اول همان‌جا `can_manage_access=true` هم دارد، پس بلافاصله از پنلِ خودش
+(`/staff/team`) بقیه‌ی تیم/نمایندگی/انبار را می‌سازد — بدونِ اینکه کسی دیگر SQL بزند.
+
+ساختِ خودِ اولین مدیرِ پلتفرم (فقط یک‌بار، نه به‌ازای هر مشتری):
 ```bash
 node -e "console.log(require('bcryptjs').hashSync('<رمز>',12))"
 ```
 ```sql
-INSERT INTO tenant (id,name,slug) VALUES (gen_random_uuid(),'<نام کارخانه>','<slug>');
--- کاربر پشتیبان (staff) و نماینده:
-INSERT INTO app_user (id,phone,password_hash) VALUES (gen_random_uuid(),'<موبایل>','<hash>');
-INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES (<tenant>,<user>,'staff',true);
--- نماینده علاوه بر membership به یک agent_account هم وصل می‌شود:
-INSERT INTO agent_account (id,tenant_id,legal_name,code) VALUES (gen_random_uuid(),<tenant>,'<نمایندگی>','AG1');
-INSERT INTO agent_account_user (tenant_id,agent_account_id,user_id,role) VALUES (<tenant>,<agent>,<user>,'operator');
--- انبار و کاتالوگ پایه، بعد موجودی از اکسل (/staff/import)
+INSERT INTO app_user (id,phone,password_hash,is_platform_admin)
+VALUES (gen_random_uuid(),'<موبایلِ اپراتورِ SaaS>','<hash>',true);
 ```
-- [ ] نقش‌ها: `staff`/`admin` تأیید و حواله می‌زنند؛ `agent` فقط رزرو. کاربرِ نماینده **حتماً** باید به `agent_account` وصل شود وگرنه صفحه‌ی رزرو برایش کار نمی‌کند.
+- [ ] نقش‌ها: `staff`/`admin` تأیید و حواله می‌زنند؛ `agent` فقط رزرو. کاربرِ نماینده **حتماً** باید به `agent_account` وصل شود وگرنه صفحه‌ی رزرو برایش کار نمی‌کند — نمایندگی‌ها هم از `/staff/team?tab=agents` ساخته می‌شوند، نه SQL.
 
 ## ۷. تصمیم‌های بازِ وابسته به مصاحبه (قبل از دادهٔ واقعی قطعی کن)
 
