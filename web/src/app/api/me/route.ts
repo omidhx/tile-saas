@@ -16,8 +16,15 @@ export async function GET() {
     }[]
   >`SELECT * FROM user_contexts(${userId})`;
 
+  // v9: app_user جدولِ سراسری/بدونِ RLS است، پس کوئریِ مستقیم (نه از طریقِ
+  // user_contexts) امن است. مدیرِ پلتفرم ممکن است هیچ contextِ tenantی نداشته
+  // باشد (حسابِ خالص برای ساختِ کارخانه‌ی تازه)، پس این فلگ جدا از contexts می‌آید.
+  const [u] = await sql<{ is_platform_admin: boolean }[]>`
+    SELECT is_platform_admin FROM app_user WHERE id = ${userId}`;
+
   // agentAccountId برای کاربر staff نال است — UI باید هندلش کنه، نه اینکه قفل شه.
   return NextResponse.json({
+    isPlatformAdmin: u?.is_platform_admin ?? false,
     contexts: rows.map((r) => ({
       tenantId: r.tenant_id,
       tenantName: r.tenant_name,

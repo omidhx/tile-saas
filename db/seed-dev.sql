@@ -10,12 +10,14 @@
 --
 -- ورود:  09120000001 / pass1234  → پشتیبان (staff)
 --        09120000000 / pass1234  → نماینده (agent)
+--        09129999999 / pass1234  → مدیرِ پلتفرم (v9، بدونِ عضویت در هیچ tenantی —
+--                                  سناریوی اصلیِ همین فیچر: ساختِ کارخانه‌ی تازه)
 
 BEGIN;
 
 -- idempotent: هر بار از صفر (اسکریپت seed:dev خودش schema را هم از نو می‌سازد)
 TRUNCATE tenant CASCADE;
-DELETE FROM app_user WHERE phone IN ('09120000000', '09120000001');
+DELETE FROM app_user WHERE phone IN ('09120000000', '09120000001', '09129999999');
 
 -- سقفِ تأییدِ خودکار ۲۰۰ میلیون ریال: سفارشِ کوچک خودکار قطعی می‌شود، سفارشِ بزرگ
 -- به صفِ پشتیبان می‌رود. در دمو هر دو حالت اتفاق می‌افتد تا تفاوت دیده شود.
@@ -27,6 +29,11 @@ INSERT INTO tenant(id, name, slug, auto_approve_limit) VALUES
 INSERT INTO app_user(id, phone, full_name, password_hash) VALUES
   ('44444444-4444-4444-4444-444444444444', '09120000000', 'رضا احمدی', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq'),
   ('55555555-5555-5555-5555-555555555556', '09120000001', 'سارا محمدی', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq');
+
+-- v9: مدیرِ پلتفرم — عمداً هیچ tenant_membershipای ندارد، تا سناریوی «حسابِ خالص
+-- برای ساختِ کارخانه‌ی تازه» هم در دمو قابلِ تست باشد (نه فقط ادمینِ یک tenantِ موجود).
+INSERT INTO app_user(id, phone, full_name, password_hash, is_platform_admin) VALUES
+  ('66666666-6666-6666-6666-666666666666', '09129999999', 'مدیرِ پلتفرم', '$2b$10$YH7ImeA1kQQH22cItyQjcedeb0Ih8r/sdnQnsgJsFW3iVsTRimoLq', true);
 
 -- کاربرِ دوم admin است نه صرفاً staff: مدیریتِ تیم/نمایندگی/انبار (v3) فقط برای
 -- admin باز است — کاربرِ دموی پشتیبان باید بتواند این صفحه‌ها را هم ببیند.

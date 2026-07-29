@@ -35,8 +35,12 @@ export default function LoginPage() {
       // مقصد بر اساس نقش: قبلاً همه به /reserve می‌رفتند، یعنی پشتیبان روی صفحه‌ی
       // نماینده می‌نشست و بنرِ «به نمایندگی‌ای وصل نیستی» می‌گرفت — درست ولی گیج‌کننده.
       const me = await fetch("/api/me").then((r) => r.json()).catch(() => null);
-      const isStaff = me?.contexts?.some((c: { role?: string }) => c.role === "staff" || c.role === "admin");
-      router.push(isStaff ? "/staff" : "/reserve");
+      const contexts = me?.contexts ?? [];
+      const isStaff = contexts.some((c: { role?: string }) => c.role === "staff" || c.role === "admin");
+      // v9: حسابِ خالصِ مدیرِ پلتفرم (بدونِ عضویت در هیچ tenantی) نباید به
+      // /reserve بیفتد — آنجا فقط بنرِ «به نمایندگی‌ای وصل نیستی» می‌گیرد.
+      const isPurePlatformAdmin = contexts.length === 0 && me?.isPlatformAdmin;
+      router.push(isStaff ? "/staff" : isPurePlatformAdmin ? "/platform/tenants" : "/reserve");
     } catch {
       setErr("ارتباط با سرور برقرار نشد. اتصال اینترنت را بررسی کنید.");
     } finally {

@@ -4,7 +4,7 @@
 
 ## نقشه‌ی جدول‌ها (ERD خلاصه)
 ```
-app_user (سراسری، full_name nullable) ──< tenant_membership (can_manage_access, allowed_pages) >── tenant
+app_user (سراسری، full_name nullable، is_platform_admin) ──< tenant_membership (can_manage_access, allowed_pages) >── tenant
                           │                   │
 tenant ──< agent_account (assigned_staff_user_id → app_user) ──< agent_account_user (FK به membership)
    │
@@ -51,6 +51,7 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
 | دسترسیِ ریزدانه‌ی صفحه برای staff | `tenant_membership.allowed_pages` (TEXT[]، خالی=کامل) + `can_manage_access` (فقط برای role='admin' معنا دارد) |
 | پشتیبانِ ثابتِ نمایندگی (بدونِ composite FK چون app_user سراسری است) | `agent_account.assigned_staff_user_id UUID REFERENCES app_user(id)`؛ عضویتِ tenant در لایه‌ی app چک می‌شود (`isActiveStaffMember`) |
 | موجودیِ اولیه از مسیرِ لجر می‌آید، نه UPDATE مستقیم | `inventory_transaction.transaction_type='initial_stock'` هنگامِ ساختِ محصول با انبار+تعداد |
+| روزِ صفرِ tenantِ تازه بدونِ SQL دستی | `app_user.is_platform_admin` (بالاتر از سطحِ tenant) + `db/platform.ts::createTenant` (یک تراکنش: tenant + اولین admin) |
 
 ## ایندکس‌های حیاتی
 `idx_reservation_item_lot` و `idx_active_reservation_expiry` (partial، `WHERE status='active'`) و `idx_reservation_items_lot_qty` (covering) — همه برای کوئریِ `held`. بقیه در schema.sql بخش ۵.۱۰.

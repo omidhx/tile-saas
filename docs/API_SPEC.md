@@ -138,6 +138,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`، `DELETE`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر، تخصیصِ `assignedStaffUserId` به‌عنوانِ پشتیبانِ ثابت، حذفِ واقعی با گاردِ سابقه) برای admin. `detail=1` یک `staffOptions` هم برمی‌گرداند (برای دراپ‌داونِ انتخابِ پشتیبان) |
 | `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`/`DELETE`) | فهرست؛ ساخت/تغییرِ نام/حذف برای admin (حذف فقط بدونِ سابقه — گاردِ `has_history`) |
 | `/api/team` | admin + مدیرِ دسترسی (`can_manage_access`) | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری+نامِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن/دسترسیِ ریزدانه (`allowedPages`)/نام، حذفِ واقعی (گاردِ last_admin/last_deputy/linked_to_agent) |
+| `/api/platform/tenants` | مدیرِ پلتفرم (`app_user.is_platform_admin`) | v9 — روزِ صفرِ مشتریِ تازه: `POST` یک tenant + اولین کاربرِ admin (که `can_manage_access` هم دارد) در یک تراکنش می‌سازد؛ بدونِ SQL دستی |
 
 ## Rate limits
 پیاده‌شده روی: `login`، `reservations` (۳۰/دقیقه per user)، `auth/password` (۵/۱۵دقیقه)،

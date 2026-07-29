@@ -1,4 +1,4 @@
-import { withTenant } from "@/db/client";
+import { sql, withTenant } from "@/db/client";
 
 export class AuthzError extends Error {}
 
@@ -97,6 +97,19 @@ export async function authorizeAccessManager(userId: string, tenantId: string): 
     if (m.role !== "admin" || !m.can_manage_access) throw new AuthzError("این عملیات نیازمندِ مدیرِ دسترسی است");
     return { userId, tenantId };
   });
+}
+
+/**
+ * دسترسیِ «مدیرِ پلتفرم» (v9) — بالاتر از سطحِ tenant، بدونِ withTenant: این
+ * چک قبل از وجودِ هر tenantی هم باید کار کند (ساختِ کارخانه‌ی تازه). app_user
+ * جدولِ سراسری است (بدونِ tenant_id)، پس RLS رویش تعریف نشده و کوئریِ مستقیم
+ * امن است — نه IDOR، چون فقط رویِ خودِ userId (از JWT) چک می‌کند.
+ */
+export async function authorizePlatformAdmin(userId: string): Promise<{ userId: string }> {
+  const [u] = await sql<{ is_platform_admin: boolean }[]>`
+    SELECT is_platform_admin FROM app_user WHERE id = ${userId}`;
+  if (!u || !u.is_platform_admin) throw new AuthzError("این عملیات نیازمندِ مدیرِ پلتفرم است");
+  return { userId };
 }
 
 /**

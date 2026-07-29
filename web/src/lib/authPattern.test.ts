@@ -23,6 +23,11 @@ const ALLOWED = new Set([
   "src/lib/useContexts.ts",
   "src/app/page.tsx",       // ریدایرکتِ نقش-آگاهِ ریشه — پیش از اینکه Ctx معنی داشته باشد
   "src/app/login/page.tsx", // مقصدِ بعدِ ورود را از روی نقش تعیین می‌کند، صفحه‌ای رندر نمی‌کند
+  // v9: مدیرِ پلتفرم ممکن است هیچ tenant_membershipای نداشته باشد (حسابِ خالص
+  // برای ساختِ کارخانه‌ی تازه) — useContexts روی چنین کاربری همیشه state="none"
+  // می‌دهد، چون آن هوک ذاتاً برای contextِ tenant طراحی شده، نه فلگِ سراسریِ
+  // is_platform_admin. این صفحه از قبل از وجودِ هر tenantی معنا دارد.
+  "src/app/platform/tenants/page.tsx",
 ]);
 
 function walk(dir: string, out: string[]) {
