@@ -20,6 +20,7 @@ const TYPE_FA: Record<string, string> = {
   import_snapshot_zero: "صفرشدن (غایب در اکسل)",
   reservation_hold: "رزرو (نگه‌داشت)",
   reservation_convert: "تأیید → تخصیص",
+  reservation_cancel: "لغوِ رزرو (آزادسازی)",
   dispatch_load: "بارگیری",
   dispatch_cancel: "لغو حواله (آزادسازی)",
   incoming_arrival: "رسیدنِ محموله‌ی در راه",

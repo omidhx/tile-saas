@@ -73,7 +73,12 @@ export default function CustomersPage() {
     setPending("add"); setMsg("");
     const res = await postJson("/api/customers", { tenantId: ctx.tenantId, name, phone, agentAccountId: forAgent || null });
     if (!res.ok) setMsg(actionError(res.status));
-    else { setName(""); setPhone(""); setMsg("ثبت شد."); await load(ctx.tenantId, from, to); }
+    else {
+      // اگر «نمایندگی» پاک نشود، مشتریِ بعدی که نامرتبط با همین نمایندگی است
+      // بی‌آنکه کاربر متوجه شود به همان نمایندگیِ قبلی وصل می‌شود.
+      setName(""); setPhone(""); setForAgent(""); setMsg("ثبت شد.");
+      await load(ctx.tenantId, from, to);
+    }
     setPending(null);
   }
 

@@ -6,6 +6,7 @@ import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
+import DeleteButton from "../DeleteButton";
 import { matches, normalize } from "@/lib/search";
 
 type Item = { variantId: string; customerPrice: number | null };
@@ -224,7 +225,7 @@ export default function CatalogsPage() {
                 <button className="ghost" disabled={pending === c.id} onClick={() => setActive(c.id, !c.isActive)}>
                   {c.isActive ? "باطل کن" : "فعال کن"}
                 </button>
-                <button className="danger" disabled={pending === c.id} onClick={() => remove(c.id)}>حذف</button>
+                <DeleteButton pending={pending === c.id} onConfirm={() => remove(c.id)} />
               </span>
             </div>
             {c.isActive && (
