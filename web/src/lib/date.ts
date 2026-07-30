@@ -74,6 +74,18 @@ export function jalaliToDate({ jy, jm, jd }: Jalali): Date {
   return new Date(utcMidnight - TEHRAN_OFFSET_MS);
 }
 
+/**
+ * تاریخِ شمسی → رشته‌ی «YYYY-MM-DD» برای ستون‌های DATE (بدونِ timezone، مثلِ
+ * `agent_price_override.valid_from/valid_to`). عمداً جدا از `jalaliToDate` است:
+ * آن یکی یک **لحظه** برمی‌گرداند (نیمه‌شبِ تهران، برای مقایسه با TIMESTAMPTZ) —
+ * `toISOString()` رویِ آن لحظه یک روز عقب می‌افتد (چون UTC از تهران ۳٫۵ ساعت
+ * عقب‌تر است)، که برای TIMESTAMPTZ درست است ولی برای DATE یک‌روز اشتباه می‌شود.
+ * اینجا همان offset برگردانده می‌شود تا روزِ گرگوریِ واقعی به‌دست بیاید.
+ */
+export function jalaliToIsoDate(j: Jalali): string {
+  return new Date(jalaliToDate(j).getTime() + TEHRAN_OFFSET_MS).toISOString().slice(0, 10);
+}
+
 export const JALALI_MONTHS = [
   "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
   "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",

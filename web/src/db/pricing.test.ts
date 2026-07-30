@@ -5,6 +5,7 @@ import { resetSchema } from "./_testdb";
 import {
   resolvePrices, applyVolumeDiscount, createPriceList, applyPriceImport,
   listVolumeDiscounts, createVolumeDiscount, updateVolumeDiscount, deleteVolumeDiscount,
+  listAgentOverrides, createAgentOverride, updateAgentOverride, deleteAgentOverride,
 } from "./pricing";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
@@ -218,4 +219,63 @@ test("listVolumeDiscounts: پله‌های variant-محور نامِ کالا ه
   const rows = await listVolumeDiscounts(T);
   const row = rows.find((r) => r.minQtyBoxes === 999);
   assert.equal(row?.productCode, "P1", "productCode از خودِ محصول می‌آید، نه sku");
+});
+
+test("createAgentOverride: بازه‌ی هم‌پوش با استثنای دیگرِ همان (نماینده،کالا) رد می‌شود", async () => {
+  const a = await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V1, price: 700000, validFrom: "2025-01-01", validTo: "2025-06-30" });
+  assert.ok(a.ok);
+
+  // هم‌پوشِ کامل
+  const overlap1 = await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V1, price: 750000, validFrom: "2025-03-01", validTo: "2025-04-01" });
+  assert.deepEqual(overlap1, { ok: false, reason: "overlap" });
+
+  // یکی نامحدود (validTo=null) که هم‌پوش می‌شود
+  const overlap2 = await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V1, price: 750000, validFrom: "2025-06-01", validTo: null });
+  assert.deepEqual(overlap2, { ok: false, reason: "overlap" });
+
+  // بعد از بازه‌ی اول → مجاز
+  const after = await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V1, price: 750000, validFrom: "2025-07-01", validTo: null });
+  assert.ok(after.ok);
+
+  // نمایندگیِ دیگر یا کالای دیگر → همان بازه هم مجاز است (استقلالِ scope)
+  const otherAgent = await createAgentOverride({ tenantId: T, agentAccountId: AG, variantId: V1, price: 800000, validFrom: "2025-01-01", validTo: "2025-06-30" });
+  assert.ok(otherAgent.ok);
+  const otherVariant = await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V2, price: 800000, validFrom: "2025-01-01", validTo: "2025-06-30" });
+  assert.ok(otherVariant.ok);
+});
+
+test("createAgentOverride: قیمتِ منفی/بازه‌ی وارونه رد می‌شوند", async () => {
+  assert.deepEqual(await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V2, price: -1, validFrom: null, validTo: null }), { ok: false, reason: "invalid" });
+  assert.deepEqual(await createAgentOverride({ tenantId: T, agentAccountId: AG2, variantId: V2, price: 1000, validFrom: "2025-06-01", validTo: "2025-01-01" }), { ok: false, reason: "invalid" });
+});
+
+test("updateAgentOverride: قیمت/بازه را عوض می‌کند؛ هم‌پوشیِ تازه با پله‌ی دیگر رد می‌شود", async () => {
+  const a = await createAgentOverride({ tenantId: T, agentAccountId: AG, variantId: V2, price: 100, validFrom: "2025-01-01", validTo: "2025-03-01" });
+  const b = await createAgentOverride({ tenantId: T, agentAccountId: AG, variantId: V2, price: 200, validFrom: "2025-04-01", validTo: "2025-06-01" });
+  assert.ok(a.ok && b.ok);
+  if (!a.ok || !b.ok) return;
+
+  const ok = await updateAgentOverride({ tenantId: T, id: a.id, price: 150, validFrom: "2025-01-01", validTo: "2025-03-01" });
+  assert.deepEqual(ok, { ok: true, id: a.id });
+
+  // اگر a را طوری عوض کنیم که با b هم‌پوش شود → رد
+  const clash = await updateAgentOverride({ tenantId: T, id: a.id, price: 150, validFrom: "2025-01-01", validTo: "2025-04-15" });
+  assert.deepEqual(clash, { ok: false, reason: "overlap" });
+
+  assert.deepEqual(await updateAgentOverride({ tenantId: T, id: "00000000-0000-0000-0000-000000000000", price: 1, validFrom: null, validTo: null }), { ok: false, reason: "not_found" });
+});
+
+test("deleteAgentOverride و listAgentOverrides: حذف می‌کند و فقط استثناهای همان نماینده را می‌دهد", async () => {
+  const mine = await createAgentOverride({ tenantId: T, agentAccountId: AG, variantId: V1, price: 999, validFrom: "2030-01-01", validTo: null });
+  assert.ok(mine.ok);
+  if (!mine.ok) return;
+
+  const rows = await listAgentOverrides(T, AG);
+  assert.ok(rows.some((r) => r.id === mine.id));
+  assert.ok(rows.every((r) => r.productName && r.productCode), "نامِ کالا هم باید بیاید");
+
+  assert.deepEqual(await deleteAgentOverride({ tenantId: T, id: mine.id }), { ok: true });
+  const after = await listAgentOverrides(T, AG);
+  assert.ok(!after.some((r) => r.id === mine.id));
+  assert.deepEqual(await deleteAgentOverride({ tenantId: T, id: mine.id }), { ok: false, reason: "not_found" });
 });

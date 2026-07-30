@@ -256,3 +256,92 @@ export async function deleteVolumeDiscount(params: { tenantId: string; id: strin
     return row ? { ok: true } : { ok: false, reason: "not_found" };
   });
 }
+
+// ---------------------------------------------------------------------------
+// استثنای قیمتِ نمایندگی‌محور (agent_price_override) — بالاترین اولویتِ قیمت
+// ---------------------------------------------------------------------------
+
+export type AgentOverrideRow = {
+  id: string; variantId: string; price: string; validFrom: string | null; validTo: string | null;
+  productName: string; productCode: string;
+};
+
+/** استثناهای قیمتِ یک نماینده (نه همه‌ی نماینده‌ها — پنل از رویِ کارتِ همان نماینده باز می‌شود). */
+export async function listAgentOverrides(tenantId: string, agentAccountId: string): Promise<AgentOverrideRow[]> {
+  return withTenant(tenantId, (tx) => tx<AgentOverrideRow[]>`
+    SELECT o.id, o.variant_id AS "variantId", o.price::text AS price,
+           o.valid_from AS "validFrom", o.valid_to AS "validTo",
+           p.name AS "productName", p.code AS "productCode"
+    FROM agent_price_override o
+    JOIN product_variant pv ON pv.id = o.variant_id
+    JOIN product p ON p.id = pv.product_id
+    WHERE o.tenant_id = ${tenantId} AND o.agent_account_id = ${agentAccountId}
+    ORDER BY p.name, o.valid_from NULLS FIRST`);
+}
+
+export type OverrideError = "invalid" | "overlap" | "not_found";
+export type OverrideResult = { ok: true; id: string } | { ok: false; reason: OverrideError };
+
+function validOverride(price: number, validFrom: string | null, validTo: string | null): boolean {
+  if (!Number.isInteger(price) || price < 0) return false;
+  if (validFrom && validTo && validFrom > validTo) return false;
+  return true;
+}
+
+/**
+ * استثنای تازه. بازه‌ی اعتبار (valid_from/valid_to) اختیاری است؛ نبودِ هرکدام
+ * یعنی نامحدود از آن طرف. هم‌پوشانیِ بازه با استثنای دیگرِ همین (نماینده،کالا)
+ * قبل از INSERT رد می‌شود — وگرنه `resolvePricesIn` بینِ دو ردیفِ هم‌زمان معتبر
+ * انتخابِ غیرقطعی می‌کند (فقط `rank` می‌بیند، نه اینکه کدام تازه‌تر است).
+ */
+export async function createAgentOverride(params: {
+  tenantId: string; agentAccountId: string; variantId: string; price: number;
+  validFrom: string | null; validTo: string | null;
+}): Promise<OverrideResult> {
+  const { tenantId, agentAccountId, variantId, price, validFrom, validTo } = params;
+  if (!validOverride(price, validFrom, validTo)) return { ok: false, reason: "invalid" };
+  return withTenant(tenantId, async (tx) => {
+    const [overlap] = await tx`
+      SELECT 1 FROM agent_price_override
+      WHERE tenant_id = ${tenantId} AND agent_account_id = ${agentAccountId} AND variant_id = ${variantId}
+        AND (valid_from IS NULL OR ${validTo}::date IS NULL OR valid_from <= ${validTo}::date)
+        AND (valid_to   IS NULL OR ${validFrom}::date IS NULL OR valid_to   >= ${validFrom}::date)`;
+    if (overlap) return { ok: false, reason: "overlap" };
+    const [row] = await tx<{ id: string }[]>`
+      INSERT INTO agent_price_override (tenant_id, agent_account_id, variant_id, price, valid_from, valid_to)
+      VALUES (${tenantId}, ${agentAccountId}, ${variantId}, ${price}, ${validFrom}, ${validTo})
+      RETURNING id`;
+    return { ok: true, id: row.id };
+  });
+}
+
+/** فقط قیمت/بازه قابلِ ویرایش‌اند — عوض‌کردنِ نماینده/کالا یعنی استثنای دیگری است. */
+export async function updateAgentOverride(params: {
+  tenantId: string; id: string; price: number; validFrom: string | null; validTo: string | null;
+}): Promise<OverrideResult> {
+  const { tenantId, id, price, validFrom, validTo } = params;
+  if (!validOverride(price, validFrom, validTo)) return { ok: false, reason: "invalid" };
+  return withTenant(tenantId, async (tx) => {
+    const [row] = await tx<{ agent_account_id: string; variant_id: string }[]>`
+      SELECT agent_account_id, variant_id FROM agent_price_override WHERE tenant_id = ${tenantId} AND id = ${id}`;
+    if (!row) return { ok: false, reason: "not_found" };
+    const [overlap] = await tx`
+      SELECT 1 FROM agent_price_override
+      WHERE tenant_id = ${tenantId} AND agent_account_id = ${row.agent_account_id} AND variant_id = ${row.variant_id} AND id <> ${id}
+        AND (valid_from IS NULL OR ${validTo}::date IS NULL OR valid_from <= ${validTo}::date)
+        AND (valid_to   IS NULL OR ${validFrom}::date IS NULL OR valid_to   >= ${validFrom}::date)`;
+    if (overlap) return { ok: false, reason: "overlap" };
+    await tx`
+      UPDATE agent_price_override SET price = ${price}, valid_from = ${validFrom}, valid_to = ${validTo}
+      WHERE tenant_id = ${tenantId} AND id = ${id}`;
+    return { ok: true, id };
+  });
+}
+
+export async function deleteAgentOverride(params: { tenantId: string; id: string }): Promise<{ ok: true } | { ok: false; reason: "not_found" }> {
+  const { tenantId, id } = params;
+  return withTenant(tenantId, async (tx) => {
+    const [row] = await tx`DELETE FROM agent_price_override WHERE tenant_id = ${tenantId} AND id = ${id} RETURNING id`;
+    return row ? { ok: true } : { ok: false, reason: "not_found" };
+  });
+}

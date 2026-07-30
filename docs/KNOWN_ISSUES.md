@@ -15,7 +15,7 @@
 | سوییچرِ چند-نمایندگی | ✅ `useContexts` + `ContextSwitcher`؛ انتخاب در localStorage می‌ماند (سرور هر درخواست را دوباره authorize می‌کند، پس دست‌کاری‌اش فقط ۴۰۳ می‌دهد). وقتی فقط یک context باشد چیزی نشان داده نمی‌شود | — |
 | worker انقضا | ✅ `expire_due_reservations()` + `npm run worker:expire` (cron هر ۱۰-۱۵ دقیقه) | spec ۵.۳ |
 | StockAlert + پیامک (Outbox) | ✅ `alerts.ts`/`outbox.ts`، `/api/alerts`، `npm run worker:outbox`. صف‌کردن اتمیک با import، claim-then-send، retry×۵ و dead-letter. **باز:** ارائه‌دهنده‌ی واقعی پیامک (فعلاً `SMS_PROVIDER=log`) | spec ۵.۹ |
-| قیمت‌گذاری + تخفیف حجمی | ✅ v2 — `pricing.ts`, `/staff/prices`. قیمت در لحظه‌ی تأیید **snapshot** می‌شود. v9: ساختِ سبدِ قیمت‌گذاری (`/api/price-lists`) + ورودِ اکسلِ دسته‌جمعی (`/staff/catalog?tab=priceImport`) + مدیریتِ کاملِ پله‌های تخفیفِ حجمی (`/staff/catalog?tab=volumeDiscount`) هم از UI؛ همه‌جا CRUD واقعی، نه فقط SQL | spec ۵.۷ |
+| قیمت‌گذاری + تخفیف حجمی | ✅ v2 — `pricing.ts`, `/staff/prices`. قیمت در لحظه‌ی تأیید **snapshot** می‌شود. v9: ساختِ سبدِ قیمت‌گذاری (`/api/price-lists`) + ورودِ اکسلِ دسته‌جمعی (`/staff/catalog?tab=priceImport`) + مدیریتِ کاملِ پله‌های تخفیفِ حجمی (`/staff/catalog?tab=volumeDiscount`) + استثنای قیمتِ نمایندگی‌محور (`agent_price_override`، از کارتِ نماینده در `/staff/agents`) هم از UI؛ همه‌جا CRUD واقعی، نه فقط SQL | spec ۵.۷ |
 | تأیید هیبریدی (سقف خودکار) | ✅ v2 — سقفِ tenant/agent، پیش‌فرض **خاموش**، هر ابهامی → تأییدِ دستی. `/staff/auto-approve` | spec ۹ |
 | صف انتظار | ✅ v2 — به‌ترتیبِ نوبت، در همان تراکنشِ آزادسازی | spec ۹ |
 | چندانباره | ✅ v2 — سفارشِ دوانباره خودکار به دو حواله تقسیم می‌شود | spec ۹ |

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toJalali, jalaliToDate, jalaliMonthLength, JALALI_MONTHS } from "./date";
+import { toJalali, jalaliToDate, jalaliToIsoDate, jalaliMonthLength, JALALI_MONTHS } from "./date";
 
 /**
  * تنها چیزی که واقعاً می‌تواند بشکند، حلقه‌ی تصحیحِ `jalaliToDate` است.
@@ -52,4 +52,17 @@ test("نام ماه‌ها کامل است", () => {
   assert.equal(JALALI_MONTHS.length, 12);
   assert.equal(JALALI_MONTHS[0], "فروردین");
   assert.equal(JALALI_MONTHS[11], "اسفند");
+});
+
+test("🔴 jalaliToIsoDate: برخلافِ jalaliToDate(...).toISOString()، یک روز عقب نمی‌افتد", () => {
+  // این دقیقاً همان باگی است که در استثنای قیمتِ نمایندگی پیدا شد: چون
+  // jalaliToDate نیمه‌شبِ تهران را برمی‌گرداند، toISOString() رویِ آن (که برایِ
+  // TIMESTAMPTZ درست است) برای یک ستونِ DATE ساده یک روز عقب می‌افتد.
+  for (let jy = 1400; jy <= 1406; jy++) {
+    const iso = jalaliToIsoDate({ jy, jm: 5, jd: 8 });
+    const wrong = jalaliToDate({ jy, jm: 5, jd: 8 }).toISOString().slice(0, 10);
+    assert.notEqual(iso, wrong, `jalaliToIsoDate نباید مثلِ toISOStringِ خام باشد (${jy})`);
+    // رفت‌وبرگشت: خودِ ISO باید همان روزِ شمسی را بدهد
+    assert.deepEqual(toJalali(new Date(iso + "T12:00:00Z")), { jy, jm: 5, jd: 8 });
+  }
 });
