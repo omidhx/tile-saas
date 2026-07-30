@@ -12,6 +12,8 @@ import NavMenu from "../NavMenu";
 const num = (v: number) => v.toLocaleString("fa-IR");
 /** معادلِ اعشاری (پالت/مترمربع) — برای دو رقمِ اعشار کافی، نه عددِ صحیح مثلِ کارتن. */
 const numUnit = (v: number) => v.toLocaleString("fa-IR", { maximumFractionDigits: 2 });
+/** صفِ رزرو/درخواست را هر چند وقت دوباره بخوان — همان الگوی «رزروهای من»ِ نماینده. */
+const QUEUE_REFRESH_MS = 60_000;
 
 type ResvItem = {
   name: string; code: string; quantityBoxes: number;
@@ -176,6 +178,29 @@ export default function StaffPage() {
     act("approve" + reservationId, `/api/reservations/${reservationId}/approve`, { tenantId: ctx!.tenantId });
 
   useEffect(() => { if (ctx) load(ctx); }, [ctx, load]);
+
+  /**
+   * صفِ «رزروهای در انتظار تأیید» و «درخواست‌های تأییدشده» بدونِ این فقط با
+   * F5ِ دستیِ پشتیبان تازه می‌شد — رزروِ تازه‌ی نماینده تا رفرشِ بعدی (شاید فردا)
+   * دیده نمی‌شد، برخلافِ «رزروهای من»ِ نماینده که از اول polling داشت.
+   * عمداً `load()` کامل را صدا نمی‌زند: آن هم جستجوی حواله/backorder را ریست
+   * می‌کند (رفتارِ درستِ بعدِ یک اکشن، نه چیزی که هر ۶۰ ثانیه بی‌خبر اتفاق بیفتد)
+   * و هم چهار endpointِ غیرضروری (نمایندگی‌ها/کاتالوگ/حواله/backorder) را دوباره می‌گیرد.
+   */
+  const pollQueues = useCallback(async (c: Ctx) => {
+    const [rv, r] = await Promise.all([
+      getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`),
+      getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
+    ]);
+    if (rv.ok) setPendingResvs(rv.data.reservations);
+    if (r.ok) setReqs(r.data.requests);
+  }, []);
+
+  useEffect(() => {
+    if (!ctx) return;
+    const iv = setInterval(() => pollQueues(ctx), QUEUE_REFRESH_MS);
+    return () => clearInterval(iv);
+  }, [ctx, pollQueues]);
 
   async function makeDispatch(requestId: string) {
     if (!ctx) return;
