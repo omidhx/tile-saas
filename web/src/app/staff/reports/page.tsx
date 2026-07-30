@@ -22,6 +22,8 @@ type Reports = {
   from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[];
   discountsByAgent: DiscountByAgent[]; discountsByProduct: DiscountByProduct[];
 };
+type AgentOpt = { id: string; legalName: string };
+type VariantOpt = { id: string; name: string; code: string };
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 /** برای نامِ فایل — نه formatJalaliDate که با «/» می‌نویسد و در ویندوز نامِ فایلِ نامعتبر می‌سازد. */
@@ -41,6 +43,11 @@ export default function ReportsHubPage() {
   const [to, setTo] = useState<Jalali>(todayJalali);
   const [loadErr, setLoadErr] = useState("");
   const [loading, setLoading] = useState(false);
+  // فیلترِ اختیاریِ نماینده/کالا — همان گزارش، محدود به یکی از این دو (یا هردو)
+  const [agentOpts, setAgentOpts] = useState<AgentOpt[]>([]);
+  const [variantOpts, setVariantOpts] = useState<VariantOpt[]>([]);
+  const [filterAgent, setFilterAgent] = useState("");
+  const [filterVariant, setFilterVariant] = useState("");
 
   // آدرسِ ورودی (مثلاً از NavMenu: ?tab=ledger) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «reports» است) ناسازگار نشود.
@@ -53,23 +60,40 @@ export default function ReportsHubPage() {
     history.replaceState(null, "", `?tab=${key}`);
   }
 
-  const load = useCallback(async (tenantId: string, f: Jalali, t: Jalali) => {
+  const load = useCallback(async (tenantId: string, f: Jalali, t: Jalali, agentId: string, variantId: string) => {
     setLoading(true);
     // مرزها به UTC می‌روند چون DB با UTC کار می‌کند؛ فقط نمایش شمسی است.
     // to را شاملِ خودِ روز می‌کنیم (کاربر «تا امروز» را یعنی «شاملِ امروز» می‌فهمد)
     const fromIso = jalaliToDate(f).toISOString();
     const toExclusive = new Date(jalaliToDate(t).getTime() + 86400000).toISOString();
-    const res = await getJson<Reports>(`/api/reports?tenantId=${tenantId}&from=${fromIso}&to=${toExclusive}`);
+    const qs = `tenantId=${tenantId}&from=${fromIso}&to=${toExclusive}`
+      + (agentId ? `&agentAccountId=${agentId}` : "") + (variantId ? `&variantId=${variantId}` : "");
+    const res = await getJson<Reports>(`/api/reports?${qs}`);
     if (res.ok) { setRep(res.data); setLoadErr(""); }
     else setLoadErr(loadError(res.status));
     setLoading(false);
   }, []);
 
+  // فهرستِ نماینده‌ها/کالاها برای دو selectِ فیلتر — یک‌بار، مستقلِ از بازه/گزارش
+  useEffect(() => {
+    if (!ctx) return;
+    (async () => {
+      const [ag, cat] = await Promise.all([
+        getJson<{ agents: AgentOpt[] }>(`/api/agents?tenantId=${ctx.tenantId}`),
+        getJson<{ variants: VariantOpt[] }>(`/api/catalog?tenantId=${ctx.tenantId}`),
+      ]);
+      if (ag.ok) setAgentOpts(ag.data.agents);
+      if (cat.ok) setVariantOpts(cat.data.variants);
+    })();
+  }, [ctx]);
+
   // با selectها دیگر min/max نداریم، پس بازه‌ی وارونه ممکن است — و بی‌راهنما
   // فقط یک گزارشِ خالی نشان می‌داد.
   const inverted = jalaliToDate(from) > jalaliToDate(to);
 
-  useEffect(() => { if (ctx && tab === "reports" && !inverted) load(ctx.tenantId, from, to); }, [ctx, tab, from, to, load, inverted]);
+  useEffect(() => {
+    if (ctx && tab === "reports" && !inverted) load(ctx.tenantId, from, to, filterAgent, filterVariant);
+  }, [ctx, tab, from, to, filterAgent, filterVariant, load, inverted]);
 
   if (state === "none")
     return (
@@ -132,6 +156,20 @@ export default function ReportsHubPage() {
               <JalaliDateInput label="تا" value={to} onChange={setTo} currentYear={todayJalali().jy} />
               {loading && <span className="muted"><span className="spinner" aria-hidden="true" />در حال محاسبه…</span>}
             </div>
+            {/* فیلترِ اختیاری: محدودکردنِ همین گزارش به یک نماینده و/یا یک کالا */}
+            <div className="row row--start" style={{ gap: ".5rem", flexWrap: "wrap", marginTop: "var(--sp-3)" }}>
+              <select aria-label="فیلترِ نماینده" value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} style={{ maxWidth: 220 }}>
+                <option value="">همه‌ی نمایندگی‌ها</option>
+                {agentOpts.map((a) => <option key={a.id} value={a.id}>{a.legalName}</option>)}
+              </select>
+              <select aria-label="فیلترِ کالا" value={filterVariant} onChange={(e) => setFilterVariant(e.target.value)} style={{ maxWidth: 260 }}>
+                <option value="">همه‌ی کالاها</option>
+                {variantOpts.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
+              </select>
+              {(filterAgent || filterVariant) && (
+                <button className="ghost" onClick={() => { setFilterAgent(""); setFilterVariant(""); }}>پاک‌کردنِ فیلتر</button>
+              )}
+            </div>
           </div>
 
           {rep && !loadErr && !inverted && (
@@ -189,6 +227,7 @@ export default function ReportsHubPage() {
                   ))}
 
               <h2>راکدها (موجودیِ بدون فروش)</h2>
+              {filterAgent && <p className="subtle">موجودی مالِ نماینده‌ی خاصی نیست — فیلترِ نماینده اینجا اثر ندارد.</p>}
               {rep.deadStock.length === 0
                 ? <p className="muted">همه‌ی کالاهای موجود در این بازه فروش داشته‌اند.</p>
                 : <>

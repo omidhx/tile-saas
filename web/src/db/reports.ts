@@ -33,8 +33,12 @@ export type Reports = {
   discountsByProduct: DiscountByProduct[];
 };
 
-export async function buildReports(p: { tenantId: string; from: Date; to: Date }): Promise<Reports> {
-  const { tenantId, from, to } = p;
+export async function buildReports(p: {
+  tenantId: string; from: Date; to: Date;
+  /** فیلترِ اختیاریِ نماینده/کالا — همان بازه، محدود به یکی از این دو (یا هردو). */
+  agentAccountId?: string | null; variantId?: string | null;
+}): Promise<Reports> {
+  const { tenantId, from, to, agentAccountId, variantId } = p;
   return withTenant(tenantId, async (tx) => {
     // عملکرد نماینده — ارزش از قیمتِ snapshot‌شده، نه قیمت امروز
     const agents = await tx<{ agentId: string; agentName: string; requests: number; boxes: number; value: string; unpricedLines: number }[]>`
@@ -50,23 +54,30 @@ export async function buildReports(p: { tenantId: string; from: Date; to: Date }
       WHERE sr.tenant_id = ${tenantId}
         AND sr.status IN ('approved', 'fulfilled')
         AND sr.created_at >= ${from} AND sr.created_at < ${to}
+        AND ${agentAccountId ? tx`aa.id = ${agentAccountId}` : tx`TRUE`}
+        AND ${variantId ? tx`sri.variant_id = ${variantId}` : tx`TRUE`}
       GROUP BY aa.id, aa.legal_name
       ORDER BY value DESC, boxes DESC`;
 
-    // پرفروش‌ها — کارتنی که واقعاً بارگیری شد (لجر)، نه چیزی که سفارش داده شد
+    // پرفروش‌ها — کارتنی که واقعاً بارگیری شد (لجر)، نه چیزی که سفارش داده شد.
+    // فیلترِ نماینده از رویِ خودِ حواله می‌آید — لجر نماینده ندارد، حواله دارد.
     const topProducts = await tx<{ name: string; code: string; boxes: number }[]>`
       SELECT p.name, p.code, SUM(-t.on_hand_delta_boxes)::int AS boxes
       FROM inventory_transaction t
       JOIN inventory_lot l    ON l.id = t.lot_id
       JOIN product_variant pv ON pv.id = l.variant_id
       JOIN product p          ON p.id = pv.product_id
+      LEFT JOIN sales_dispatch sd ON sd.tenant_id = t.tenant_id AND sd.id = t.reference_id AND t.reference_type = 'sales_dispatch'
       WHERE t.tenant_id = ${tenantId} AND t.transaction_type = 'dispatch_load'
         AND t.created_at >= ${from} AND t.created_at < ${to}
+        AND ${agentAccountId ? tx`sd.agent_account_id = ${agentAccountId}` : tx`TRUE`}
+        AND ${variantId ? tx`pv.id = ${variantId}` : tx`TRUE`}
       GROUP BY p.name, p.code
       ORDER BY boxes DESC
       LIMIT 20`;
 
-    // راکدها — موجودی دارد ولی در این بازه هیچ بارگیری نداشته (سرمایه‌ی خوابیده)
+    // راکدها — موجودی دارد ولی در این بازه هیچ بارگیری نداشته (سرمایه‌ی خوابیده).
+    // فیلترِ نماینده اینجا بی‌معنی است (موجودی مالِ نماینده‌ی خاصی نیست)، فقط کالا اعمال می‌شود.
     const deadStock = await tx<{ name: string; code: string; onHand: number }[]>`
       SELECT p.name, p.code, SUM(b.on_hand_qty_boxes)::int AS "onHand"
       FROM inventory_lot l
@@ -74,6 +85,7 @@ export async function buildReports(p: { tenantId: string; from: Date; to: Date }
       JOIN product_variant pv  ON pv.id = l.variant_id
       JOIN product p           ON p.id = pv.product_id
       WHERE l.tenant_id = ${tenantId} AND b.on_hand_qty_boxes > 0
+        AND ${variantId ? tx`pv.id = ${variantId}` : tx`TRUE`}
         AND NOT EXISTS (
           SELECT 1 FROM inventory_transaction t
           WHERE t.lot_id = l.id AND t.transaction_type = 'dispatch_load'
@@ -98,6 +110,8 @@ export async function buildReports(p: { tenantId: string; from: Date; to: Date }
       WHERE sr.tenant_id = ${tenantId}
         AND sr.status IN ('approved', 'fulfilled')
         AND sr.created_at >= ${from} AND sr.created_at < ${to}
+        AND ${agentAccountId ? tx`aa.id = ${agentAccountId}` : tx`TRUE`}
+        AND ${variantId ? tx`sri.variant_id = ${variantId}` : tx`TRUE`}
       GROUP BY aa.id, aa.legal_name
       HAVING COALESCE(SUM(sri.discount_amount), 0) > 0
       ORDER BY "discountAmount" DESC`;
@@ -114,6 +128,8 @@ export async function buildReports(p: { tenantId: string; from: Date; to: Date }
       WHERE sr.tenant_id = ${tenantId}
         AND sr.status IN ('approved', 'fulfilled')
         AND sr.created_at >= ${from} AND sr.created_at < ${to}
+        AND ${agentAccountId ? tx`sr.agent_account_id = ${agentAccountId}` : tx`TRUE`}
+        AND ${variantId ? tx`pv.id = ${variantId}` : tx`TRUE`}
       GROUP BY p.name, p.code
       HAVING COALESCE(SUM(sri.discount_amount), 0) > 0
       ORDER BY "discountAmount" DESC

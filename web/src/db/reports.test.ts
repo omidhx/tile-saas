@@ -119,3 +119,44 @@ test("بازه‌ی زمانی واقعاً فیلتر می‌کند — باز�
   // ولی راکد در آن بازه شاملِ هر دو است، چون هیچ‌کدام در آن بازه بارگیری نشده‌اند
   assert.equal(rep.deadStock.length, 2);
 });
+
+test("فیلترِ نماینده: فقط داده‌ی همان نماینده را می‌دهد، نه جمعِ همه", async () => {
+  const AG2 = "a5555555-5555-5555-5555-555555555556";
+  await sql.unsafe(`
+    INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG2}','${T}','نمایندگی ب','AG2','${PL}');
+  `);
+  const r = await reserve({ tenantId: T, agentAccountId: AG2, ttlHours: 24, idempotencyKey: "rep-ag2", items: [{ lotId: LOT_HOT, quantityBoxes: 10 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-R2" });
+  const did = d.ok ? d.dispatchIds[0] : "";
+  await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "ready_for_loading", actorUserId: U });
+  await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "loaded", actorUserId: U });
+
+  const unfiltered = await buildReports({ tenantId: T, ...range() });
+  assert.equal(unfiltered.agents.length, 2, "بدونِ فیلتر هر دو نماینده باشند");
+  assert.equal(unfiltered.topProducts.find((p) => p.code === "HOT")!.boxes, 30, "جمعِ بارگیریِ هر دو نماینده");
+
+  const onlyAg1 = await buildReports({ tenantId: T, ...range(), agentAccountId: AG });
+  assert.equal(onlyAg1.agents.length, 1);
+  assert.equal(onlyAg1.agents[0].agentId, AG);
+  assert.equal(onlyAg1.topProducts.find((p) => p.code === "HOT")!.boxes, 20, "فقط بارگیریِ حواله‌ی همین نماینده، نه نماینده‌ی دیگر");
+
+  const onlyAg2 = await buildReports({ tenantId: T, ...range(), agentAccountId: AG2 });
+  assert.equal(onlyAg2.agents.length, 1);
+  assert.equal(onlyAg2.agents[0].agentId, AG2);
+  assert.equal(onlyAg2.topProducts.find((p) => p.code === "HOT")!.boxes, 10);
+
+  // راکد به نماینده ربطی ندارد — فیلترِ نماینده رویش اثر نمی‌گذارد
+  assert.equal(onlyAg1.deadStock.length, unfiltered.deadStock.length);
+});
+
+test("فیلترِ کالا: عملکردِ نماینده را به همان یک کالا محدود می‌کند", async () => {
+  const onlyDead = await buildReports({ tenantId: T, ...range(), variantId: V_DEAD });
+  assert.equal(onlyDead.agents.length, 0, "کسی V_DEAD نخریده، پس با این فیلتر نماینده‌ای دیده نمی‌شود");
+  assert.equal(onlyDead.topProducts.length, 0);
+
+  const onlyHot = await buildReports({ tenantId: T, ...range(), variantId: V_HOT });
+  assert.ok(onlyHot.agents.length > 0);
+  assert.equal(onlyHot.topProducts.length, 1);
+  assert.equal(onlyHot.topProducts[0].code, "HOT");
+});

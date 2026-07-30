@@ -5,7 +5,7 @@ import { buildReports } from "@/db/reports";
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** GET /api/reports?tenantId&from&to — گزارش‌های مدیریتی (staff-only، فقط خواندنی). */
+/** GET /api/reports?tenantId&from&to[&agentAccountId][&variantId] — گزارش‌های مدیریتی (staff-only، فقط خواندنی). */
 export async function GET(req: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
@@ -28,5 +28,8 @@ export async function GET(req: Request) {
   const from = parse(u.searchParams.get("from"), new Date(to.getTime() - 30 * DAY));
   if (from >= to) return NextResponse.json({ error: "bad_range" }, { status: 400 });
 
-  return NextResponse.json(await buildReports({ tenantId, from, to }));
+  const agentAccountId = u.searchParams.get("agentAccountId") || null;
+  const variantId = u.searchParams.get("variantId") || null;
+
+  return NextResponse.json(await buildReports({ tenantId, from, to, agentAccountId, variantId }));
 }
