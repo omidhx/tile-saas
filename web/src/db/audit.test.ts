@@ -14,6 +14,8 @@ const T = "11111111-1111-1111-1111-111111111111";
 const U = "a8888888-8888-8888-8888-888888888888";
 const V = "a2222222-2222-2222-2222-222222222222";
 const PL = "aaaa1111-1111-1111-1111-111111111111";
+const PRODUCT_ID = "a1111111-1111-1111-1111-111111111111";
+const CUSTOMER_ID = "a6666666-6666-6666-6666-666666666666";
 
 before(async () => {
   await resetSchema();
@@ -21,8 +23,9 @@ before(async () => {
     INSERT INTO tenant (id,name,slug) VALUES ('${T}','کارخانه','a');
     INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
-    INSERT INTO product (id,tenant_id,code,name) VALUES ('a1111111-1111-1111-1111-111111111111','${T}','P1','گرانیت');
-    INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('${V}','${T}','a1111111-1111-1111-1111-111111111111','S1');
+    INSERT INTO product (id,tenant_id,code,name) VALUES ('${PRODUCT_ID}','${T}','P1','گرانیت');
+    INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('${V}','${T}','${PRODUCT_ID}','S1');
+    INSERT INTO customer (id,tenant_id,name) VALUES ('${CUSTOMER_ID}','${T}','مشتری نمونه');
   `);
 });
 after(async () => { await sql.end(); });
@@ -81,6 +84,27 @@ test("تازه‌ترین اول می‌آید", async () => {
     }));
   const rows = (await listAudit({ tenantId: T })).items;
   assert.equal(rows[0].newValue, 300, "آخرین تغییر باید بالای فهرست باشد");
+});
+
+test("برچسبِ ردپای ویرایشِ محصول از خودِ محصول می‌آید (نه فقط قیمت)", async () => {
+  await withTenant(T, (tx) => writeAudit(tx, {
+    tenantId: T, actorUserId: U, action: "product.edit",
+    entity: "product", entityId: PRODUCT_ID, oldValue: { glaze: "براق" }, newValue: { glaze: "مات" },
+  }));
+  const [row] = (await listAudit({ tenantId: T, q: "گرانیت" })).items;
+  assert.equal(row.action, "product.edit");
+  assert.equal(row.label, "گرانیت", "برچسب باید از خودِ product بیاید، نه از price_list_item");
+  assert.deepEqual(row.newValue, { glaze: "مات" });
+});
+
+test("برچسبِ ردپای ویرایشِ مشتری از خودِ مشتری می‌آید", async () => {
+  await withTenant(T, (tx) => writeAudit(tx, {
+    tenantId: T, actorUserId: U, action: "customer.edit",
+    entity: "customer", entityId: CUSTOMER_ID, oldValue: { phone: "0911" }, newValue: { phone: "0912" },
+  }));
+  const [row] = (await listAudit({ tenantId: T, q: "مشتری نمونه" })).items;
+  assert.equal(row.action, "customer.edit");
+  assert.equal(row.label, "مشتری نمونه");
 });
 
 test("دفترِ یک کارخانه به کارخانه‌ی دیگر نشت نمی‌کند", async () => {

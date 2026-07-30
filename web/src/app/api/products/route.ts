@@ -90,7 +90,7 @@ export async function PATCH(req: Request) {
   if (!bpp.ok || !spb.ok) return NextResponse.json({ error: "invalid_packaging" }, { status: 400 });
 
   await updateProduct({
-    tenantId: c.tenantId, productId: body.productId,
+    tenantId: c.tenantId, productId: body.productId, actorUserId: c.userId,
     name: typeof body.name === "string" ? body.name : undefined,
     color: optStr(body.color), glaze: optStr(body.glaze), punch: optStr(body.punch), body: optStr(body.body),
     size: optStr(body.size), thickness: optStr(body.thickness),

@@ -11,11 +11,13 @@ import { createProduct, listProducts, updateProduct, addProductImage, removeProd
 
 const T = "11111111-1111-1111-1111-111111111111";
 const WH = "a3333333-3333-3333-3333-333333333333";
+const U = "a8888888-8888-8888-8888-888888888888";
 
 before(async () => {
   await resetSchema();
   await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');`);
   await sql.unsafe(`INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','انبارِ اصلی','W1','main');`);
+  await sql.unsafe(`INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');`);
 });
 after(async () => { await sql.end(); });
 beforeEach(async () => {
@@ -61,12 +63,36 @@ test("فهرست: hasStock درست است، sku می‌آید", async () => {
 test("ویرایشِ ویژگی‌ها، sku و کد را دست نمی‌زند", async () => {
   const r = await createProduct(T, { name: "قبلی", code: "E1", sku: "E1-A" });
   assert.ok(r.ok);
-  await updateProduct({ tenantId: T, productId: r.id, name: "جدید", glaze: "ترانس" });
+  await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, name: "جدید", glaze: "ترانس" });
   const [p] = await sql<{ name: string; glaze: string; code: string }[]>`
     SELECT p.name, p.glaze, p.code FROM product p WHERE p.id = ${r.id}`;
   assert.equal(p.name, "جدید");
   assert.equal(p.glaze, "ترانس");
   assert.equal(p.code, "E1", "کد نباید عوض شود — کلیدِ تطبیق است");
+});
+
+test("🔴 ویرایشِ محصول ردپا می‌گذارد — فقط برای فیلدهای واقعاً تغییرکرده", async () => {
+  const r = await createProduct(T, { name: "قبلی", code: "E2", sku: "E2-A", glaze: "براق" });
+  assert.ok(r.ok);
+
+  // glaze با همان مقدارِ قبلی دوباره فرستاده می‌شود — نباید در ردپا بیاید
+  await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, name: "جدید", glaze: "براق" });
+
+  const [row] = await sql<{ oldValue: unknown; newValue: unknown; entity: string }[]>`
+    SELECT old_value AS "oldValue", new_value AS "newValue", entity
+    FROM audit_log WHERE tenant_id = ${T} AND action = 'product.edit' AND entity_id = ${r.id}`;
+  assert.ok(row, "تغییرِ نام باید ردپا بگذارد");
+  assert.equal(row.entity, "product");
+  assert.deepEqual(row.oldValue, { name: "قبلی" }, "فقط فیلدِ واقعاً تغییرکرده وارد ردپا می‌شود");
+  assert.deepEqual(row.newValue, { name: "جدید" });
+});
+
+test("ویرایشِ محصول بدونِ تغییرِ واقعی، ردپا نمی‌گذارد", async () => {
+  const r = await createProduct(T, { name: "ثابت", code: "E3", sku: "E3-A" });
+  assert.ok(r.ok);
+  await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, name: "ثابت" });
+  const rows = await sql`SELECT 1 FROM audit_log WHERE tenant_id = ${T} AND action = 'product.edit' AND entity_id = ${r.id}`;
+  assert.equal(rows.length, 0, "بدونِ تغییرِ واقعی، دفتر نباید پر شود");
 });
 
 test("گالری: افزودن چند عکس، عکسِ اصلی = تامنیل (image_url)، تعیینِ اصلی و حذف", async () => {
@@ -112,7 +138,7 @@ test("ویرایشِ فیلدهای اطلاعاتِ بیشتر (ابعاد/ضخ
   let p = (await listProducts(T)).find((x) => x.code === "P2")!;
   assert.equal(p.size, "۶۰×۶۰");
   assert.equal(p.description, "کاشیِ کف");
-  await updateProduct({ tenantId: T, productId: r.id, thickness: "۹ میلی‌متر", usageArea: "کف/دیوار", size: "" });
+  await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, thickness: "۹ میلی‌متر", usageArea: "کف/دیوار", size: "" });
   p = (await listProducts(T)).find((x) => x.code === "P2")!;
   assert.equal(p.thickness, "۹ میلی‌متر");
   assert.equal(p.usageArea, "کف/دیوار");
@@ -128,12 +154,12 @@ test("بسته‌بندی: در ساخت ثبت می‌شود؛ در ویرای�
   assert.equal(p.sqcmPerBox, 3600);
 
   // بدونِ variantId، آپدیت بسته‌بندی نادیده گرفته می‌شود — نه خطا، فقط بی‌اثر
-  await updateProduct({ tenantId: T, productId: r.id, boxesPerPallet: 96 });
+  await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, boxesPerPallet: 96 });
   p = (await listProducts(T)).find((x) => x.code === "P3")!;
   assert.equal(p.boxesPerPallet, 48, "بدونِ variantId دست‌نخورده می‌ماند");
 
   // با variantId درست عوض می‌شود
-  await updateProduct({ tenantId: T, productId: r.id, variantId: p.variantId!, boxesPerPallet: 96, sqcmPerBox: null });
+  await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, variantId: p.variantId!, boxesPerPallet: 96, sqcmPerBox: null });
   p = (await listProducts(T)).find((x) => x.code === "P3")!;
   assert.equal(p.boxesPerPallet, 96);
   assert.equal(p.sqcmPerBox, null, "null صریح یعنی پاک‌کردن");

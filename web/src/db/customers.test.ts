@@ -86,12 +86,25 @@ test("🔴 نامِ روی حواله snapshot است — اصلاحِ نامِ 
   const c = await addCustomer({ tenantId: T, name: "نامِ اولیه", agentAccountId: AG });
   const dispatchId = await sell(10, "D-SNAP", c, "نامِ اولیه");
 
-  await updateCustomer({ tenantId: T, id: c, name: "نامِ اصلاح‌شده" });
+  await updateCustomer({ tenantId: T, id: c, actorUserId: U, name: "نامِ اصلاح‌شده" });
 
   const [row] = await sql<{ customer_name: string }[]>`
     SELECT customer_name FROM sales_dispatch WHERE id = ${dispatchId}`;
   assert.equal(row.customer_name, "نامِ اولیه",
     "حواله‌ی صادرشده باید همان نامی را نگه دارد که رویش نوشته شده بود");
+});
+
+test("🔴 ویرایشِ مشتری ردپا می‌گذارد — فقط برای فیلدهای واقعاً تغییرکرده", async () => {
+  const c = await addCustomer({ tenantId: T, name: "قبلی", agentAccountId: AG, phone: "0911" });
+  await updateCustomer({ tenantId: T, id: c, actorUserId: U, name: "جدید", phone: "0911" });
+
+  const [row] = await sql<{ oldValue: unknown; newValue: unknown; entity: string }[]>`
+    SELECT old_value AS "oldValue", new_value AS "newValue", entity
+    FROM audit_log WHERE tenant_id = ${T} AND action = 'customer.edit' AND entity_id = ${c}`;
+  assert.ok(row, "تغییرِ نام باید ردپا بگذارد");
+  assert.equal(row.entity, "customer");
+  assert.deepEqual(row.oldValue, { name: "قبلی" }, "phone تغییر نکرده — نباید در ردپا بیاید");
+  assert.deepEqual(row.newValue, { name: "جدید" });
 });
 
 test("پرخریدترین مشتری: ارزش از snapshotِ سفارش، کارتن از لجر", async () => {
@@ -161,7 +174,7 @@ test("تاریخچه‌ی مشتری، حواله‌هایش را برمی‌گ�
 
 test("غیرفعال‌کردن مشتری، حذفش نمی‌کند (تاریخچه باید بماند)", async () => {
   const c = await addCustomer({ tenantId: T, name: "مشتری غیرفعال", agentAccountId: AG });
-  await updateCustomer({ tenantId: T, id: c, isActive: false });
+  await updateCustomer({ tenantId: T, id: c, actorUserId: U, isActive: false });
   const list = await listCustomers({ tenantId: T, agentAccountId: AG });
   const row = list.find((x) => x.id === c)!;
   assert.equal(row.isActive, false, "غیرفعال، نه حذف — وگرنه حواله‌های گذشته مرجعشان را از دست می‌دهند");

@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { writeAudit, type AuditValue } from "./audit";
 
 /**
  * مشتریِ نهایی به‌عنوان Entity (v2، spec ۹ — مشروط به ۷.۷).
@@ -46,17 +47,48 @@ export async function addCustomer(p: {
   return row.id;
 }
 
+/**
+ * ویرایشِ مشتری، با ردپا در دفترِ تغییرات (`audit_log`، action: `customer.edit`).
+ * فقط فیلدهایی که واقعاً عوض شده‌اند وارد ردپا می‌شوند (همان الگوی product.edit).
+ */
 export async function updateCustomer(p: {
-  tenantId: string; id: string; name?: string; phone?: string | null;
+  tenantId: string; id: string; actorUserId: string; name?: string; phone?: string | null;
   note?: string | null; isActive?: boolean;
 }) {
-  await withTenant(p.tenantId, (tx) => tx`
-    UPDATE customer SET
-      name      = COALESCE(${p.name?.trim() ?? null}, name),
-      phone     = ${p.phone === undefined ? tx`phone` : tx`${p.phone?.trim() || null}`},
-      note      = ${p.note === undefined ? tx`note` : tx`${p.note?.trim() || null}`},
-      is_active = COALESCE(${p.isActive ?? null}, is_active)
-    WHERE tenant_id = ${p.tenantId} AND id = ${p.id}`);
+  await withTenant(p.tenantId, async (tx) => {
+    const [before] = await tx<{ name: string; phone: string | null; note: string | null; isActive: boolean }[]>`
+      SELECT name, phone, note, is_active AS "isActive" FROM customer
+      WHERE tenant_id = ${p.tenantId} AND id = ${p.id}`;
+
+    await tx`
+      UPDATE customer SET
+        name      = COALESCE(${p.name?.trim() ?? null}, name),
+        phone     = ${p.phone === undefined ? tx`phone` : tx`${p.phone?.trim() || null}`},
+        note      = ${p.note === undefined ? tx`note` : tx`${p.note?.trim() || null}`},
+        is_active = COALESCE(${p.isActive ?? null}, is_active)
+      WHERE tenant_id = ${p.tenantId} AND id = ${p.id}`;
+
+    if (!before) return;
+    const newName = p.name !== undefined && p.name.trim() ? p.name.trim() : before.name;
+    const newPhone = p.phone === undefined ? before.phone : (p.phone?.trim() || null);
+    const newNote = p.note === undefined ? before.note : (p.note?.trim() || null);
+    const newActive = p.isActive === undefined ? before.isActive : p.isActive;
+
+    const oldDiff: Record<string, AuditValue> = {}, newDiff: Record<string, AuditValue> = {};
+    const track = (key: string, oldVal: AuditValue, newVal: AuditValue) => {
+      if (oldVal !== newVal) { oldDiff[key] = oldVal; newDiff[key] = newVal; }
+    };
+    track("name", before.name, newName);
+    track("phone", before.phone, newPhone);
+    track("note", before.note, newNote);
+    track("isActive", before.isActive, newActive);
+
+    if (Object.keys(newDiff).length)
+      await writeAudit(tx, {
+        tenantId: p.tenantId, actorUserId: p.actorUserId, action: "customer.edit",
+        entity: "customer", entityId: p.id, oldValue: oldDiff, newValue: newDiff,
+      });
+  });
 }
 
 export type CustomerSales = {

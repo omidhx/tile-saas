@@ -15,7 +15,7 @@ async function staffCtx(tenantId: unknown) {
     if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
     throw e;
   }
-  return { tenantId };
+  return { tenantId, userId };
 }
 
 /**
@@ -72,7 +72,7 @@ export async function PATCH(req: Request) {
   if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   await updateCustomer({
-    tenantId: c.tenantId, id: body.id,
+    tenantId: c.tenantId, id: body.id, actorUserId: c.userId,
     name: typeof body.name === "string" ? body.name : undefined,
     phone: body.phone === undefined ? undefined : (typeof body.phone === "string" ? body.phone : null),
     note: body.note === undefined ? undefined : (typeof body.note === "string" ? body.note : null),

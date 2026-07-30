@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { writeAudit, type AuditValue } from "./audit";
 import type { TransactionSql } from "postgres";
 
 /**
@@ -146,8 +147,15 @@ export async function createProduct(tenantId: string, a: Attrs, actorUserId?: st
 /**
  * ویرایشِ ویژگی‌های محصول (نه sku/code — کلیدِ تطبیق‌اند). فقط فیلدهای آمده ست می‌شوند.
  */
+/**
+ * ویرایشِ محصول، با ردپا در دفترِ تغییرات (`audit_log`، action: `product.edit`).
+ *
+ * چرا: قیمت و سقفِ تأیید خودکار قبلاً ردپا داشتند، ولی ویژگیِ محصول (رنگ، لعاب،
+ * بسته‌بندی و…) نه — یعنی کسی می‌توانست مشخصه‌ای را عوض کند و «چه کسی؟» بی‌جواب بماند.
+ * فقط ستون‌هایی که واقعاً عوض شده‌اند وارد ردپا می‌شوند (مثلِ الگوی price.set).
+ */
 export async function updateProduct(p: {
-  tenantId: string; productId: string;
+  tenantId: string; productId: string; actorUserId: string;
   name?: string; color?: string | null; glaze?: string | null; punch?: string | null; body?: string | null;
   size?: string | null; thickness?: string | null; usageArea?: string | null; description?: string | null;
   /** بسته‌بندی روی خودِ variant ذخیره می‌شود؛ بدونِ variantId نادیده گرفته می‌شود. */
@@ -156,23 +164,84 @@ export async function updateProduct(p: {
   const id = p.productId, t = p.tenantId;
   if (!id || !t) throw new Error("updateProduct: productId و tenantId الزامی‌اند");
   await withTenant(t, async (tx) => {
-    if (p.name !== undefined && p.name.trim())
+    const [before] = await tx<{
+      name: string; color: string | null; glaze: string | null; punch: string | null; body: string | null;
+      size: string | null; thickness: string | null; usageArea: string | null; description: string | null;
+    }[]>`
+      SELECT name, color, glaze, punch, body, size, thickness, usage_area AS "usageArea", description
+      FROM product WHERE id = ${id} AND tenant_id = ${t}`;
+    const [variantBefore] = p.variantId
+      ? await tx<{ boxesPerPallet: number | null; sqcmPerBox: number | null }[]>`
+          SELECT boxes_per_pallet AS "boxesPerPallet", sqcm_per_box AS "sqcmPerBox"
+          FROM product_variant WHERE id = ${p.variantId} AND tenant_id = ${t}`
+      : [];
+
+    const oldDiff: Record<string, AuditValue> = {}, newDiff: Record<string, AuditValue> = {};
+    const track = (key: string, oldVal: AuditValue, newVal: AuditValue) => {
+      if (oldVal !== newVal) { oldDiff[key] = oldVal; newDiff[key] = newVal; }
+    };
+
+    if (p.name !== undefined && p.name.trim()) {
       await tx`UPDATE product SET name = ${p.name.trim()} WHERE id = ${id} AND tenant_id = ${t}`;
-    // بقیه‌ی فیلدها: undefined = دست نزن، مقدار = ست (خالی → null). هر ستون یک جمله.
-    if (p.color !== undefined) await tx`UPDATE product SET color = ${p.color?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.glaze !== undefined) await tx`UPDATE product SET glaze = ${p.glaze?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.punch !== undefined) await tx`UPDATE product SET punch = ${p.punch?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.body !== undefined) await tx`UPDATE product SET body = ${p.body?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.size !== undefined) await tx`UPDATE product SET size = ${p.size?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.thickness !== undefined) await tx`UPDATE product SET thickness = ${p.thickness?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.usageArea !== undefined) await tx`UPDATE product SET usage_area = ${p.usageArea?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.description !== undefined) await tx`UPDATE product SET description = ${p.description?.trim() || null} WHERE id = ${id} AND tenant_id = ${t}`;
-    if (p.variantId) {
-      if (p.boxesPerPallet !== undefined)
-        await tx`UPDATE product_variant SET boxes_per_pallet = ${p.boxesPerPallet} WHERE id = ${p.variantId} AND tenant_id = ${t}`;
-      if (p.sqcmPerBox !== undefined)
-        await tx`UPDATE product_variant SET sqcm_per_box = ${p.sqcmPerBox} WHERE id = ${p.variantId} AND tenant_id = ${t}`;
+      if (before) track("name", before.name, p.name.trim());
     }
+    // بقیه‌ی فیلدها: undefined = دست نزن، مقدار = ست (خالی → null). هر ستون یک جمله.
+    if (p.color !== undefined) {
+      const v = p.color?.trim() || null;
+      await tx`UPDATE product SET color = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("color", before.color, v);
+    }
+    if (p.glaze !== undefined) {
+      const v = p.glaze?.trim() || null;
+      await tx`UPDATE product SET glaze = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("glaze", before.glaze, v);
+    }
+    if (p.punch !== undefined) {
+      const v = p.punch?.trim() || null;
+      await tx`UPDATE product SET punch = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("punch", before.punch, v);
+    }
+    if (p.body !== undefined) {
+      const v = p.body?.trim() || null;
+      await tx`UPDATE product SET body = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("body", before.body, v);
+    }
+    if (p.size !== undefined) {
+      const v = p.size?.trim() || null;
+      await tx`UPDATE product SET size = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("size", before.size, v);
+    }
+    if (p.thickness !== undefined) {
+      const v = p.thickness?.trim() || null;
+      await tx`UPDATE product SET thickness = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("thickness", before.thickness, v);
+    }
+    if (p.usageArea !== undefined) {
+      const v = p.usageArea?.trim() || null;
+      await tx`UPDATE product SET usage_area = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("usageArea", before.usageArea, v);
+    }
+    if (p.description !== undefined) {
+      const v = p.description?.trim() || null;
+      await tx`UPDATE product SET description = ${v} WHERE id = ${id} AND tenant_id = ${t}`;
+      if (before) track("description", before.description, v);
+    }
+    if (p.variantId) {
+      if (p.boxesPerPallet !== undefined) {
+        await tx`UPDATE product_variant SET boxes_per_pallet = ${p.boxesPerPallet} WHERE id = ${p.variantId} AND tenant_id = ${t}`;
+        if (variantBefore) track("boxesPerPallet", variantBefore.boxesPerPallet, p.boxesPerPallet ?? null);
+      }
+      if (p.sqcmPerBox !== undefined) {
+        await tx`UPDATE product_variant SET sqcm_per_box = ${p.sqcmPerBox} WHERE id = ${p.variantId} AND tenant_id = ${t}`;
+        if (variantBefore) track("sqcmPerBox", variantBefore.sqcmPerBox, p.sqcmPerBox ?? null);
+      }
+    }
+
+    if (Object.keys(newDiff).length)
+      await writeAudit(tx, {
+        tenantId: t, actorUserId: p.actorUserId, action: "product.edit",
+        entity: "product", entityId: id, oldValue: oldDiff, newValue: newDiff,
+      });
   });
 }
 
