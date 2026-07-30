@@ -170,3 +170,89 @@ export async function applyPriceImport(params: {
     return { ok: true, applied, errors };
   });
 }
+
+export type VolumeDiscountRow = {
+  id: string; priceListId: string | null; variantId: string | null;
+  minQtyBoxes: number; percentOff: number;
+  productName: string | null; productCode: string | null;
+};
+
+/** همه‌ی پله‌های تخفیفِ حجمیِ این tenant — priceListId/variantId=NULL یعنی «همه». */
+export async function listVolumeDiscounts(tenantId: string): Promise<VolumeDiscountRow[]> {
+  return withTenant(tenantId, (tx) => tx<VolumeDiscountRow[]>`
+    SELECT vd.id, vd.price_list_id AS "priceListId", vd.variant_id AS "variantId",
+           vd.min_qty_boxes AS "minQtyBoxes", vd.percent_off AS "percentOff",
+           p.name AS "productName", p.code AS "productCode"
+    FROM volume_discount vd
+    LEFT JOIN product_variant pv ON pv.id = vd.variant_id
+    LEFT JOIN product p ON p.id = pv.product_id
+    WHERE vd.tenant_id = ${tenantId}
+    ORDER BY vd.min_qty_boxes`);
+}
+
+export type VolumeDiscountError = "invalid" | "duplicate" | "not_found";
+export type VolumeDiscountResult = { ok: true; id: string } | { ok: false; reason: VolumeDiscountError };
+
+function validTier(minQtyBoxes: number, percentOff: number): boolean {
+  return Number.isInteger(minQtyBoxes) && minQtyBoxes > 0
+    && Number.isInteger(percentOff) && percentOff > 0 && percentOff <= 100;
+}
+
+/**
+ * پله‌ی تازه. priceListId/variantId=null یعنی «همه» (سبد/کالا) — دقیقاً همان
+ * دو ستونِ nullableِ جدول. تکراری (همان سبد+کالا+حداقل) قبل از INSERT چک می‌شود،
+ * نه با catchِ خطای UNIQUE — هم‌راستا با الگوی products.ts.
+ */
+export async function createVolumeDiscount(params: {
+  tenantId: string; priceListId: string | null; variantId: string | null;
+  minQtyBoxes: number; percentOff: number;
+}): Promise<VolumeDiscountResult> {
+  const { tenantId, priceListId, variantId, minQtyBoxes, percentOff } = params;
+  if (!validTier(minQtyBoxes, percentOff)) return { ok: false, reason: "invalid" };
+  return withTenant(tenantId, async (tx) => {
+    const [dup] = await tx`
+      SELECT 1 FROM volume_discount
+      WHERE tenant_id = ${tenantId}
+        AND price_list_id IS NOT DISTINCT FROM ${priceListId}
+        AND variant_id    IS NOT DISTINCT FROM ${variantId}
+        AND min_qty_boxes = ${minQtyBoxes}`;
+    if (dup) return { ok: false, reason: "duplicate" };
+    const [row] = await tx<{ id: string }[]>`
+      INSERT INTO volume_discount (tenant_id, price_list_id, variant_id, min_qty_boxes, percent_off)
+      VALUES (${tenantId}, ${priceListId}, ${variantId}, ${minQtyBoxes}, ${percentOff})
+      RETURNING id`;
+    return { ok: true, id: row.id };
+  });
+}
+
+/** فقط حداقل/درصد قابلِ ویرایش‌اند — عوض‌کردنِ سبد/کالا یعنی پله‌ی دیگری، نه ویرایشِ همین. */
+export async function updateVolumeDiscount(params: {
+  tenantId: string; id: string; minQtyBoxes: number; percentOff: number;
+}): Promise<VolumeDiscountResult> {
+  const { tenantId, id, minQtyBoxes, percentOff } = params;
+  if (!validTier(minQtyBoxes, percentOff)) return { ok: false, reason: "invalid" };
+  return withTenant(tenantId, async (tx) => {
+    const [row] = await tx<{ price_list_id: string | null; variant_id: string | null }[]>`
+      SELECT price_list_id, variant_id FROM volume_discount WHERE tenant_id = ${tenantId} AND id = ${id}`;
+    if (!row) return { ok: false, reason: "not_found" };
+    const [dup] = await tx`
+      SELECT 1 FROM volume_discount
+      WHERE tenant_id = ${tenantId} AND id <> ${id}
+        AND price_list_id IS NOT DISTINCT FROM ${row.price_list_id}
+        AND variant_id    IS NOT DISTINCT FROM ${row.variant_id}
+        AND min_qty_boxes = ${minQtyBoxes}`;
+    if (dup) return { ok: false, reason: "duplicate" };
+    await tx`
+      UPDATE volume_discount SET min_qty_boxes = ${minQtyBoxes}, percent_off = ${percentOff}
+      WHERE tenant_id = ${tenantId} AND id = ${id}`;
+    return { ok: true, id };
+  });
+}
+
+export async function deleteVolumeDiscount(params: { tenantId: string; id: string }): Promise<{ ok: true } | { ok: false; reason: "not_found" }> {
+  const { tenantId, id } = params;
+  return withTenant(tenantId, async (tx) => {
+    const [row] = await tx`DELETE FROM volume_discount WHERE tenant_id = ${tenantId} AND id = ${id} RETURNING id`;
+    return row ? { ok: true } : { ok: false, reason: "not_found" };
+  });
+}

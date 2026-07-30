@@ -13,6 +13,7 @@ import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { formatJalaliDate, jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
 import ImportSection from "./ImportSection";
 import PriceImportSection from "./PriceImportSection";
+import VolumeDiscountSection from "./VolumeDiscountSection";
 
 type Img = { id: string; url: string };
 type Product = {
@@ -98,9 +99,10 @@ function QuickPick({ label, options, onPick }: { label: string; options: string[
 const ALL_TABS: (Tab & { pageKey: string })[] = [
   { key: "catalog", label: "محصولات", pageKey: "catalog" },
   { key: "import", label: "ورود از اکسل", pageKey: "import" },
-  // pageKeyِ همان «prices» است، نه یکِ تازه — بالک/تک‌قلمی دو راهِ رسیدن به
-  // همان دسترسی‌اند؛ گیتِ جدا یعنی مدیر باید دوبار همین اجازه را بدهد.
+  // pageKeyِ همان «prices» است، نه یکِ تازه — بالک/تک‌قلمی/پله‌ها سه راهِ رسیدن
+  // به همان دسترسی‌اند؛ گیتِ جدا یعنی مدیر باید چندبار همین اجازه را بدهد.
   { key: "priceImport", label: "ورودِ قیمت از اکسل", pageKey: "prices" },
+  { key: "volumeDiscount", label: "پله‌های تخفیفِ حجمی", pageKey: "prices" },
 ];
 type Panel = "edit" | "subs" | "price" | "incoming";
 
@@ -470,6 +472,7 @@ export default function CatalogPage() {
 
       {activeTab === "import" && <ImportSection ctx={ctx} />}
       {activeTab === "priceImport" && <PriceImportSection ctx={ctx} />}
+      {activeTab === "volumeDiscount" && <VolumeDiscountSection ctx={ctx} />}
       {activeTab === "catalog" && (
       <>
       <div className="banner banner--info">

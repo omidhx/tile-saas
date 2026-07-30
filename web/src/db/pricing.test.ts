@@ -2,7 +2,10 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
-import { resolvePrices, applyVolumeDiscount, createPriceList, applyPriceImport } from "./pricing";
+import {
+  resolvePrices, applyVolumeDiscount, createPriceList, applyPriceImport,
+  listVolumeDiscounts, createVolumeDiscount, updateVolumeDiscount, deleteVolumeDiscount,
+} from "./pricing";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 
@@ -163,4 +166,56 @@ test("applyPriceImport: سبدِ ناموجود رد می‌شود", async () =>
     actorUserId: "a8888888-8888-8888-8888-888888888888", rows: [{ sku: "S1", price: 1 }],
   });
   assert.deepEqual(r, { ok: false, reason: "unknown_price_list" });
+});
+
+test("createVolumeDiscount: پله‌ی تکراری (همان سبد/کالا/حداقل) رد می‌شود", async () => {
+  const a = await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: null, minQtyBoxes: 500, percentOff: 7 });
+  assert.ok(a.ok);
+  const dup = await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: null, minQtyBoxes: 500, percentOff: 9 });
+  assert.deepEqual(dup, { ok: false, reason: "duplicate" });
+  // همان حداقل ولی برای یک کالای مشخص، تکراری نیست — NULL و V1 دو چیزِ متفاوت‌اند
+  const notDup = await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: V1, minQtyBoxes: 500, percentOff: 9 });
+  assert.ok(notDup.ok);
+});
+
+test("createVolumeDiscount: مقادیرِ نامعتبر رد می‌شوند", async () => {
+  assert.deepEqual(await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: null, minQtyBoxes: 0, percentOff: 10 }), { ok: false, reason: "invalid" });
+  assert.deepEqual(await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: null, minQtyBoxes: 10, percentOff: 0 }), { ok: false, reason: "invalid" });
+  assert.deepEqual(await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: null, minQtyBoxes: 10, percentOff: 101 }), { ok: false, reason: "invalid" });
+});
+
+test("updateVolumeDiscount: حداقل/درصد را عوض می‌کند؛ تکراری‌شدن با پله‌ی دیگر رد می‌شود", async () => {
+  const a = await createVolumeDiscount({ tenantId: T, priceListId: PL, variantId: null, minQtyBoxes: 10, percentOff: 3 });
+  const b = await createVolumeDiscount({ tenantId: T, priceListId: PL, variantId: null, minQtyBoxes: 20, percentOff: 5 });
+  assert.ok(a.ok && b.ok);
+  if (!a.ok || !b.ok) return;
+
+  const ok = await updateVolumeDiscount({ tenantId: T, id: a.id, minQtyBoxes: 10, percentOff: 4 });
+  assert.deepEqual(ok, { ok: true, id: a.id });
+  const [row] = await sql<{ percent_off: number }[]>`SELECT percent_off FROM volume_discount WHERE id = ${a.id}`;
+  assert.equal(row.percent_off, 4);
+
+  // ویرایشِ a به همان min_qty_boxesِ b (هر دو در همان سبد، بدونِ variant) → تکراری
+  const clash = await updateVolumeDiscount({ tenantId: T, id: a.id, minQtyBoxes: 20, percentOff: 4 });
+  assert.deepEqual(clash, { ok: false, reason: "duplicate" });
+
+  assert.deepEqual(await updateVolumeDiscount({ tenantId: T, id: "00000000-0000-0000-0000-000000000000", minQtyBoxes: 1, percentOff: 1 }), { ok: false, reason: "not_found" });
+});
+
+test("deleteVolumeDiscount: حذف می‌کند؛ ناموجود not_found می‌دهد", async () => {
+  const a = await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: V2, minQtyBoxes: 15, percentOff: 6 });
+  assert.ok(a.ok);
+  if (!a.ok) return;
+  assert.deepEqual(await deleteVolumeDiscount({ tenantId: T, id: a.id }), { ok: true });
+  const [row] = await sql`SELECT 1 FROM volume_discount WHERE id = ${a.id}`;
+  assert.equal(row, undefined);
+  assert.deepEqual(await deleteVolumeDiscount({ tenantId: T, id: a.id }), { ok: false, reason: "not_found" });
+});
+
+test("listVolumeDiscounts: پله‌های variant-محور نامِ کالا هم می‌آورند", async () => {
+  const a = await createVolumeDiscount({ tenantId: T, priceListId: null, variantId: V1, minQtyBoxes: 999, percentOff: 2 });
+  assert.ok(a.ok);
+  const rows = await listVolumeDiscounts(T);
+  const row = rows.find((r) => r.minQtyBoxes === 999);
+  assert.equal(row?.productCode, "P1", "productCode از خودِ محصول می‌آید، نه sku");
 });
