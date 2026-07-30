@@ -12,6 +12,7 @@ import { hideOnError } from "@/lib/img";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { formatJalaliDate, jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
 import ImportSection from "./ImportSection";
+import PriceImportSection from "./PriceImportSection";
 
 type Img = { id: string; url: string };
 type Product = {
@@ -97,6 +98,9 @@ function QuickPick({ label, options, onPick }: { label: string; options: string[
 const ALL_TABS: (Tab & { pageKey: string })[] = [
   { key: "catalog", label: "محصولات", pageKey: "catalog" },
   { key: "import", label: "ورود از اکسل", pageKey: "import" },
+  // pageKeyِ همان «prices» است، نه یکِ تازه — بالک/تک‌قلمی دو راهِ رسیدن به
+  // همان دسترسی‌اند؛ گیتِ جدا یعنی مدیر باید دوبار همین اجازه را بدهد.
+  { key: "priceImport", label: "ورودِ قیمت از اکسل", pageKey: "prices" },
 ];
 type Panel = "edit" | "subs" | "price" | "incoming";
 
@@ -465,6 +469,7 @@ export default function CatalogPage() {
       <TabBar tabs={tabs} active={activeTab} onChange={go} />
 
       {activeTab === "import" && <ImportSection ctx={ctx} />}
+      {activeTab === "priceImport" && <PriceImportSection ctx={ctx} />}
       {activeTab === "catalog" && (
       <>
       <div className="banner banner--info">

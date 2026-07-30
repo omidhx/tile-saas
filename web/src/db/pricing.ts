@@ -1,5 +1,6 @@
 import type { TransactionSql } from "postgres";
 import { withTenant } from "./client";
+import { writeAudit } from "./audit";
 
 /**
  * قیمت‌گذاری (v2، spec ۵.۷ + roadmap v2).
@@ -106,4 +107,66 @@ export async function resolvePricesIn(
     });
   }
   return out;
+}
+
+/** ساختِ سبدِ قیمت‌گذاریِ تازه — تا حالا فقط با SQL می‌شد. */
+export async function createPriceList(tenantId: string, name: string): Promise<{ id: string; name: string }> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("نامِ سبد لازم است");
+  const [row] = await withTenant(tenantId, (tx) => tx<{ id: string; name: string }[]>`
+    INSERT INTO price_list (tenant_id, name) VALUES (${tenantId}, ${trimmed}) RETURNING id, name`);
+  return row;
+}
+
+export type PriceImportRow = { sku: string; price: number };
+export type PriceImportError = { row: number; reason: string; detail?: string };
+export type PriceImportResult =
+  | { ok: true; applied: number; errors: PriceImportError[] }
+  | { ok: false; reason: "unknown_price_list" };
+
+/**
+ * ورودِ اکسلِ قیمت برای یک سبدِ مشخص — همان کاری که تا حالا با ویرایشِ تک‌به‌تکِ
+ * هر کارت انجام می‌شد، حالا برای ده‌ها قلم در یک فایل. هر ردیف با sku تطبیق
+ * می‌شود؛ ردپا (audit_log) فقط برای قیمت‌های واقعاً تغییرکرده نوشته می‌شود —
+ * همان قاعده‌ی POSTِ تک‌قلمیِ /api/prices، تا ذخیره‌ی بی‌تغییر دفتر را پر نکند.
+ */
+export async function applyPriceImport(params: {
+  tenantId: string; priceListId: string; actorUserId: string; rows: PriceImportRow[];
+}): Promise<PriceImportResult> {
+  const { tenantId, priceListId, actorUserId, rows } = params;
+  return withTenant(tenantId, async (tx) => {
+    const [list] = await tx`SELECT id FROM price_list WHERE tenant_id = ${tenantId} AND id = ${priceListId}`;
+    if (!list) return { ok: false, reason: "unknown_price_list" };
+
+    const errors: PriceImportError[] = [];
+    let applied = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const err = (reason: string, detail?: string) => errors.push({ row: i + 1, reason, detail });
+      if (!row.sku) { err("missing_sku"); continue; }
+      if (!Number.isInteger(row.price) || row.price < 0) { err("bad_price", String(row.price)); continue; }
+
+      const [variant] = await tx<{ id: string }[]>`
+        SELECT id FROM product_variant WHERE tenant_id = ${tenantId} AND sku = ${row.sku}`;
+      if (!variant) { err("unknown_sku", row.sku); continue; }
+
+      const [prev] = await tx<{ price: string }[]>`
+        SELECT price FROM price_list_item
+        WHERE tenant_id = ${tenantId} AND price_list_id = ${priceListId} AND variant_id = ${variant.id}`;
+
+      await tx`
+        INSERT INTO price_list_item (tenant_id, price_list_id, variant_id, price)
+        VALUES (${tenantId}, ${priceListId}, ${variant.id}, ${row.price})
+        ON CONFLICT (price_list_id, variant_id) DO UPDATE SET price = EXCLUDED.price`;
+
+      const before = prev ? Number(prev.price) : null;
+      if (before !== row.price)
+        await writeAudit(tx, {
+          tenantId, actorUserId, action: "price.set", entity: "price_list_item", entityId: variant.id,
+          oldValue: before, newValue: row.price,
+        });
+      applied++;
+    }
+    return { ok: true, applied, errors };
+  });
 }

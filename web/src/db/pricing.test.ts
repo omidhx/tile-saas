@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
-import { resolvePrices, applyVolumeDiscount } from "./pricing";
+import { resolvePrices, applyVolumeDiscount, createPriceList, applyPriceImport } from "./pricing";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 
@@ -127,4 +127,40 @@ test("پول هیچ‌جا float نمی‌شود — تخفیف با floor حس�
   const b = applyVolumeDiscount(999999, 7, 13);
   assert.ok(Number.isInteger(b.discountAmount) && Number.isInteger(b.lineTotal));
   assert.equal(b.gross - b.discountAmount, b.lineTotal, "کل = ناخالص منهای تخفیف");
+});
+
+test("createPriceList: سبدِ تازه ساخته می‌شود؛ نامِ خالی رد می‌شود", async () => {
+  const list = await createPriceList(T, "  سبدِ تازه  ");
+  assert.equal(list.name, "سبدِ تازه", "فاصله‌های اضافه trim می‌شوند");
+  const [row] = await sql<{ n: string }[]>`SELECT count(*)::text AS n FROM price_list WHERE id = ${list.id}`;
+  assert.equal(row.n, "1");
+  await assert.rejects(createPriceList(T, "   "));
+});
+
+test("applyPriceImport: sku ناموجود/قیمتِ نامعتبر ردیف‌به‌ردیف خطا می‌دهند؛ بقیه اعمال می‌شوند", async () => {
+  const list = await createPriceList(T, "سبدِ ایمپورت");
+  const r = await applyPriceImport({
+    tenantId: T, priceListId: list.id, actorUserId: "a8888888-8888-8888-8888-888888888888",
+    rows: [
+      { sku: "S1", price: 3_000_000 },
+      { sku: "GHOST-SKU", price: 1000 },
+      { sku: "S2", price: -5 },
+    ],
+  });
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.equal(r.applied, 1, "فقط ردیفِ معتبر اعمال می‌شود");
+  assert.deepEqual(r.errors.map((e) => e.reason), ["unknown_sku", "bad_price"]);
+
+  const [item] = await sql<{ price: string }[]>`
+    SELECT price FROM price_list_item WHERE tenant_id = ${T} AND price_list_id = ${list.id} AND variant_id = ${V1}`;
+  assert.equal(Number(item.price), 3_000_000);
+});
+
+test("applyPriceImport: سبدِ ناموجود رد می‌شود", async () => {
+  const r = await applyPriceImport({
+    tenantId: T, priceListId: "00000000-0000-0000-0000-000000000000",
+    actorUserId: "a8888888-8888-8888-8888-888888888888", rows: [{ sku: "S1", price: 1 }],
+  });
+  assert.deepEqual(r, { ok: false, reason: "unknown_price_list" });
 });
