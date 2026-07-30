@@ -24,6 +24,9 @@ type Reports = {
 };
 type AgentOpt = { id: string; legalName: string };
 type VariantOpt = { id: string; name: string; code: string };
+type MonthlyBucket = { jy: number; jm: number; label: string };
+type AgentMonthlyRow = { agentId: string; agentName: string; months: { boxes: number; value: number }[] };
+type MonthlyAgentPerf = { buckets: MonthlyBucket[]; rows: AgentMonthlyRow[] };
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 /** برای نامِ فایل — نه formatJalaliDate که با «/» می‌نویسد و در ویندوز نامِ فایلِ نامعتبر می‌سازد. */
@@ -48,6 +51,11 @@ export default function ReportsHubPage() {
   const [variantOpts, setVariantOpts] = useState<VariantOpt[]>([]);
   const [filterAgent, setFilterAgent] = useState("");
   const [filterVariant, setFilterVariant] = useState("");
+  // عملکردِ نماینده ماه‌به‌ماه — بازه‌ی خودش دارد (N ماهِ اخیر)، مستقلِ از from/to بالا
+  const [monthly, setMonthly] = useState<MonthlyAgentPerf | null>(null);
+  const [monthlyCount, setMonthlyCount] = useState(6);
+  const [monthlyErr, setMonthlyErr] = useState("");
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   // آدرسِ ورودی (مثلاً از NavMenu: ?tab=ledger) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «reports» است) ناسازگار نشود.
@@ -86,6 +94,16 @@ export default function ReportsHubPage() {
       if (cat.ok) setVariantOpts(cat.data.variants);
     })();
   }, [ctx]);
+
+  const loadMonthly = useCallback(async (tenantId: string, months: number) => {
+    setMonthlyLoading(true);
+    const res = await getJson<MonthlyAgentPerf>(`/api/reports?tenantId=${tenantId}&monthly=1&months=${months}`);
+    if (res.ok) { setMonthly(res.data); setMonthlyErr(""); }
+    else setMonthlyErr(loadError(res.status));
+    setMonthlyLoading(false);
+  }, []);
+
+  useEffect(() => { if (ctx && tab === "reports") loadMonthly(ctx.tenantId, monthlyCount); }, [ctx, tab, monthlyCount, loadMonthly]);
 
   // با selectها دیگر min/max نداریم، پس بازه‌ی وارونه ممکن است — و بی‌راهنما
   // فقط یک گزارشِ خالی نشان می‌داد.
@@ -133,6 +151,11 @@ export default function ReportsHubPage() {
       "تخفیف به‌تفکیکِ کالا": rep.discountsByProduct.map((d) => ({
         "کالا": d.name, "کد": d.code, "خطِ تخفیف‌دار": d.discountedLines, "مبلغِ تخفیف (ریال)": d.discountAmount,
       })),
+      ...(monthly && monthly.rows.length > 0 ? {
+        "ماه‌به‌ماه": monthly.rows.flatMap((r) => monthly.buckets.map((b, i) => ({
+          "نمایندگی": r.agentName, "ماه": b.label, "کارتن": r.months[i].boxes, "ارزش (ریال)": r.months[i].value,
+        }))),
+      } : {}),
     });
   }
 
@@ -176,6 +199,51 @@ export default function ReportsHubPage() {
             <div className="row row--start no-print" style={{ gap: "var(--sp-2)", marginBottom: "var(--sp-3)" }}>
               <button onClick={exportReports}><Icon name="download" size={13} />خروجیِ اکسل</button>
               <button onClick={() => window.print()}><Icon name="printer" size={13} />خروجیِ PDF (چاپ)</button>
+            </div>
+          )}
+
+          {/* ماه‌به‌ماه — بازه‌ی خودش دارد (N ماهِ اخیر شمسی)، مستقلِ از «از/تا»ی بالا؛
+              برایِ دیدنِ روند (رشد/افت)، نه یک بازه‌ی تکی. */}
+          <h2>عملکردِ نمایندگان ماه‌به‌ماه</h2>
+          <div className="card no-print">
+            <label htmlFor="monthly-count">تعدادِ ماه</label>
+            <select id="monthly-count" value={monthlyCount} onChange={(e) => setMonthlyCount(Number(e.target.value))} style={{ maxWidth: 140 }}>
+              <option value={3}>۳ ماهِ اخیر</option>
+              <option value={6}>۶ ماهِ اخیر</option>
+              <option value={12}>۱۲ ماهِ اخیر</option>
+            </select>
+            {monthlyLoading && <span className="muted"><span className="spinner" aria-hidden="true" /> در حال محاسبه…</span>}
+          </div>
+          {monthlyErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{monthlyErr}</span></div>}
+          {monthly && !monthlyErr && monthly.rows.length === 0 && (
+            <p className="empty">در این {n(monthlyCount)} ماه سفارشِ تأییدشده‌ای ثبت نشده.</p>
+          )}
+          {monthly && !monthlyErr && monthly.rows.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="num" style={{ width: "100%", borderCollapse: "collapse", whiteSpace: "nowrap" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>نمایندگی</th>
+                    {monthly.buckets.map((b) => (
+                      <th key={`${b.jy}-${b.jm}`} style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>{b.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthly.rows.map((r) => (
+                    <tr key={r.agentId} style={{ borderBottom: "1px solid var(--line)" }}>
+                      <td style={{ padding: "var(--sp-2)" }}>{r.agentName}</td>
+                      {r.months.map((m, i) => (
+                        <td key={i} style={{ padding: "var(--sp-2)" }}>
+                          {m.boxes > 0
+                            ? <>{n(m.boxes)} کارتن<div className="subtle">{n(m.value)} ریال</div></>
+                            : <span className="subtle">—</span>}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 

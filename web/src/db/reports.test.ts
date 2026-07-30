@@ -5,7 +5,8 @@ import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 import { createDispatchFromRequest, setDispatchStatus } from "./dispatches";
-import { buildReports } from "./reports";
+import { buildReports, buildMonthlyAgentPerf } from "./reports";
+import { toJalali } from "@/lib/date";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const U = "a8888888-8888-8888-8888-888888888888";
@@ -159,4 +160,35 @@ test("فیلترِ کالا: عملکردِ نماینده را به همان ی
   assert.ok(onlyHot.agents.length > 0);
   assert.equal(onlyHot.topProducts.length, 1);
   assert.equal(onlyHot.topProducts[0].code, "HOT");
+});
+
+test("buildMonthlyAgentPerf: باکت‌بندیِ ماهانه‌ی شمسی + مقدارِ نماینده در ماهِ جاری", async () => {
+  const AG3 = "a5555555-5555-5555-5555-555555555557";
+  await sql.unsafe(`
+    INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG3}','${T}','نمایندگی ج','AG3','${PL}');
+  `);
+  const r = await reserve({ tenantId: T, agentAccountId: AG3, ttlHours: 24, idempotencyKey: "monthly-1", items: [{ lotId: LOT_HOT, quantityBoxes: 7 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  assert.equal(a.ok, true);
+
+  const rep = await buildMonthlyAgentPerf({ tenantId: T, months: 3 });
+  assert.equal(rep.buckets.length, 3, "دقیقاً سه باکتِ ماهانه");
+
+  const todayJ = toJalali(new Date());
+  const lastBucket = rep.buckets[rep.buckets.length - 1];
+  assert.equal(lastBucket.jy, todayJ.jy, "آخرین باکت باید ماهِ جاری باشد");
+  assert.equal(lastBucket.jm, todayJ.jm);
+
+  const row = rep.rows.find((x) => x.agentId === AG3);
+  assert.ok(row, "نماینده‌ی تازه باید در فهرست باشد");
+  const currentMonthCell = row!.months[row!.months.length - 1];
+  assert.equal(currentMonthCell.boxes, 7);
+  assert.equal(currentMonthCell.value, 7_000_000, "۷ کارتن × ۱٬۰۰۰٬۰۰۰ ریال");
+});
+
+test("buildMonthlyAgentPerf: تعدادِ ماه بینِ ۱ تا ۱۲ کلمپ می‌شود", async () => {
+  const tooMany = await buildMonthlyAgentPerf({ tenantId: T, months: 100 });
+  assert.equal(tooMany.buckets.length, 12);
+  const tooFew = await buildMonthlyAgentPerf({ tenantId: T, months: 0 });
+  assert.equal(tooFew.buckets.length, 1);
 });

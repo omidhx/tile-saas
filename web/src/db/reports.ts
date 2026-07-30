@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { toJalali, jalaliToDate, JALALI_MONTHS } from "@/lib/date";
 
 /**
  * گزارش‌های مدیریتی (v2، spec ۹: «عملکرد نماینده، کالای پرفروش/راکد»).
@@ -146,5 +147,65 @@ export async function buildReports(p: {
       })),
       discountsByProduct: discountsByProduct.map((d) => ({ ...d, discountAmount: Number(d.discountAmount) })),
     };
+  });
+}
+
+export type MonthlyBucket = { jy: number; jm: number; label: string };
+export type AgentMonthlyRow = { agentId: string; agentName: string; months: { boxes: number; value: number }[] };
+export type MonthlyAgentPerf = { buckets: MonthlyBucket[]; rows: AgentMonthlyRow[] };
+
+/**
+ * عملکردِ نماینده ماه‌به‌ماه (شمسی) — برایِ دیدنِ روند، نه یک بازه‌ی تکی.
+ * چون ماه‌های شمسی روی تقویمِ میلادیِ Postgres منطبق نیستند (`date_trunc` کمکی
+ * نمی‌کند)، سطرهای خام در یک کوئری گرفته می‌شوند و باکت‌بندیِ ماهانه در جاوااسکریپت
+ * انجام می‌شود — با همان `toJalali`ای که کلِ سایت برایِ تقویمِ شمسی مرجع می‌داند.
+ */
+export async function buildMonthlyAgentPerf(p: { tenantId: string; months: number }): Promise<MonthlyAgentPerf> {
+  const { tenantId } = p;
+  // ۰ یا منفی یعنی «حداقل یک ماه»، نه «نامعتبر پس پیش‌فرض» — || شکستِ صفر را می‌گرفت
+  const rawMonths = Math.trunc(p.months);
+  const monthsCount = Number.isFinite(rawMonths) ? Math.min(Math.max(rawMonths, 1), 12) : 6; // ponytail: سقفِ منطقی، نه پرسشِ بی‌نهایتِ سال‌ها
+
+  const todayJ = toJalali(new Date());
+  const buckets: MonthlyBucket[] = [];
+  for (let i = monthsCount - 1; i >= 0; i--) {
+    let jy = todayJ.jy, jm = todayJ.jm - i;
+    while (jm <= 0) { jm += 12; jy -= 1; }
+    buckets.push({ jy, jm, label: `${JALALI_MONTHS[jm - 1]} ${jy.toLocaleString("fa-IR", { useGrouping: false })}` });
+  }
+  const from = jalaliToDate({ jy: buckets[0].jy, jm: buckets[0].jm, jd: 1 });
+
+  return withTenant(tenantId, async (tx) => {
+    const rows = await tx<{ agentId: string; agentName: string; createdAt: string; qty: number; unitPrice: string | null; discount: string | null }[]>`
+      SELECT aa.id AS "agentId", aa.legal_name AS "agentName", sr.created_at AS "createdAt",
+             sri.requested_qty_boxes AS qty, sri.unit_price_applied AS "unitPrice", sri.discount_amount AS discount
+      FROM sales_request sr
+      JOIN agent_account aa ON aa.id = sr.agent_account_id AND aa.tenant_id = sr.tenant_id
+      JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
+      WHERE sr.tenant_id = ${tenantId} AND sr.status IN ('approved', 'fulfilled')
+        AND sr.created_at >= ${from}`;
+
+    const byAgent = new Map<string, { name: string; cells: Map<string, { boxes: number; value: number }> }>();
+    for (const r of rows) {
+      const j = toJalali(new Date(r.createdAt));
+      const key = `${j.jy}-${j.jm}`;
+      let agent = byAgent.get(r.agentId);
+      if (!agent) { agent = { name: r.agentName, cells: new Map() }; byAgent.set(r.agentId, agent); }
+      const cell = agent.cells.get(key) ?? { boxes: 0, value: 0 };
+      cell.boxes += r.qty;
+      // خطِ بدون قیمت (unit_price_applied=NULL) به ارزش صفر اضافه نمی‌شود — «قیمت ثبت نشده» با «رایگان» یکی نیست
+      if (r.unitPrice != null) cell.value += Number(r.unitPrice) * r.qty - Number(r.discount ?? 0);
+      agent.cells.set(key, cell);
+    }
+
+    const outRows: AgentMonthlyRow[] = [...byAgent.entries()]
+      .map(([agentId, a]) => ({
+        agentId, agentName: a.name,
+        months: buckets.map((b) => a.cells.get(`${b.jy}-${b.jm}`) ?? { boxes: 0, value: 0 }),
+      }))
+      // نمایندگیِ پرارزش‌تر (جمعِ کلِ بازه) بالاتر — همان ترتیبی که «عملکرد نمایندگان» دارد
+      .sort((x, y) => y.months.reduce((s, m) => s + m.value, 0) - x.months.reduce((s, m) => s + m.value, 0));
+
+    return { buckets, rows: outRows };
   });
 }
