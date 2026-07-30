@@ -148,6 +148,8 @@ h2 .badge { margin-inline-start: var(--sp-2); }
 }
 /* کارتِ قابلِ‌کلیک/تعاملی که باید کمی برجسته‌تر باشد */
 .card--raised { box-shadow: var(--shadow-md); }
+/* رزرو/درخواستِ تازه‌رسیده در پنلِ پشتیبان — تا وقتی که پشتیبان رویش اقدام کند دیده بماند */
+.card--new { background: var(--warn-weak); border-color: var(--warn); }
 
 .row {
   display: flex; gap: var(--sp-2);

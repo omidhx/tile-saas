@@ -48,10 +48,45 @@ const BO_FA: Record<string, string> = {
   pending_production: "در انتظار تولید", ready: "آماده", fulfilled: "تحویل‌شده", cancelled: "لغوشده",
 };
 
+/** بوقِ کوتاهِ دوتُنی — بدونِ فایلِ صوتی/کتابخانه، فقط Web Audio API. */
+function playChime() {
+  try {
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx = new Ctor();
+    const now = ctx.currentTime;
+    [880, 1175].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      const start = now + i * 0.14;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.2, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.3);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(start); o.stop(start + 0.32);
+    });
+    // مرورگر بدونِ اجازه‌ی قبلی صدا پخش نمی‌کند؛ چون پشتیبان قبلاً برای بازکردنِ
+    // خودِ صفحه با آن تعامل داشته، معمولاً مجاز است — اگر نبود، فقط بی‌صدا رد می‌شود.
+    ctx.close();
+  } catch { /* AudioContext نبود یا مرورگر اجازه نداد — اعلانِ بصری کافی است */ }
+}
+const MUTE_KEY = "tile.staffAlertMuted";
+
 export default function StaffPage() {
   const { ctx, state } = useContexts("staff");
   const [pendingResvs, setPendingResvs] = useState<Resv[]>([]);
   const [reqs, setReqs] = useState<Req[]>([]);
+  // اعلانِ رزرو/درخواستِ تازه: شناسه‌های دیده‌شده بینِ دو پول، برای تشخیصِ «واقعاً تازه»
+  const knownResvIds = useRef<Set<string> | null>(null);
+  const knownReqIds = useRef<Set<string> | null>(null);
+  const [newArrivals, setNewArrivals] = useState(0);
+  const [highlightResv, setHighlightResv] = useState<Set<string>>(new Set());
+  const [highlightReq, setHighlightReq] = useState<Set<string>>(new Set());
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem(MUTE_KEY) === "1"; } catch { return false; }
+  });
   const [disps, setDisps] = useState<Disp[]>([]);
   const [dispsQ, setDispsQ] = useState("");
   const [dispsHasMore, setDispsHasMore] = useState(false);
@@ -83,6 +118,32 @@ export default function StaffPage() {
     getJson<{ items: Backorder[]; hasMore: boolean }>(
       `/api/backorders?tenantId=${tenantId}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ""}`), []);
 
+  /**
+   * رزروها/درخواست‌های تازه را نسبت به آخرین باری که این صفحه دیده بود تشخیص
+   * می‌دهد. `notify=false` (بارگذاریِ اول یا بعدِ یک اکشنِ خودِ کاربر) فقط
+   * شناسه‌ها را به‌عنوانِ خط‌مبنا ثبت می‌کند — کاربر همین الان به این‌ها نگاه
+   * می‌کند، بوق‌زدن برای چیزی که خودش تازه دید بی‌معنی است. `notify=true`
+   * (پولِ پس‌زمینه) هر شناسه‌ی جدید را هایلایت و بوق می‌زند.
+   */
+  const applyQueueResults = useCallback((resvs: Resv[], reqsList: Req[], notify: boolean) => {
+    let freshCount = 0;
+    const freshResv = new Set<string>();
+    const freshReq = new Set<string>();
+    if (notify && knownResvIds.current)
+      for (const r of resvs) if (!knownResvIds.current.has(r.id)) { freshResv.add(r.id); freshCount++; }
+    if (notify && knownReqIds.current)
+      for (const r of reqsList) if (!knownReqIds.current.has(r.id)) { freshReq.add(r.id); freshCount++; }
+    knownResvIds.current = new Set(resvs.map((r) => r.id));
+    knownReqIds.current = new Set(reqsList.map((r) => r.id));
+    setPendingResvs(resvs);
+    setReqs(reqsList);
+    if (freshCount > 0) {
+      setHighlightResv(freshResv); setHighlightReq(freshReq);
+      setNewArrivals((c) => c + freshCount);
+      if (!muted) playChime();
+    }
+  }, [muted]);
+
   const load = useCallback(async (c: Ctx) => {
     const [rv, r, d, ag, cat, bo] = await Promise.all([
       getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`), // staff view: active همه
@@ -92,8 +153,8 @@ export default function StaffPage() {
       getJson<{ variants: Variant[] }>(`/api/catalog?tenantId=${c.tenantId}`),
       fetchBackorders(c.tenantId, "", 0),
     ]);
-    if (rv.ok) setPendingResvs(rv.data.reservations);
-    if (r.ok) setReqs(r.data.requests);
+    if (rv.ok && r.ok) applyQueueResults(rv.data.reservations, r.data.requests, false);
+    else { if (rv.ok) setPendingResvs(rv.data.reservations); if (r.ok) setReqs(r.data.requests); }
     // اکشن یعنی «برگرد به نمای پیش‌فرض» — جستجوی فعال هم همین‌جا ریست می‌شود
     if (d.ok) { setDisps(d.data.dispatches); setDispsHasMore(d.data.hasMore); setDispsQ(""); }
     if (ag.ok) setAgents(ag.data.agents);
@@ -103,7 +164,7 @@ export default function StaffPage() {
     const failed = [rv, r, d, ag, cat, bo].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
-  }, [fetchDispatches, fetchBackorders]);
+  }, [fetchDispatches, fetchBackorders, applyQueueResults]);
 
   function searchDispatches(v: string) {
     setDispsQ(v);
@@ -192,9 +253,9 @@ export default function StaffPage() {
       getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`),
       getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
     ]);
-    if (rv.ok) setPendingResvs(rv.data.reservations);
-    if (r.ok) setReqs(r.data.requests);
-  }, []);
+    if (rv.ok && r.ok) applyQueueResults(rv.data.reservations, r.data.requests, true);
+    else { if (rv.ok) setPendingResvs(rv.data.reservations); if (r.ok) setReqs(r.data.requests); }
+  }, [applyQueueResults]);
 
   useEffect(() => {
     if (!ctx) return;
@@ -243,11 +304,22 @@ export default function StaffPage() {
         {/* ده لینکِ تخت روی موبایل می‌پیچید و روی دسکتاپ هم نویز بود.
             «خروج» عمداً بیرونِ منو ماند: یک عملِ پرتکرار پشتِ یک کلیکِ اضافه نرود. */}
         <nav>
+          <button className="ghost" aria-pressed={!muted}
+            onClick={() => setMuted((m) => { const next = !m; try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch { /* حالتِ خصوصیِ مرورگر */ } return next; })}>
+            <Icon name="bell" size={14} />{muted ? "اعلانِ صوتی: خاموش" : "اعلانِ صوتی: روشن"}
+          </button>
           <NavMenu ctx={ctx} />
           <LogoutButton />
         </nav>
       </div>
 
+      {newArrivals > 0 && (
+        <div className="banner banner--warn" role="status">
+          <Icon name="bell" />
+          <span>{num(newArrivals)} رزرو/درخواستِ تازه رسید — کارتِ هایلایت‌شده را ببین.</span>
+          <button className="ghost" onClick={() => setNewArrivals(0)} style={{ marginInlineStart: "auto" }}>دیدم</button>
+        </div>
+      )}
       {loadErr && (
         <div className="banner banner--error" role="alert">
           <Icon name="alert" />
@@ -281,10 +353,11 @@ export default function StaffPage() {
         // پس دیدنِ خودِ عدد هم لازم است، وگرنه ترتیب بی‌توضیح می‌ماند.
         const rem = remainingTime(r.expiresAt);
         return (
-        <div className="card" key={r.id}>
+        <div className={highlightResv.has(r.id) ? "card card--new" : "card"} key={r.id}>
           <div className="row">
             <strong>{r.agentName}</strong>
             <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
+              {highlightResv.has(r.id) && <span className="badge badge--warn">تازه</span>}
               {/* پشتیبانِ ثابت: پورسانتِ این سفارش دستِ کیست — هر staffی که صف را می‌بیند باید بداند */}
               {(r.assignedStaffName || r.assignedStaffPhone) && (
                 <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
@@ -332,10 +405,11 @@ export default function StaffPage() {
       </h2>
       {loaded && !loadErr && reqs.length === 0 && <p className="empty">درخواست تأییدشده‌ای برای حواله نیست.</p>}
       {reqs.map((r) => (
-        <div className="card" key={r.id}>
+        <div className={highlightReq.has(r.id) ? "card card--new" : "card"} key={r.id}>
           <div className="row">
             <strong>{r.agentName}</strong>
             <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
+              {highlightReq.has(r.id) && <span className="badge badge--warn">تازه</span>}
               {(r.assignedStaffName || r.assignedStaffPhone) && (
                 <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
               )}
