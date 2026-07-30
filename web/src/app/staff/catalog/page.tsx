@@ -722,7 +722,7 @@ export default function CatalogPage() {
               {p.variantId && isOpen(p.id, "price") && (
                 <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
                   {priceLists.length === 0
-                    ? <p className="subtle">هنوز لیست قیمتی ساخته نشده.</p>
+                    ? <p className="subtle">هنوز لیست قیمتی ساخته نشده. <button className="ghost" onClick={() => go("priceImport")}>ساختِ سبدِ قیمت</button></p>
                     : priceLists.map((pl) => {
                         const existing = priceItems.find((i) => i.priceListId === pl.id && i.variantId === p.variantId);
                         const key = pl.id + p.variantId;
