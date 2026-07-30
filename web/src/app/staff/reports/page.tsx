@@ -16,7 +16,12 @@ import AuditSection from "./AuditSection";
 type AgentPerf = { agentId: string; agentName: string; requests: number; boxes: number; value: number; unpricedLines: number };
 type TopProduct = { name: string; code: string; boxes: number };
 type DeadStock = { name: string; code: string; onHand: number };
-type Reports = { from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[] };
+type DiscountByAgent = { agentId: string; agentName: string; discountedLines: number; discountAmount: number; grossAmount: number };
+type DiscountByProduct = { name: string; code: string; discountedLines: number; discountAmount: number };
+type Reports = {
+  from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[];
+  discountsByAgent: DiscountByAgent[]; discountsByProduct: DiscountByProduct[];
+};
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 /** برای نامِ فایل — نه formatJalaliDate که با «/» می‌نویسد و در ویندوز نامِ فایلِ نامعتبر می‌سازد. */
@@ -97,6 +102,13 @@ export default function ReportsHubPage() {
       })),
       "پرفروش‌ها": rep.topProducts.map((p) => ({ "کالا": p.name, "کد": p.code, "کارتنِ بارگیری‌شده": p.boxes })),
       "راکدها": rep.deadStock.map((d) => ({ "کالا": d.name, "کد": d.code, "موجودی (کارتن)": d.onHand })),
+      "تخفیف به‌تفکیکِ نماینده": rep.discountsByAgent.map((d) => ({
+        "نمایندگی": d.agentName, "خطِ تخفیف‌دار": d.discountedLines,
+        "مبلغِ تخفیف (ریال)": d.discountAmount, "مبلغِ ناخالص (ریال)": d.grossAmount,
+      })),
+      "تخفیف به‌تفکیکِ کالا": rep.discountsByProduct.map((d) => ({
+        "کالا": d.name, "کد": d.code, "خطِ تخفیف‌دار": d.discountedLines, "مبلغِ تخفیف (ریال)": d.discountAmount,
+      })),
     });
   }
 
@@ -190,6 +202,39 @@ export default function ReportsHubPage() {
                       </div>
                     ))}
                   </>}
+
+              <h2>تخفیف‌های اعمال‌شده</h2>
+              <p className="muted">
+                از پله‌ی تخفیفِ حجمیِ لحظه‌ی تأیید — مستقل از اینکه قیمتِ پایه از لیست بود یا استثنای نماینده.
+              </p>
+              <h3 className="subtle" style={{ marginBottom: "var(--sp-2)" }}>به‌تفکیکِ نماینده</h3>
+              {rep.discountsByAgent.length === 0
+                ? <p className="muted">در این بازه تخفیفی اعمال نشده.</p>
+                : rep.discountsByAgent.map((d) => (
+                    <div className="card" key={d.agentId}>
+                      <div className="row">
+                        <strong>{d.agentName}</strong>
+                        <span className="metric num">{n(d.discountAmount)} ریال</span>
+                      </div>
+                      <div className="muted num">
+                        {n(d.discountedLines)} خطِ تخفیف‌دار
+                        {d.grossAmount > 0 && ` · ${((d.discountAmount / d.grossAmount) * 100).toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪ از مبلغِ ناخالص`}
+                      </div>
+                    </div>
+                  ))}
+
+              <h3 className="subtle" style={{ marginBottom: "var(--sp-2)" }}>به‌تفکیکِ کالا</h3>
+              {rep.discountsByProduct.length === 0
+                ? <p className="muted">در این بازه تخفیفی اعمال نشده.</p>
+                : rep.discountsByProduct.map((d) => (
+                    <div className="card" key={d.code}>
+                      <div className="row">
+                        <span>{d.name} <span className="muted">({d.code})</span></span>
+                        <span className="metric num">{n(d.discountAmount)} ریال</span>
+                      </div>
+                      <div className="muted num">{n(d.discountedLines)} خطِ تخفیف‌دار</div>
+                    </div>
+                  ))}
             </>
           )}
         </>

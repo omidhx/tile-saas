@@ -20,12 +20,17 @@ export type AgentPerf = {
 };
 export type TopProduct = { name: string; code: string; boxes: number };
 export type DeadStock = { name: string; code: string; onHand: number };
+/** discountAmount از `sales_request_item.discount_amount` (پله‌ی تخفیفِ حجمیِ لحظه‌ی تأیید) — نه استثنای نماینده که خودش قیمتِ دیگری است، نه «تخفیف» روی همان قیمت. */
+export type DiscountByAgent = { agentId: string; agentName: string; discountedLines: number; discountAmount: number; grossAmount: number };
+export type DiscountByProduct = { name: string; code: string; discountedLines: number; discountAmount: number };
 
 export type Reports = {
   from: string; to: string;
   agents: AgentPerf[];
   topProducts: TopProduct[];
   deadStock: DeadStock[];
+  discountsByAgent: DiscountByAgent[];
+  discountsByProduct: DiscountByProduct[];
 };
 
 export async function buildReports(p: { tenantId: string; from: Date; to: Date }): Promise<Reports> {
@@ -78,12 +83,52 @@ export async function buildReports(p: { tenantId: string; from: Date; to: Date }
       ORDER BY "onHand" DESC
       LIMIT 20`;
 
+    // تخفیف‌های اعمال‌شده به‌تفکیکِ نماینده — discount_amount همان چیزی است که در
+    // لحظه‌ی تأیید از پله‌ی تخفیفِ حجمی کم شده (spec ۵.۷)، مستقل از منبعِ قیمت
+    // (لیست یا استثنای نماینده). HAVING فقط نماینده‌هایی را نشان می‌دهد که واقعاً
+    // تخفیفی گرفته‌اند — وگرنه فهرست پر از صفر می‌شد.
+    const discountsByAgent = await tx<{ agentId: string; agentName: string; discountedLines: number; discountAmount: string; grossAmount: string }[]>`
+      SELECT aa.id AS "agentId", aa.legal_name AS "agentName",
+             count(*) FILTER (WHERE sri.discount_amount > 0)::int AS "discountedLines",
+             COALESCE(SUM(sri.discount_amount), 0)::bigint AS "discountAmount",
+             COALESCE(SUM(sri.unit_price_applied * sri.requested_qty_boxes), 0)::bigint AS "grossAmount"
+      FROM sales_request sr
+      JOIN agent_account aa ON aa.id = sr.agent_account_id AND aa.tenant_id = sr.tenant_id
+      JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
+      WHERE sr.tenant_id = ${tenantId}
+        AND sr.status IN ('approved', 'fulfilled')
+        AND sr.created_at >= ${from} AND sr.created_at < ${to}
+      GROUP BY aa.id, aa.legal_name
+      HAVING COALESCE(SUM(sri.discount_amount), 0) > 0
+      ORDER BY "discountAmount" DESC`;
+
+    // همان تخفیف، به‌تفکیکِ کالا — کدام کالا بیشترین تخفیف را در این بازه گرفته
+    const discountsByProduct = await tx<{ name: string; code: string; discountedLines: number; discountAmount: string }[]>`
+      SELECT p.name, p.code,
+             count(*) FILTER (WHERE sri.discount_amount > 0)::int AS "discountedLines",
+             COALESCE(SUM(sri.discount_amount), 0)::bigint AS "discountAmount"
+      FROM sales_request sr
+      JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
+      JOIN product_variant pv ON pv.id = sri.variant_id
+      JOIN product p ON p.id = pv.product_id
+      WHERE sr.tenant_id = ${tenantId}
+        AND sr.status IN ('approved', 'fulfilled')
+        AND sr.created_at >= ${from} AND sr.created_at < ${to}
+      GROUP BY p.name, p.code
+      HAVING COALESCE(SUM(sri.discount_amount), 0) > 0
+      ORDER BY "discountAmount" DESC
+      LIMIT 20`;
+
     return {
       from: from.toISOString(), to: to.toISOString(),
       // value به‌صورت bigint می‌آید (رشته). مبالغ ریالیِ این مقیاس خیلی زیر
       // MAX_SAFE_INTEGER‌اند، پس Number امن است.
       agents: agents.map((a) => ({ ...a, value: Number(a.value) })),
       topProducts, deadStock,
+      discountsByAgent: discountsByAgent.map((d) => ({
+        ...d, discountAmount: Number(d.discountAmount), grossAmount: Number(d.grossAmount),
+      })),
+      discountsByProduct: discountsByProduct.map((d) => ({ ...d, discountAmount: Number(d.discountAmount) })),
     };
   });
 }

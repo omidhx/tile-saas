@@ -88,6 +88,26 @@ test("خطِ بدون قیمت شمرده می‌شود — «۰ ریال» با
   await sql`UPDATE sales_request_item SET unit_price_applied = 1000000 WHERE tenant_id = ${T}`;
 });
 
+test("تخفیف‌های اعمال‌شده به‌تفکیکِ نماینده/کالا: از discount_amountِ snapshot می‌آید", async () => {
+  await sql`INSERT INTO volume_discount (tenant_id, price_list_id, variant_id, min_qty_boxes, percent_off) VALUES (${T}, ${PL}, ${V_HOT}, 10, 10)`;
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "disc-1", items: [{ lotId: LOT_HOT, quantityBoxes: 10 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  assert.equal(a.ok, true);
+
+  const rep = await buildReports({ tenantId: T, ...range() });
+  const agentRow = rep.discountsByAgent.find((d) => d.agentId === AG);
+  assert.ok(agentRow, "نماینده باید در فهرستِ تخفیف‌ها باشد");
+  assert.equal(agentRow!.discountAmount, 1_000_000, "۱۰٪ روی ۱۰×۱٬۰۰۰٬۰۰۰");
+  assert.equal(agentRow!.discountedLines, 1, "فقط همین خطِ تازه تخفیف خورده، خطِ اولِ فیکسچر نه");
+
+  const productRow = rep.discountsByProduct.find((d) => d.code === "HOT");
+  assert.ok(productRow, "کالا باید در فهرستِ تخفیف‌ها باشد");
+  assert.equal(productRow!.discountAmount, 1_000_000);
+
+  // کالای راکد هیچ سفارشی نداشته، پس نباید در فهرستِ تخفیف‌ها باشد
+  assert.ok(!rep.discountsByProduct.some((d) => d.code === "DEAD"));
+});
+
 test("بازه‌ی زمانی واقعاً فیلتر می‌کند — بازه‌ی گذشته خالی است", async () => {
   const rep = await buildReports({
     tenantId: T,
