@@ -1,5 +1,11 @@
 import { withTenant } from "./client";
 import { findOrCreateUser } from "./users";
+import { writeAudit, type AuditValue } from "./audit";
+
+/** سقفِ اعتبار/تأییدِ خودکار: null (خاموش/ارث) یا عددِ صحیحِ نامنفی — همان قاعده‌ی /api/settings/auto-approve. */
+function validLimit(v: number | null | undefined): boolean {
+  return v === null || v === undefined || (Number.isSafeInteger(v) && v >= 0);
+}
 
 export type AgentUser = { userId: string; phone: string; email: string | null };
 export type AgentFull = {
@@ -56,7 +62,7 @@ export async function listAgentsFull(tenantId: string): Promise<AgentFull[]> {
 export type CreateAgentResult =
   // tempPassword فقط وقتی کاربرِ اول تازه ساخته شده پر است — مثلِ db/team.ts.
   | { ok: true; agentAccountId: string; tempPassword: string | null }
-  | { ok: false; reason: "seat_limit" | "code_taken" | "email_taken" | "invalid_staff" };
+  | { ok: false; reason: "seat_limit" | "code_taken" | "email_taken" | "invalid_staff" | "invalid_limit" };
 
 /** ساختِ نمایندگیِ تازه + کاربرِ اولش (find-or-create — همان قاعده‌ی db/team.ts). */
 export async function createAgent(params: {
@@ -67,6 +73,8 @@ export async function createAgent(params: {
 }): Promise<CreateAgentResult> {
   const { tenantId, legalName, code } = params;
   const email = params.firstUserEmail?.trim() || null;
+  if (!validLimit(params.creditLimit) || !validLimit(params.autoApproveLimit))
+    return { ok: false, reason: "invalid_limit" };
 
   return withTenant(tenantId, async (tx) => {
     const [tenant] = await tx<{ name: string; max_agents: number | null }[]>`
@@ -122,16 +130,25 @@ export async function createAgent(params: {
   });
 }
 
-export type UpdateAgentResult = { ok: true } | { ok: false; reason: "code_taken" | "invalid_staff" };
+export type UpdateAgentResult = { ok: true } | { ok: false; reason: "code_taken" | "invalid_staff" | "invalid_limit" };
 
-/** ویرایشِ فیلدهای نمایندگی (شاملِ فعال/غیرفعال). */
+/**
+ * ویرایشِ فیلدهای نمایندگی (شاملِ فعال/غیرفعال).
+ *
+ * سقفِ اعتبار/تأییدِ خودکار همان قواعدِ /api/settings/auto-approve را دارد: عددِ
+ * صحیحِ نامنفی یا null — و چون این‌جا هم می‌تواند این دو ستون را عوض کند، باید
+ * همان ردپا را هم بگذارد، وگرنه یک مسیرِ محافظت‌شده و یک مسیرِ بی‌محافظت برای
+ * تغییرِ همان فیلدِ پولی می‌ماند (دقیقاً چیزی که audit_log برای جلوگیری‌اش ساخته شد).
+ */
 export async function updateAgent(params: {
-  tenantId: string; agentAccountId: string;
+  tenantId: string; agentAccountId: string; actorUserId: string;
   legalName?: string; code?: string; priceListId?: string | null;
   creditLimit?: number | null; autoApproveLimit?: number | null; isActive?: boolean;
   assignedStaffUserId?: string | null;
 }): Promise<UpdateAgentResult> {
   const { tenantId, agentAccountId } = params;
+  if (!validLimit(params.creditLimit) || !validLimit(params.autoApproveLimit))
+    return { ok: false, reason: "invalid_limit" };
   return withTenant(tenantId, async (tx) => {
     if (params.code) {
       const [dup] = await tx<{ id: string }[]>`
@@ -141,6 +158,13 @@ export async function updateAgent(params: {
     if (params.assignedStaffUserId !== undefined && params.assignedStaffUserId !== null
       && !(await isActiveStaffMember(tx, tenantId, params.assignedStaffUserId)))
       return { ok: false, reason: "invalid_staff" };
+
+    const [before] = (params.creditLimit !== undefined || params.autoApproveLimit !== undefined)
+      ? await tx<{ creditLimit: string | null; autoApproveLimit: string | null }[]>`
+          SELECT credit_limit AS "creditLimit", auto_approve_limit AS "autoApproveLimit"
+          FROM agent_account WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`
+      : [];
+
     // هفت UPDATEِ جداگانه، نه یک CASE WHEN: priceListId/creditLimit/autoApproveLimit/
     // assignedStaffUserId باید بشود صریحاً به NULL برگرداند (مثلاً «ارثِ سقفِ کارخانه»
     // یا «فعلاً پشتیبانِ ثابت ندارد»)، یعنی COALESCE اینجا غلط است — نبودِ کلید را
@@ -159,6 +183,22 @@ export async function updateAgent(params: {
       await tx`UPDATE agent_account SET assigned_staff_user_id = ${params.assignedStaffUserId}::uuid WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.isActive !== undefined)
       await tx`UPDATE agent_account SET is_active = ${params.isActive} WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
+
+    const oldDiff: Record<string, AuditValue> = {}, newDiff: Record<string, AuditValue> = {};
+    if (before && params.creditLimit !== undefined) {
+      const beforeVal = before.creditLimit === null ? null : Number(before.creditLimit);
+      if (beforeVal !== params.creditLimit) { oldDiff.creditLimit = beforeVal; newDiff.creditLimit = params.creditLimit; }
+    }
+    if (before && params.autoApproveLimit !== undefined) {
+      const beforeVal = before.autoApproveLimit === null ? null : Number(before.autoApproveLimit);
+      if (beforeVal !== params.autoApproveLimit) { oldDiff.autoApproveLimit = beforeVal; newDiff.autoApproveLimit = params.autoApproveLimit; }
+    }
+    if (Object.keys(newDiff).length)
+      await writeAudit(tx, {
+        tenantId, actorUserId: params.actorUserId, action: "auto_approve_limit.agent",
+        entity: "agent_account", entityId: agentAccountId, oldValue: oldDiff, newValue: newDiff,
+      });
+
     return { ok: true };
   });
 }

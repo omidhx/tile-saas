@@ -4,7 +4,16 @@ import type { TransactionSql } from "postgres";
 import { sql } from "@/db/client";
 
 // JWT امضاشده در کوکی HttpOnly — crypto دست‌ساز نیست (jose جاافتاده‌ست).
-const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET!);
+//
+// fail-loud نه fail-silent: `encode(undefined)` همان `encode("")` است (رفتارِ
+// WebIDL برایِ آرگومانِ اختیاری) — یعنی نبودِ AUTH_SECRET بدونِ این چک به‌جای
+// کرش، امضا را با کلیدِ ثابت و علنیِ «خالی» انجام می‌داد: جعلِ کاملِ نشست.
+const secret = () => {
+  const raw = process.env.AUTH_SECRET;
+  if (!raw || raw.length < 32)
+    throw new Error("AUTH_SECRET تنظیم نشده یا کوتاه‌تر از ۳۲ کاراکتر است — بدونش نشست‌ها قابلِ جعل می‌شوند");
+  return new TextEncoder().encode(raw);
+};
 const COOKIE = "session";
 
 /**

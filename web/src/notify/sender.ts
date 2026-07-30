@@ -17,7 +17,11 @@ export type Channel = "sms" | "email" | "bale";
 export type Notification = { to: string; text: string; subject?: string };
 
 async function logSender(channel: Channel, n: Notification): Promise<SendResult> {
-  console.log(`[${channel}:log] → ${n.to}${n.subject ? ` (${n.subject})` : ""}: ${n.text}`);
+  // در production متنِ کامل چاپ نمی‌شود — همین پیام‌ها کدِ بازیابیِ رمز/رمزِ موقتِ
+  // دعوت را خام حمل می‌کنند و اگر provider واقعی هنوز ست نشده، این تنها راهِ
+  // خروجِ پیام است؛ لاگِ production معمولاً جایی جمع می‌شود که کنترلِ دسترسی ندارد.
+  const body = process.env.NODE_ENV === "production" ? "[redacted]" : n.text;
+  console.log(`[${channel}:log] → ${n.to}${n.subject ? ` (${n.subject})` : ""}: ${body}`);
   return { ok: true };
 }
 

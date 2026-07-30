@@ -11,10 +11,14 @@ import { createAgent, updateAgent, addAgentUser, listAgentsFull, deleteAgent } f
  */
 
 const T = "11111111-1111-1111-1111-111111111111";
+const U = "a8888888-8888-8888-8888-888888888888";
 
 before(async () => {
   await resetSchema();
-  await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');`);
+  await sql.unsafe(`
+    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
+    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');
+  `);
 });
 after(async () => { await sql.end(); });
 
@@ -65,13 +69,32 @@ test("updateAgent: priceListId را می‌شود صریحاً به NULL برگ�
   assert.equal(created.ok, true);
   const id = created.ok ? created.agentAccountId : "";
 
-  await updateAgent({ tenantId: T, agentAccountId: id, priceListId: pl });
+  await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, priceListId: pl });
   let [row] = await sql<{ price_list_id: string | null }[]>`SELECT price_list_id FROM agent_account WHERE id = ${id}`;
   assert.equal(row.price_list_id, pl);
 
-  await updateAgent({ tenantId: T, agentAccountId: id, priceListId: null });
+  await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, priceListId: null });
   [row] = await sql<{ price_list_id: string | null }[]>`SELECT price_list_id FROM agent_account WHERE id = ${id}`;
   assert.equal(row.price_list_id, null, "priceListId: null باید واقعاً NULL کند، نه بی‌اثر بماند");
+});
+
+test("🔴 updateAgent: سقفِ اعتبار/تأییدِ خودکار منفی رد می‌شود و بدونِ تغییرِ واقعی رد ثبت نمی‌شود", async () => {
+  const created = await createAgent({
+    tenantId: T, legalName: "سقف‌دار", code: "AG-LIMIT", firstUserPhone: "09121110020",
+  });
+  assert.ok(created.ok);
+  const id = created.ok ? created.agentAccountId : "";
+
+  const bad = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, creditLimit: -1 });
+  assert.deepEqual(bad, { ok: false, reason: "invalid_limit" });
+
+  const ok = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, creditLimit: 5_000_000 });
+  assert.equal(ok.ok, true);
+  const [row] = await sql<{ oldValue: unknown; newValue: unknown }[]>`
+    SELECT old_value AS "oldValue", new_value AS "newValue" FROM audit_log
+    WHERE tenant_id = ${T} AND entity_id = ${id} AND action = 'auto_approve_limit.agent'`;
+  assert.deepEqual(row.oldValue, { creditLimit: null }, "تغییرِ واقعی باید ردپا بگذارد");
+  assert.deepEqual(row.newValue, { creditLimit: 5_000_000 });
 });
 
 test("addAgentUser: افزودنِ کاربرِ دوم به همان نمایندگی، و رد کردنِ افزودنِ تکراری", async () => {
@@ -137,11 +160,11 @@ test("v5: updateAgent می‌تواند assignedStaffUserId را صریحاً NU
   });
   const id = created.ok ? created.agentAccountId : "";
 
-  const cleared = await updateAgent({ tenantId: T, agentAccountId: id, assignedStaffUserId: null });
+  const cleared = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, assignedStaffUserId: null });
   assert.equal(cleared.ok, true);
   const agent = (await listAgentsFull(T)).find((a) => a.id === id)!;
   assert.equal(agent.assignedStaffUserId, null, "باید واقعاً NULL شود، نه بی‌اثر بماند");
 
-  const invalid = await updateAgent({ tenantId: T, agentAccountId: id, assignedStaffUserId: "00000000-0000-0000-0000-000000000000" });
+  const invalid = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, assignedStaffUserId: "00000000-0000-0000-0000-000000000000" });
   assert.deepEqual(invalid, { ok: false, reason: "invalid_staff" });
 });

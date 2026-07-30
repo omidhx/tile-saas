@@ -138,6 +138,11 @@ export default function ReservePage() {
   const [lots, setLots] = useState<Lot[]>([]);
   // ponytail: سبد state محلیه، نه Zustand — یک صفحه‌ست. وقتی سبد چند-route شد، Zustand (spec ۱۱.۴).
   const [cart, setCart] = useState<Record<string, number>>({});
+  // کلیدِ idempotency باید بینِ تلاش‌های دوباره‌ی همین سبد ثابت بماند — وگرنه
+  // «ارتباط برقرار نشد» و کلیکِ دوباره یعنی سرور (اگر واقعاً پردازش کرده بود)
+  // آن را سفارشِ جداگانه می‌بیند: رزروِ دوبرابر روی همان موجودی. فقط بعد از
+  // موفقیت (خالی‌شدنِ سبد) پاک می‌شود تا سفارشِ بعدی کلیدِ تازه بگیرد.
+  const idempotencyKeyRef = useRef<string | null>(null);
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [subscribed, setSubscribed] = useState<string[]>([]);
@@ -308,6 +313,10 @@ export default function ReservePage() {
     if (!ctx || items.length === 0) return;
     setMsg(null);
     setPending(true); // pending state، بدون optimistic و بدون refetch-before-submit (spec ۱۱.۱/۱۱.۲)
+    // فقط اگر تلاشِ قبلی کلیدی برای همین سبد نساخته: کلیک‌های دوباره‌ی بعد از
+    // «ارتباط برقرار نشد» باید همان کلید را دوباره بفرستند، وگرنه اگر سرور واقعاً
+    // پردازش کرده باشد ولی پاسخ نرسیده، تلاشِ دوم سفارشِ جداگانه ثبت می‌کند.
+    if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID();
     try {
       const res = await fetch("/api/reservations", {
         method: "POST",
@@ -315,10 +324,13 @@ export default function ReservePage() {
         body: JSON.stringify({
           tenantId: ctx.tenantId,
           agentAccountId: ctx.agentAccountId,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: idempotencyKeyRef.current,
           items: items.map(([lotId, quantityBoxes]) => ({ lotId, quantityBoxes })),
         }),
       });
+      // پاسخِ قطعی رسید (موفق یا رد) — این کلید دیگر لازم نیست، تلاشِ بعدی (اگر
+      // بود) تصمیمِ تازه‌ای است (مثلاً تعدادِ عوض‌شده) و باید کلیدِ تازه بگیرد.
+      idempotencyKeyRef.current = null;
       if (res.ok) {
         setCart({});
         // تأیید هیبریدی: اگر زیرِ سقف بود سفارش همین حالا قطعی شده. گفتنِ «رزرو ثبت شد»
@@ -339,6 +351,7 @@ export default function ReservePage() {
         setMsg({ kind: "err", text: "خطا در ثبت رزرو." });
       }
     } catch {
+      // پاسخ نرسید — شاید سرور پردازش کرده باشد؛ کلید برای تلاشِ بعدی نگه داشته می‌شود.
       setMsg({ kind: "err", text: "ارتباط با سرور برقرار نشد." });
     } finally {
       setPending(false);

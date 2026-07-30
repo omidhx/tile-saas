@@ -69,7 +69,10 @@ export async function POST(req: Request) {
     assignedStaffUserId: assignedStaffUserId ?? null,
     firstUserPhone: firstUserPhone.trim(), firstUserEmail,
   });
-  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "seat_limit" ? 403 : 409 });
+  if (!r.ok) {
+    const status = r.reason === "seat_limit" ? 403 : r.reason === "invalid_limit" ? 400 : 409;
+    return NextResponse.json({ error: r.reason }, { status });
+  }
   return NextResponse.json({ ok: true, agentAccountId: r.agentAccountId, tempPassword: r.tempPassword }, { status: 201 });
 }
 
@@ -97,8 +100,11 @@ export async function PATCH(req: Request) {
   }
 
   const { legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId } = body;
-  const r = await updateAgent({ tenantId, agentAccountId, legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId });
-  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
+  const r = await updateAgent({
+    tenantId, agentAccountId, actorUserId: auth.userId,
+    legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId,
+  });
+  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "invalid_limit" ? 400 : 409 });
   return NextResponse.json({ ok: true });
 }
 
