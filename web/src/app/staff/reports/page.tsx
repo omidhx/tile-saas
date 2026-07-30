@@ -18,9 +18,12 @@ type TopProduct = { name: string; code: string; boxes: number };
 type DeadStock = { name: string; code: string; onHand: number };
 type DiscountByAgent = { agentId: string; agentName: string; discountedLines: number; discountAmount: number; grossAmount: number };
 type DiscountByProduct = { name: string; code: string; discountedLines: number; discountAmount: number };
+type WarehouseBucket = { warehouseId: string; warehouseName: string };
+type AgentByWarehouseRow = { agentId: string; agentName: string; warehouses: { boxes: number }[] };
 type Reports = {
   from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[];
   discountsByAgent: DiscountByAgent[]; discountsByProduct: DiscountByProduct[];
+  warehouseBuckets: WarehouseBucket[]; agentsByWarehouse: AgentByWarehouseRow[];
 };
 type AgentOpt = { id: string; legalName: string };
 type VariantOpt = { id: string; name: string; code: string };
@@ -143,6 +146,9 @@ export default function ReportsHubPage() {
         "ارزش (ریال)": a.value, "خطِ بی‌قیمت": a.unpricedLines,
       })),
       "پرفروش‌ها": rep.topProducts.map((p) => ({ "کالا": p.name, "کد": p.code, "کارتنِ بارگیری‌شده": p.boxes })),
+      "به‌تفکیکِ انبار": rep.agentsByWarehouse.flatMap((r) => rep.warehouseBuckets.map((w, i) => ({
+        "نمایندگی": r.agentName, "انبار": w.warehouseName, "کارتن": r.warehouses[i].boxes,
+      }))),
       "راکدها": rep.deadStock.map((d) => ({ "کالا": d.name, "کد": d.code, "موجودی (کارتن)": d.onHand })),
       "تخفیف به‌تفکیکِ نماینده": rep.discountsByAgent.map((d) => ({
         "نمایندگی": d.agentName, "خطِ تخفیف‌دار": d.discountedLines,
@@ -293,6 +299,37 @@ export default function ReportsHubPage() {
                       </div>
                     </div>
                   ))}
+
+              <h2>عملکردِ نماینده به‌تفکیکِ انبار</h2>
+              <p className="muted">فقط کارتنِ واقعاً بارگیری‌شده — ارزشِ ریالی به یک انبارِ مشخص snapshot نشده، چون سفارش می‌تواند از چند انبار پر شود.</p>
+              {rep.agentsByWarehouse.length === 0
+                ? <p className="muted">در این بازه چیزی بارگیری نشده.</p>
+                : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="num" style={{ width: "100%", borderCollapse: "collapse", whiteSpace: "nowrap" }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>نمایندگی</th>
+                          {rep.warehouseBuckets.map((w) => (
+                            <th key={w.warehouseId} style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>{w.warehouseName}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rep.agentsByWarehouse.map((r) => (
+                          <tr key={r.agentId} style={{ borderBottom: "1px solid var(--line)" }}>
+                            <td style={{ padding: "var(--sp-2)" }}>{r.agentName}</td>
+                            {r.warehouses.map((w, i) => (
+                              <td key={i} style={{ padding: "var(--sp-2)" }}>
+                                {w.boxes > 0 ? `${n(w.boxes)} کارتن` : <span className="subtle">—</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
               <h2>راکدها (موجودیِ بدون فروش)</h2>
               {filterAgent && <p className="subtle">موجودی مالِ نماینده‌ی خاصی نیست — فیلترِ نماینده اینجا اثر ندارد.</p>}

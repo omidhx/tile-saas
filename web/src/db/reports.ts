@@ -24,6 +24,11 @@ export type DeadStock = { name: string; code: string; onHand: number };
 /** discountAmount از `sales_request_item.discount_amount` (پله‌ی تخفیفِ حجمیِ لحظه‌ی تأیید) — نه استثنای نماینده که خودش قیمتِ دیگری است، نه «تخفیف» روی همان قیمت. */
 export type DiscountByAgent = { agentId: string; agentName: string; discountedLines: number; discountAmount: number; grossAmount: number };
 export type DiscountByProduct = { name: string; code: string; discountedLines: number; discountAmount: number };
+export type WarehouseBucket = { warehouseId: string; warehouseName: string };
+/** فقط کارتن — نه ارزشِ ریالی. ارزش رویِ `sales_request_item` است که به یک انبارِ
+ *  مشخص snapshot نشده (سفارش می‌تواند از چند انبار پر شود)، پس همان قاعده‌ی
+ *  «کارتنِ بارگیری‌شده از لجر، جدا از ارزشِ سفارش» اینجا هم رعایت شده. */
+export type AgentByWarehouseRow = { agentId: string; agentName: string; warehouses: { boxes: number }[] };
 
 export type Reports = {
   from: string; to: string;
@@ -32,6 +37,8 @@ export type Reports = {
   deadStock: DeadStock[];
   discountsByAgent: DiscountByAgent[];
   discountsByProduct: DiscountByProduct[];
+  warehouseBuckets: WarehouseBucket[];
+  agentsByWarehouse: AgentByWarehouseRow[];
 };
 
 export async function buildReports(p: {
@@ -76,6 +83,24 @@ export async function buildReports(p: {
       GROUP BY p.name, p.code
       ORDER BY boxes DESC
       LIMIT 20`;
+
+    // عملکردِ نماینده به‌تفکیکِ انبار — همان منطقِ پرفروش‌ها (لجرِ dispatch_load،
+    // نه سفارش): یک سفارش می‌تواند از چند انبار پر شود، پس ارزشِ ریالی به یک
+    // انبارِ مشخص snapshot نشده؛ اینجا هم فقط کارتنِ واقعاً بارگیری‌شده گزارش می‌شود.
+    const rawByWarehouse = await tx<{ agentId: string; agentName: string; warehouseId: string; warehouseName: string; boxes: number }[]>`
+      SELECT aa.id AS "agentId", aa.legal_name AS "agentName", w.id AS "warehouseId", w.name AS "warehouseName",
+             SUM(-t.on_hand_delta_boxes)::int AS boxes
+      FROM inventory_transaction t
+      JOIN inventory_lot l    ON l.id = t.lot_id
+      JOIN warehouse w        ON w.id = l.warehouse_id
+      JOIN sales_dispatch sd  ON sd.tenant_id = t.tenant_id AND sd.id = t.reference_id AND t.reference_type = 'sales_dispatch'
+      JOIN agent_account aa   ON aa.id = sd.agent_account_id AND aa.tenant_id = sd.tenant_id
+      WHERE t.tenant_id = ${tenantId} AND t.transaction_type = 'dispatch_load'
+        AND t.created_at >= ${from} AND t.created_at < ${to}
+        AND ${agentAccountId ? tx`aa.id = ${agentAccountId}` : tx`TRUE`}
+        AND ${variantId ? tx`l.variant_id = ${variantId}` : tx`TRUE`}
+      GROUP BY aa.id, aa.legal_name, w.id, w.name
+      ORDER BY aa.legal_name, w.name`;
 
     // راکدها — موجودی دارد ولی در این بازه هیچ بارگیری نداشته (سرمایه‌ی خوابیده).
     // فیلترِ نماینده اینجا بی‌معنی است (موجودی مالِ نماینده‌ی خاصی نیست)، فقط کالا اعمال می‌شود.
@@ -136,6 +161,24 @@ export async function buildReports(p: {
       ORDER BY "discountAmount" DESC
       LIMIT 20`;
 
+    // باکت‌بندی: انبارهای متمایز (به ترتیبِ نام) + سطرِ هر نماینده هم‌تراز با همان ترتیب
+    const warehouseBuckets: WarehouseBucket[] = [...new Map(
+      rawByWarehouse.map((r) => [r.warehouseId, { warehouseId: r.warehouseId, warehouseName: r.warehouseName }]),
+    ).values()].sort((a, b) => a.warehouseName.localeCompare(b.warehouseName, "fa"));
+
+    const byAgentWh = new Map<string, { name: string; cells: Map<string, number> }>();
+    for (const r of rawByWarehouse) {
+      let agent = byAgentWh.get(r.agentId);
+      if (!agent) { agent = { name: r.agentName, cells: new Map() }; byAgentWh.set(r.agentId, agent); }
+      agent.cells.set(r.warehouseId, (agent.cells.get(r.warehouseId) ?? 0) + r.boxes);
+    }
+    const agentsByWarehouse: AgentByWarehouseRow[] = [...byAgentWh.entries()]
+      .map(([agentId, a]) => ({
+        agentId, agentName: a.name,
+        warehouses: warehouseBuckets.map((b) => ({ boxes: a.cells.get(b.warehouseId) ?? 0 })),
+      }))
+      .sort((x, y) => y.warehouses.reduce((s, w) => s + w.boxes, 0) - x.warehouses.reduce((s, w) => s + w.boxes, 0));
+
     return {
       from: from.toISOString(), to: to.toISOString(),
       // value به‌صورت bigint می‌آید (رشته). مبالغ ریالیِ این مقیاس خیلی زیر
@@ -146,6 +189,7 @@ export async function buildReports(p: {
         ...d, discountAmount: Number(d.discountAmount), grossAmount: Number(d.grossAmount),
       })),
       discountsByProduct: discountsByProduct.map((d) => ({ ...d, discountAmount: Number(d.discountAmount) })),
+      warehouseBuckets, agentsByWarehouse,
     };
   });
 }

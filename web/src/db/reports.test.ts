@@ -162,6 +162,33 @@ test("فیلترِ کالا: عملکردِ نماینده را به همان ی
   assert.equal(onlyHot.topProducts[0].code, "HOT");
 });
 
+test("عملکردِ نماینده به‌تفکیکِ انبار: کارتن به‌درستی بینِ دو انبار تقسیم می‌شود", async () => {
+  const WH2 = "a3333333-3333-3333-3333-333333333334";
+  const LOT_HOT_WH2 = "a4444444-4444-4444-4444-444444444446";
+  await sql.unsafe(`
+    INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH2}','${T}','انبارِ دو','W2','main');
+    INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT_HOT_WH2}','${T}','${V_HOT}','${WH2}');
+    INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT_HOT_WH2}',50);
+  `);
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "wh-test-1", items: [{ lotId: LOT_HOT_WH2, quantityBoxes: 5 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  assert.equal(a.ok, true);
+  const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-WH2" });
+  const did = d.ok ? d.dispatchIds[0] : "";
+  await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "ready_for_loading", actorUserId: U });
+  await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "loaded", actorUserId: U });
+
+  const rep = await buildReports({ tenantId: T, ...range() });
+  const wh2Idx = rep.warehouseBuckets.findIndex((w) => w.warehouseId === WH2);
+  const whIdx = rep.warehouseBuckets.findIndex((w) => w.warehouseId === WH);
+  assert.ok(wh2Idx >= 0 && whIdx >= 0, "هر دو انبار باید در فهرستِ باکت‌ها باشند");
+
+  const agRow = rep.agentsByWarehouse.find((r) => r.agentId === AG);
+  assert.ok(agRow, "نماینده باید در فهرست باشد");
+  assert.equal(agRow!.warehouses[wh2Idx].boxes, 5, "کارتنِ بارگیری‌شده از انبارِ دو");
+  assert.ok(agRow!.warehouses[whIdx].boxes > 0, "کارتنِ انبارِ اول هم جدا شمرده می‌شود، نه قاطی");
+});
+
 test("buildMonthlyAgentPerf: باکت‌بندیِ ماهانه‌ی شمسی + مقدارِ نماینده در ماهِ جاری", async () => {
   const AG3 = "a5555555-5555-5555-5555-555555555557";
   await sql.unsafe(`
