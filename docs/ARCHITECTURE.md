@@ -31,6 +31,9 @@ staff/انباردار ────────┘        │
 - **سبد رزرو** state محلی جدا (فعلاً `useState`؛ Zystand وقتی سبد چند-route شد — spec ۱۱.۴).
 - **Pending state، نه Optimistic UI** برای رزرو (spec ۱۱.۱).
 
+## Observability
+`@sentry/nextjs` (v10) از طریقِ `instrumentation.ts` + `onRequestError` — خطاهای catch‌نشده در route handler/server component بدونِ دست‌زدن به هر route جداگانه گرفته می‌شوند. هر `authorize*` موفق (`auth/authz.ts`) برچسبِ `tenantId`/`userId` می‌زند (فقط شناسه، هرگز شماره/ایمیل) تا نشتِ بین‌تننتی سریع‌تر قابلِ ردیابی باشد. بدونِ `SENTRY_DSN`، بی‌اثر می‌ماند نه خطا.
+
 ## Caching Strategy
 فعلاً هیچ. عمداً. `held` همیشه در لحظه محاسبه می‌شود (قانون #۱). کش نمایشی (staleTime کوتاه) وقتی لیست بزرگ شد. Redis رد شد (over-engineering برای این مقیاس).
 

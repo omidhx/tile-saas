@@ -26,7 +26,7 @@ psql "postgres://postgres:pw@localhost:5432/postgres" -f db/schema.sql
 
 # ۲) اپ
 cd web
-cp .env.example .env      # DATABASE_URL و AUTH_SECRET را پر کن
+cp .env.example .env      # DATABASE_URL و AUTH_SECRET را پر کن (AUTH_SECRET حداقل ۳۲ کاراکتر، وگرنه بالا نمی‌آید)
 npm install
 npm run dev               # http://localhost:3000  → /login → /reserve
 ```
