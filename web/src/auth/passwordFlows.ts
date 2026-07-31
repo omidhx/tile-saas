@@ -1,4 +1,4 @@
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { sql, withTenant } from "@/db/client";
 import { hashPassword, verifyPassword } from "./password";
 import { invalidateSessionsIn } from "./session";
@@ -34,6 +34,33 @@ const hashCode = (code: string) => createHash("sha256").update(code).digest("hex
 function validateNew(newPassword: string): PasswordError | null {
   if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD) return "too_short";
   return null;
+}
+
+/**
+ * شکلِ رفت‌وبرگشتِ DBِ مسیرِ واقعی را کپی می‌کند (نه محتوایش) — قاعده‌ی ۲ فقط پاسخ
+ * را یکسان می‌کرد، نه زمانِ رسیدنش؛ «شناسه وجود ندارد» صفر کوئریِ اضافه می‌زد و
+ * «وجود دارد» چند کوئری/تراکنش، که خودش یک کانالِ زمان‌بندی برای شمارشِ شماره
+ * می‌سازد. با tenantId/userId جعلی — RLS چیزی برنمی‌گرداند، FK هم با
+ * `WHERE false` هرگز لمس نمی‌شود، فقط هزینه‌ی رفت‌وبرگشت باقی می‌ماند.
+ */
+async function dummyResetWork() {
+  const fake = randomUUID();
+  await sql`SELECT 1 FROM user_contexts(${randomUUID()}) LIMIT 1`;
+  await withTenant(randomUUID(), async (tx) => {
+    await tx`UPDATE password_reset SET used_at = now() WHERE user_id = ${fake} AND used_at IS NULL`;
+    await tx`INSERT INTO password_reset (user_id, code_hash, expires_at)
+             SELECT ${fake}, ${hashCode("000000")}, now() WHERE false`;
+    await tx`INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
+             SELECT ${fake}, 'sms', 'x', '{}'::jsonb WHERE false`;
+  });
+}
+
+async function dummyConfirmWork() {
+  await sql.begin(async (tx) => {
+    await tx`SELECT id, code_hash, attempt_count FROM password_reset
+             WHERE user_id = ${randomUUID()} AND used_at IS NULL AND expires_at > now()
+             ORDER BY created_at DESC LIMIT 1 FOR UPDATE`;
+  });
 }
 
 /** تغییر رمز توسط کاربرِ واردشده (رمز فعلی لازم است). */
@@ -78,7 +105,7 @@ export async function requestReset(identifier: string): Promise<{ code: string |
   // app_user ستون tenant_id ندارد، پس RLS رویش نیست و این کوئری امن است.
   const [u] = await sql<{ id: string; phone: string; email: string | null }[]>`
     SELECT id, phone, email FROM app_user WHERE (phone = ${identifier} OR email = ${identifier}) AND is_active`;
-  if (!u) return { code: null };
+  if (!u) { await dummyResetWork(); return { code: null }; }
 
   /*
    * بازیابیِ رمز کارِ **کاربر** است نه یک tenant، پس هیچ app.tenant_id در کار نیست.
@@ -94,7 +121,7 @@ export async function requestReset(identifier: string): Promise<{ code: string |
   const [ctx] = await sql<{ tenant_id: string }[]>`
     SELECT tenant_id FROM user_contexts(${u.id}) LIMIT 1`;
   // کاربرِ بدونِ عضویتِ فعال: کدی نمی‌سازیم چون جایی برای فرستادنش نیست
-  if (!ctx) return { code: null };
+  if (!ctx) { await dummyResetWork(); return { code: null }; }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
 
@@ -133,7 +160,7 @@ export async function confirmReset(p: {
   const [u] = await sql<{ id: string }[]>`
     SELECT id FROM app_user WHERE (phone = ${p.identifier} OR email = ${p.identifier}) AND is_active`;
   // شناسه‌ی ناموجود همان پاسخِ «کد نامعتبر» را می‌گیرد (قاعده‌ی ۲)
-  if (!u) return { ok: false, reason: "invalid_code" };
+  if (!u) { await dummyConfirmWork(); return { ok: false, reason: "invalid_code" }; }
 
   const hash = await hashPassword(p.newPassword);
 

@@ -4,6 +4,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { matchesMagicBytes } from "@/lib/magicBytes";
 
 /**
  * آپلودِ عکسِ محصول (v2 کاتالوگ تصویری). staff-only.
@@ -38,16 +39,20 @@ export async function POST(req: Request) {
     throw e;
   }
 
-  // نوعِ فایل از خودِ محتوا (File.type)، نه از پسوندِ نام: کاربر نباید بتواند
-  // یک اسکریپت را با نامِ .jpg آپلود کند.
+  // نوعِ اعلام‌شده (File.type)، نه پسوندِ نام: کاربر نباید بتواند یک اسکریپت را
+  // با نامِ .jpg آپلود کند. ولی File.type را خودِ کلاینت پر می‌کند — پس محتوای
+  // واقعی هم پایین‌تر با matchesMagicBytes تأیید می‌شود.
   const ext = ALLOWED[file.type];
   if (!ext) return NextResponse.json({ error: "bad_type" }, { status: 415 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "too_large" }, { status: 413 });
 
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (!matchesMagicBytes(file.type, bytes)) return NextResponse.json({ error: "bad_type" }, { status: 415 });
+
   const dir = join(process.cwd(), "public", "uploads");
   await mkdir(dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;
-  await writeFile(join(dir, name), Buffer.from(await file.arrayBuffer()));
+  await writeFile(join(dir, name), bytes);
 
   // URLِ عمومی — همان چیزی که import هم می‌دهد، پس لایه‌ی نمایش فرقی نمی‌بیند.
   return NextResponse.json({ url: `/uploads/${name}` }, { status: 201 });

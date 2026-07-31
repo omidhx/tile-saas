@@ -103,6 +103,13 @@ test("درخواستِ بازیابی برای شماره‌ی ناموجود، 
   // خروجیِ عمومیِ هر دو یکی است: هیچ‌کدام throw نکردند و چیزی برنگرداندند که فرق کند
 });
 
+test("🔴 تأییدِ بازیابی برای شناسه‌ی ناموجود throw نمی‌کند و invalid_code می‌دهد", async () => {
+  // مسیرِ dummy-work (هرسِ زمان‌بندی، قاعده‌ی ۲) با tenant/user جعلی اجرا می‌شود؛
+  // این تست تضمین می‌کند آن کوئریِ جعلی خودش خطا نمی‌دهد.
+  const r = await confirmReset({ identifier: "09888888888", code: "000000", newPassword: "whatever1234" });
+  assert.deepEqual(r, { ok: false, reason: "invalid_code" });
+});
+
 test("کد در همان تراکنش به Outbox می‌رود (پیامک)", async () => {
   const { code } = await requestReset(PHONE);
   const [msg] = await sql<{ recipient: string; payload: { type: string; code: string } }[]>`

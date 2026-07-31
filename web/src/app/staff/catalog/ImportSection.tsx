@@ -6,6 +6,7 @@ import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // فایلِ موجودی هیچ‌وقت واقعاً این‌قدر بزرگ نیست
 
 type Wh = { id: string; name: string; code: string };
 type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number; imageUrl: string | null; name: string | null; color: string | null; glaze: string | null; punch: string | null; body: string | null };
@@ -46,6 +47,10 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
     setErr(""); setResult(null); setSkipped(0);
     const file = e.target.files?.[0];
     if (!file) return;
+    // پارسِ اکسل سمتِ مرورگر (نه سرور) یعنی آسیب‌پذیریِ xlsx (prototype pollution)
+    // در تبِ همین کارمند اجرا می‌شود؛ سقفِ حجم قبل از parse دستِ‌کم فایلِ
+    // غول‌پیکر/ساختگی را رد می‌کند.
+    if (file.size > MAX_FILE_BYTES) { setErr(`فایل خیلی بزرگ است (حداکثر ${MAX_FILE_BYTES / 1024 / 1024} مگابایت).`); return; }
     setFileName(file.name);
     try {
       const wb = XLSX.read(await file.arrayBuffer());
