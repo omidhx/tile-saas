@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Icon from "../../Icon";
-import { getJson, loadError } from "@/lib/api";
+import { getJson } from "@/lib/api";
+import { usePaginatedSearch } from "@/lib/usePaginatedSearch";
 import type { Ctx } from "@/lib/useContexts";
 import { formatJalaliDateTime } from "@/lib/date";
 import { exportXlsx } from "@/lib/exportXlsx";
@@ -30,49 +31,22 @@ const TYPE_FA: Record<string, string> = {
 
 const sign = (n: number) => (n > 0 ? `+${n}` : String(n));
 
+// append-only: هر چه کارخانه بیشتر کار کند، این جدول فقط بزرگ‌تر می‌شود — بدونِ
+// صفحه‌بندی، حرکتِ چند ماه پیش زیرِ LIMIT ثابت از دیدِ پشتیبان بیرون می‌افتاد.
+const fetchMovements = (tenantId: string, query: string, offset: number) =>
+  getJson<{ movements: Movement[]; drift: Drift[]; hasMore: boolean }>(
+    `/api/ledger?tenantId=${tenantId}&offset=${offset}${query ? `&q=${encodeURIComponent(query)}` : ""}`);
+
 export default function LedgerSection({ ctx }: { ctx: Ctx }) {
-  const [movements, setMovements] = useState<Movement[]>([]);
-  const [drift, setDrift] = useState<Drift[]>([]);
-  const [q, setQ] = useState("");
-  const [hasMore, setHasMore] = useState(false);
-  const [moreBusy, setMoreBusy] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // این صفحه یک ادعای ایمنی می‌کند («تراز است»). پس باید «بارگذاری موفق و خالی» را از
   // «بارگذاری ناموفق» تفکیک کند — وگرنه fail-open می‌شود و روی خطای ۴۰۳ هم می‌گوید تراز است.
-  const [loaded, setLoaded] = useState(false);
-  const [loadErr, setLoadErr] = useState("");
-
-  // append-only: هر چه کارخانه بیشتر کار کند، این جدول فقط بزرگ‌تر می‌شود — بدونِ
-  // صفحه‌بندی، حرکتِ چند ماه پیش زیرِ LIMIT ثابت از دیدِ پشتیبان بیرون می‌افتاد.
-  const fetchMovements = useCallback((tenantId: string, query: string, offset: number) =>
-    getJson<{ movements: Movement[]; drift: Drift[]; hasMore: boolean }>(
-      `/api/ledger?tenantId=${tenantId}&offset=${offset}${query ? `&q=${encodeURIComponent(query)}` : ""}`), []);
-
-  const load = useCallback(async (tenantId: string) => {
-    const res = await fetchMovements(tenantId, "", 0);
-    if (res.ok) { setMovements(res.data.movements); setDrift(res.data.drift); setHasMore(res.data.hasMore); setQ(""); setLoadErr(""); }
-    else setLoadErr(loadError(res.status));
-    setLoaded(true);
-  }, [fetchMovements]);
-
-  useEffect(() => { load(ctx.tenantId); }, [ctx.tenantId, load]);
-
-  function search(v: string) {
-    setQ(v);
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(async () => {
-      const res = await fetchMovements(ctx.tenantId, v, 0);
-      if (res.ok) { setMovements(res.data.movements); setHasMore(res.data.hasMore); }
-    }, 300);
-  }
-
-  async function loadMore() {
-    setMoreBusy(true);
-    try {
-      const res = await fetchMovements(ctx.tenantId, q, movements.length);
-      if (res.ok) { setMovements((prev) => [...prev, ...res.data.movements]); setHasMore(res.data.hasMore); }
-    } finally { setMoreBusy(false); }
-  }
+  const [drift, setDrift] = useState<Drift[]>([]);
+  const { rows: movements, q, hasMore, moreBusy, loadErr, loaded, search, loadMore } =
+    usePaginatedSearch(ctx.tenantId, fetchMovements, (raw) => raw.movements, {
+      // drift فقط رویِ بارگذاریِ اولیه/reload به‌روز می‌شود، نه جستجو — تراز خاصیتِ
+      // کلِ داده است، نه چیزی که با یک فیلترِ متنی معنا داشته باشد به‌روز شود.
+      onInitialLoad: (raw) => setDrift(raw.drift),
+    });
 
   const [exporting, setExporting] = useState(false);
   /** خروجی همیشه همه‌ی نتیجه‌ی جستجوی فعلی را می‌گیرد، نه فقط صفحه‌ی بارگذاری‌شده روی صفحه. */

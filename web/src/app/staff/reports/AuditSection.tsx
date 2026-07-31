@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { getJson } from "@/lib/api";
+import { usePaginatedSearch } from "@/lib/usePaginatedSearch";
 import Icon from "../../Icon";
-import { getJson, loadError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
 import { formatJalaliDateTime } from "@/lib/date";
 
@@ -39,44 +39,13 @@ function money(v: number | null, action: string) {
   return `${n(v)} ریال`;
 }
 
+const fetchEntries = (tenantId: string, query: string, offset: number) =>
+  getJson<{ entries: Entry[]; hasMore: boolean }>(
+    `/api/audit?tenantId=${tenantId}&offset=${offset}${query ? `&q=${encodeURIComponent(query)}` : ""}`);
+
 export default function AuditSection({ ctx, onLedger }: { ctx: Ctx; onLedger: () => void }) {
-  const [rows, setRows] = useState<Entry[]>([]);
-  const [q, setQ] = useState("");
-  const [hasMore, setHasMore] = useState(false);
-  const [moreBusy, setMoreBusy] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [loadErr, setLoadErr] = useState("");
-  const [loaded, setLoaded] = useState(false);
-
-  const fetchEntries = useCallback((tenantId: string, query: string, offset: number) =>
-    getJson<{ entries: Entry[]; hasMore: boolean }>(
-      `/api/audit?tenantId=${tenantId}&offset=${offset}${query ? `&q=${encodeURIComponent(query)}` : ""}`), []);
-
-  const load = useCallback(async (tenantId: string) => {
-    const res = await fetchEntries(tenantId, "", 0);
-    if (res.ok) { setRows(res.data.entries); setHasMore(res.data.hasMore); setQ(""); setLoadErr(""); }
-    else setLoadErr(loadError(res.status));
-    setLoaded(true);
-  }, [fetchEntries]);
-
-  useEffect(() => { load(ctx.tenantId); }, [ctx.tenantId, load]);
-
-  function search(v: string) {
-    setQ(v);
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(async () => {
-      const res = await fetchEntries(ctx.tenantId, v, 0);
-      if (res.ok) { setRows(res.data.entries); setHasMore(res.data.hasMore); }
-    }, 300);
-  }
-
-  async function loadMore() {
-    setMoreBusy(true);
-    try {
-      const res = await fetchEntries(ctx.tenantId, q, rows.length);
-      if (res.ok) { setRows((prev) => [...prev, ...res.data.entries]); setHasMore(res.data.hasMore); }
-    } finally { setMoreBusy(false); }
-  }
+  const { rows, q, hasMore, moreBusy, loadErr, loaded, search, loadMore } =
+    usePaginatedSearch(ctx.tenantId, fetchEntries, (raw) => raw.entries);
 
   return (
     <>

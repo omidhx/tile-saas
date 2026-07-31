@@ -92,6 +92,9 @@ export default function StaffPage() {
   const [dispsHasMore, setDispsHasMore] = useState(false);
   const [dispsBusy, setDispsBusy] = useState(false);
   const dispsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // نسخه‌ی درخواستِ فعلیِ لیستِ حواله/backorder — پاسخِ یک جستجوی قدیمی که بعدِ
+  // جستجوی جدید(تر) یا یک load() کامل برسد، نادیده گرفته می‌شود (رِیسِ رِسپانس).
+  const dispsGen = useRef(0);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [backorders, setBackorders] = useState<Backorder[]>([]);
@@ -99,6 +102,7 @@ export default function StaffPage() {
   const [boHasMore, setBoHasMore] = useState(false);
   const [boBusy, setBoBusy] = useState(false);
   const boListDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const boGen = useRef(0);
   const [boAgent, setBoAgent] = useState("");
   const [boVariant, setBoVariant] = useState("");
   const [boQty, setBoQty] = useState("");
@@ -145,6 +149,8 @@ export default function StaffPage() {
   }, [muted]);
 
   const load = useCallback(async (c: Ctx) => {
+    const myDispsGen = ++dispsGen.current;
+    const myBoGen = ++boGen.current;
     const [rv, r, d, ag, cat, bo] = await Promise.all([
       getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`), // staff view: active همه
       getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
@@ -156,10 +162,10 @@ export default function StaffPage() {
     if (rv.ok && r.ok) applyQueueResults(rv.data.reservations, r.data.requests, false);
     else { if (rv.ok) setPendingResvs(rv.data.reservations); if (r.ok) setReqs(r.data.requests); }
     // اکشن یعنی «برگرد به نمای پیش‌فرض» — جستجوی فعال هم همین‌جا ریست می‌شود
-    if (d.ok) { setDisps(d.data.dispatches); setDispsHasMore(d.data.hasMore); setDispsQ(""); }
+    if (d.ok && myDispsGen === dispsGen.current) { setDisps(d.data.dispatches); setDispsHasMore(d.data.hasMore); setDispsQ(""); }
     if (ag.ok) setAgents(ag.data.agents);
     if (cat.ok) setVariants(cat.data.variants);
-    if (bo.ok) { setBackorders(bo.data.items); setBoHasMore(bo.data.hasMore); setBoListQ(""); }
+    if (bo.ok && myBoGen === boGen.current) { setBackorders(bo.data.items); setBoHasMore(bo.data.hasMore); setBoListQ(""); }
     // هر شکستی را صریح نشان بده — وگرنه صفحه «چیزی برای تأیید نیست» می‌گوید در حالی که نگرفته
     const failed = [rv, r, d, ag, cat, bo].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
@@ -169,39 +175,47 @@ export default function StaffPage() {
   function searchDispatches(v: string) {
     setDispsQ(v);
     if (dispsDebounce.current) clearTimeout(dispsDebounce.current);
+    const myGen = ++dispsGen.current;
     dispsDebounce.current = setTimeout(async () => {
       if (!ctx) return;
       const res = await fetchDispatches(ctx.tenantId, v, 0);
+      if (myGen !== dispsGen.current) return; // جستجو/load تازه‌تری از این جلو زده
       if (res.ok) { setDisps(res.data.dispatches); setDispsHasMore(res.data.hasMore); }
     }, 300);
   }
 
   async function loadMoreDispatches() {
     if (!ctx) return;
+    const myGen = ++dispsGen.current;
     setDispsBusy(true);
     try {
       const res = await fetchDispatches(ctx.tenantId, dispsQ, disps.length);
+      if (myGen !== dispsGen.current) return;
       if (res.ok) { setDisps((prev) => [...prev, ...res.data.dispatches]); setDispsHasMore(res.data.hasMore); }
-    } finally { setDispsBusy(false); }
+    } finally { if (myGen === dispsGen.current) setDispsBusy(false); }
   }
 
   function searchBackorders(v: string) {
     setBoListQ(v);
     if (boListDebounce.current) clearTimeout(boListDebounce.current);
+    const myGen = ++boGen.current;
     boListDebounce.current = setTimeout(async () => {
       if (!ctx) return;
       const res = await fetchBackorders(ctx.tenantId, v, 0);
+      if (myGen !== boGen.current) return;
       if (res.ok) { setBackorders(res.data.items); setBoHasMore(res.data.hasMore); }
     }, 300);
   }
 
   async function loadMoreBackorders() {
     if (!ctx) return;
+    const myGen = ++boGen.current;
     setBoBusy(true);
     try {
       const res = await fetchBackorders(ctx.tenantId, boListQ, backorders.length);
+      if (myGen !== boGen.current) return;
       if (res.ok) { setBackorders((prev) => [...prev, ...res.data.items]); setBoHasMore(res.data.hasMore); }
-    } finally { setBoBusy(false); }
+    } finally { if (myGen === boGen.current) setBoBusy(false); }
   }
 
   /** هر عملِ نوشتن از این عبور می‌کند: شکست را صریح نشان می‌دهد، نه اینکه فقط
