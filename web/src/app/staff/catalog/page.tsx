@@ -486,7 +486,7 @@ export default function CatalogPage() {
           <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
           {" "}می‌توانید <strong>موجودیِ اولیه</strong> را همین‌جا (پایینِ فرم) هم ثبت کنید؛ برای
           واردات دسته‌جمعی هم تبِ{" "}
-          <button type="button" onClick={() => go("import")} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>ورودِ اکسل</button>
+          <button type="button" className="link-plain" onClick={() => go("import")} style={{ textDecoration: "underline" }}>ورودِ اکسل</button>
           {" "}هست. بدونِ هیچ‌کدام، محصول برای نماینده «ناموجود» دیده می‌شود.
         </span>
       </div>
@@ -582,13 +582,13 @@ export default function CatalogPage() {
                 <span>
                   <span className="subtle num">{p.code}</span>
                   {!p.hasStock && (
-                    <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>
+                    <span className="badge badge--warn" style={{ marginInlineStart: "var(--sp-2)" }}>
                       بدون موجودی
                       {p.variantId && canSee("incoming") && (
                         <>
                           {" — "}
-                          <button type="button" onClick={() => togglePanel(p.id, "incoming")}
-                            style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>افزودنِ موجودی ←</button>
+                          <button type="button" className="link-plain" onClick={() => togglePanel(p.id, "incoming")}
+                            style={{ textDecoration: "underline" }}>افزودنِ موجودی ←</button>
                         </>
                       )}
                     </span>

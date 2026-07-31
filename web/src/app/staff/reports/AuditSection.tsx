@@ -87,7 +87,7 @@ export default function AuditSection({ ctx, onLedger }: { ctx: Ctx; onLedger: ()
         <span>
           این‌جا تغییرِ <strong>قواعدِ پولی</strong> (قیمت، سقفِ تأیید خودکار) و ویرایشِ <strong>محصول/مشتری</strong> ثبت می‌شود.
           حرکتِ موجودی در{" "}
-          <button type="button" onClick={onLedger} style={{ all: "unset", cursor: "pointer", textDecoration: "underline" }}>
+          <button type="button" className="link-plain" onClick={onLedger} style={{ textDecoration: "underline" }}>
             دفتر حرکات
           </button>{" "}
           است و دلیلِ تأییدِ هر سفارش روی خودِ سفارش.

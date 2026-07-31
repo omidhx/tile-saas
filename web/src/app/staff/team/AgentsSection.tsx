@@ -309,7 +309,7 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
           <div className="row">
             <span>
               <strong>{a.legalName}</strong> <span className="subtle num">{a.code}</span>
-              {!a.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
+              {!a.isActive && <span className="badge" style={{ marginInlineStart: "var(--sp-2)" }}>غیرفعال</span>}
             </span>
             <span className="row row--start">
               <button className="ghost" disabled={pending === a.id} aria-busy={pending === a.id} onClick={() => toggleActive(a)}>

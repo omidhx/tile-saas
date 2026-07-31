@@ -87,23 +87,26 @@ export default function ChangePasswordPage() {
         <form className="card" onSubmit={submit} noValidate>
           <label htmlFor="cur">رمز عبور فعلی</label>
           <input id="cur" type="password" autoComplete="current-password"
-                 value={current} onChange={(e) => setCurrent(e.target.value)} required />
+                 value={current} onChange={(e) => setCurrent(e.target.value)}
+                 aria-invalid={err ? true : undefined} aria-describedby={err ? "pw-err" : undefined} required />
 
           <label htmlFor="new">رمز جدید</label>
           <input id="new" type="password" autoComplete="new-password"
                  value={next} onChange={(e) => setNext(e.target.value)}
-                 aria-describedby="pw-hint" required />
+                 aria-invalid={err ? true : undefined}
+                 aria-describedby={err ? "pw-hint pw-err" : "pw-hint"} required />
           <div id="pw-hint" className="subtle">حداقل {MIN_PASSWORD.toLocaleString("fa-IR")} کاراکتر</div>
 
           <label htmlFor="rep">تکرار رمز جدید</label>
           <input id="rep" type="password" autoComplete="new-password"
                  value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                 aria-invalid={mismatch || undefined} required />
+                 aria-invalid={mismatch || undefined}
+                 aria-describedby={mismatch ? "rep-mismatch" : undefined} required />
           {/* خطا کنارِ همان فیلد، نه ته فرم */}
-          {mismatch && <div className="err"><Icon name="alert" />دو رمز یکی نیستند.</div>}
+          {mismatch && <div id="rep-mismatch" className="err"><Icon name="alert" />دو رمز یکی نیستند.</div>}
 
           {err && (
-            <div className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+            <div id="pw-err" className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
               <Icon name="alert" /><span>{err}</span>
             </div>
           )}

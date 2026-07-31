@@ -81,9 +81,10 @@ export default function ResetPage() {
             <form className="card" onSubmit={askCode} noValidate>
               <label htmlFor="ph">شماره موبایل یا ایمیل</label>
               <input id="ph" value={identifier} onChange={(e) => setIdentifier(e.target.value)}
-                     autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰ یا ایمیل" required />
+                     autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰ یا ایمیل"
+                     aria-invalid={err ? true : undefined} aria-describedby={err ? "reset-err" : undefined} required />
               {err && (
-                <div className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+                <div id="reset-err" className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
                   <Icon name="alert" /><span>{err}</span>
                 </div>
               )}
@@ -108,15 +109,18 @@ export default function ResetPage() {
               <label htmlFor="cd">کد پیامک‌شده</label>
               <input id="cd" value={code} onChange={(e) => setCode(e.target.value)}
                      inputMode="numeric" autoComplete="one-time-code" maxLength={6}
-                     className="num" placeholder="۱۲۳۴۵۶" required />
+                     className="num" placeholder="۱۲۳۴۵۶"
+                     aria-invalid={err ? true : undefined} aria-describedby={err ? "reset-err" : undefined} required />
 
               <label htmlFor="np">رمز جدید</label>
               <input id="np" type="password" autoComplete="new-password"
-                     value={next} onChange={(e) => setNext(e.target.value)} aria-describedby="h" required />
+                     value={next} onChange={(e) => setNext(e.target.value)}
+                     aria-invalid={err ? true : undefined}
+                     aria-describedby={err ? "h reset-err" : "h"} required />
               <div id="h" className="subtle">حداقل {MIN_PASSWORD.toLocaleString("fa-IR")} کاراکتر</div>
 
               {err && (
-                <div className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+                <div id="reset-err" className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
                   <Icon name="alert" /><span>{err}</span>
                 </div>
               )}

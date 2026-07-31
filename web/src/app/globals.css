@@ -133,7 +133,9 @@ h2 .badge { margin-inline-start: var(--sp-2); }
 .muted   { color: var(--text-muted); font-size: .85rem; }
 .subtle  { color: var(--text-subtle); font-size: .8rem; }
 /* عددِ هم‌عرض: با تغییر مقدار، ستون نمی‌پرد */
-.num     { font-variant-numeric: tabular-nums; }
+/* unicode-bidi: isolate — بدونش عددی که وسطِ جمله‌ی فارسی می‌آید می‌تواند نسبت به
+   نقطه‌گذاریِ کناری (مثلِ «:») توسطِ الگوریتمِ bidi جابه‌جا نمایش داده شود */
+.num     { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
 /* خودِ عدد کنتراستِ کامل می‌گیرد، نه رنگِ کم‌رنگِ توضیح */
 .metric  { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 

@@ -218,7 +218,7 @@ export default function CatalogsPage() {
                 <strong>{c.title}</strong>{" "}
                 <span className="subtle">{c.items.length.toLocaleString("fa-IR")} محصول</span>
                 {priced > 0 && <span className="subtle"> · {money(priced)} قیمت‌دار</span>}
-                {!c.isActive && <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>باطل‌شده</span>}
+                {!c.isActive && <span className="badge badge--warn" style={{ marginInlineStart: "var(--sp-2)" }}>باطل‌شده</span>}
               </span>
               <span className="row row--start">
                 <button className="ghost" disabled={pending === c.id} onClick={() => startEdit(c)}>ویرایش</button>

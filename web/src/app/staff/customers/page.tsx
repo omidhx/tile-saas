@@ -231,7 +231,7 @@ export default function CustomersPage() {
           <div className="row">
             <span>
               <strong>{r.name}</strong>
-              {!r.linked && <span className="badge badge--warn" style={{ marginInlineStart: ".4rem" }}>وصل‌نشده</span>}
+              {!r.linked && <span className="badge badge--warn" style={{ marginInlineStart: "var(--sp-2)" }}>وصل‌نشده</span>}
             </span>
             <span className="metric">{n(r.value)} ریال</span>
           </div>
@@ -277,7 +277,7 @@ export default function CustomersPage() {
             <span>
               <strong>{c.name}</strong>
               {c.phone && <span className="subtle num"> · {c.phone}</span>}
-              {!c.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
+              {!c.isActive && <span className="badge" style={{ marginInlineStart: "var(--sp-2)" }}>غیرفعال</span>}
             </span>
             <span className="row row--start no-print">
               <button className="ghost" disabled={pending === "edit" + c.id}

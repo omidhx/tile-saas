@@ -62,15 +62,16 @@ export default function LoginPage() {
           <label htmlFor="phone">شماره موبایل یا ایمیل</label>
           <input id="phone" value={identifier} onChange={(e) => setIdentifier(e.target.value)}
                  autoComplete="username" placeholder="۰۹۱۲۰۰۰۰۰۰۰ یا ایمیل"
-                 aria-invalid={err ? true : undefined} required />
+                 aria-invalid={err ? true : undefined} aria-describedby={err ? "login-err" : undefined} required />
 
           <label htmlFor="pw">رمز عبور</label>
           <input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                 autoComplete="current-password" aria-invalid={err ? true : undefined} required />
+                 autoComplete="current-password" aria-invalid={err ? true : undefined}
+                 aria-describedby={err ? "login-err" : undefined} required />
 
           {/* خطا **کنارِ فرم** و قبل از دکمه، نه ته صفحه */}
           {err && (
-            <div className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+            <div id="login-err" className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
               <Icon name="alert" /><span>{err}</span>
             </div>
           )}

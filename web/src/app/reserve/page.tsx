@@ -159,6 +159,9 @@ export default function ReservePage() {
   // جستجو در گزینه‌های هر فیلتر — فقط وقتی گزینه‌ها زیاد شوند نشان داده می‌شود (پایین‌تر)
   const [attrSearch, setAttrSearch] = useState<{ color: string; glaze: string; punch: string; body: string }>(
     { color: "", glaze: "", punch: "", body: "" });
+  // فیلترهای رنگ/لعاب/پانچ/بدنه پشتِ یک toggle جمع می‌شوند — قبلش روی موبایل
+  // ~۴۰٪ صفحه قبل از دیدنِ اولین کالا با چروم پر می‌شد (Phase 3 audit).
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   // مودالِ جزئیات + گالری — فقط شناسه نگه‌داشته می‌شود، نه خودِ آبجکت؛ وگرنه اگر
   // lots در پس‌زمینه رفرش شود (مثلاً بعدِ یک عملیاتِ دیگر)، مودال داده‌ی کهنه نشان می‌دهد.
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -413,10 +416,15 @@ export default function ReservePage() {
               {warehouses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           )}
-          {/* فیلترِ ساخت‌یافته بر ویژگی — هرکدام فقط اگر ۲ مقدار یا بیشتر داشته باشد.
-              اگر گزینه‌ها زیاد شدند (>۸)، یک کادرِ جستجو هم بالای آن می‌آید تا با
-              اسکرولِ طولانیِ select پیدا نکردنِ مقدار آزاردهنده نشود. */}
-          {([["color", "رنگ"], ["glaze", "لعاب"], ["punch", "پانچ"], ["body", "بدنه"]] as const).map(([k, lbl]) => {
+          {/* فیلترِ ساخت‌یافته بر ویژگی — پشتِ toggle، چون قبل از دیدنِ اولین کالا
+              روی موبایل جا می‌گرفت. اگر از قبل فیلترِ فعالی روی این‌ها هست، باز می‌ماند. */}
+          {(["color", "glaze", "punch", "body"] as const).some((k) => attrOpts[k].length > 1) && (
+            <button type="button" className="ghost" onClick={() => setShowMoreFilters((s) => !s)}
+                    aria-expanded={showMoreFilters || !!attrActive}>
+              {showMoreFilters || attrActive ? "فیلترهای کمتر" : "فیلترهای بیشتر (رنگ، لعاب، پانچ، بدنه)"}
+            </button>
+          )}
+          {(showMoreFilters || attrActive) && ([["color", "رنگ"], ["glaze", "لعاب"], ["punch", "پانچ"], ["body", "بدنه"]] as const).map(([k, lbl]) => {
             if (attrOpts[k].length <= 1) return null;
             // مقدارِ الان‌انتخاب‌شده همیشه در گزینه‌ها می‌ماند، حتی اگر جستجو ردش کند —
             // وگرنه select بصری‌اش به «همه‌ی...» برمی‌گردد ولی فیلتر همچنان فعال می‌ماند:

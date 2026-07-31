@@ -206,7 +206,7 @@ export default function TeamSection({ ctx }: { ctx: Ctx }) {
                   {m.email && <span className="subtle"> · {m.email}</span>}
                 </>
               )}
-              {!m.isActive && <span className="badge" style={{ marginInlineStart: ".4rem" }}>غیرفعال</span>}
+              {!m.isActive && <span className="badge" style={{ marginInlineStart: "var(--sp-2)" }}>غیرفعال</span>}
             </span>
             <span className="row row--start">
               {m.role === "admin" && m.canManageAccess && <span className="badge badge--ok">مدیرِ دسترسی</span>}
