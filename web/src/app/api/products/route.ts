@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     boxesPerPallet: bpp.value ?? null, sqcmPerBox: spb.value ?? null,
     initialStock,
   }, c.userId);
-  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "missing" ? 400 : 409 });
+  if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "missing" || r.reason === "invalid_stock" ? 400 : 409 });
   return NextResponse.json({ id: r.id }, { status: 201 });
 }
 

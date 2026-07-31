@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../Icon";
 import MessageBanner from "../../MessageBanner";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
 
 type Agent = { id: string; name: string; limit: number | null };
@@ -40,11 +40,8 @@ export default function AutoApproveSection({ ctx }: { ctx: Ctx }) {
   async function save(scope: "tenant" | "agent", key: string, agentAccountId?: string) {
     const limit = parseLimit(draft[key] ?? "");
     if (limit === undefined) { setSaved("مقدار نامعتبر است."); return; }
-    const res = await fetch("/api/settings/auto-approve", {
-      method: "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tenantId: ctx.tenantId, scope, agentAccountId, limit }),
-    });
-    setSaved(res.ok ? "ذخیره شد." : "ذخیره نشد.");
+    const res = await postJson("/api/settings/auto-approve", { tenantId: ctx.tenantId, scope, agentAccountId, limit }, "PUT");
+    setSaved(res.ok ? "ذخیره شد." : actionError(res.status));
     if (res.ok) await load(ctx.tenantId);
   }
 

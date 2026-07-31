@@ -7,13 +7,17 @@
  */
 export type Loaded<T> = { ok: true; data: T } | { ok: false; status: number };
 
+// بدونِ این، یک درخواستِ آویزان (شبکه‌ی کند، پروکسیِ گیرکرده) اسپینر را برای
+// همیشه نگه می‌دارد — نه خطا نه موفقیت. AbortSignal.timeout بومی است، کتابخانه نمی‌خواهد.
+const TIMEOUT_MS = 15_000;
+
 export async function getJson<T>(url: string): Promise<Loaded<T>> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) return { ok: false, status: res.status };
     return { ok: true, data: (await res.json()) as T };
   } catch {
-    return { ok: false, status: 0 }; // خطای شبکه/قطعی
+    return { ok: false, status: 0 }; // خطای شبکه/قطعی/timeout
   }
 }
 
@@ -40,6 +44,7 @@ export async function postJson(
   try {
     const res = await fetch(url, {
       method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const json = await res.json().catch(() => ({}));
     // error: کدِ رشته‌ایِ سرور (مثلاً "seat_limit") — صفحه‌هایی که چند دلیلِ رد

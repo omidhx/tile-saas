@@ -8,12 +8,27 @@
 
 const hits = new Map<string, number[]>();
 const MAX_KEYS = 10_000; // محافظ حافظه: جلوی رشد بی‌نهایت با کلیدهای یکبارمصرف (IPهای متغیر)
+// فراتر از هر windowِ واقعیِ این اپ (لاگین/ریست/رزرو همه زیرِ چند دقیقه‌اند) — کلیدی
+// که مدت‌هاست ضربه‌ی تازه نگرفته، قطعاً غیرِفعال است.
+const STALE_MS = 24 * 60 * 60 * 1000;
 
 export type RateResult = { ok: boolean; retryAfterSec: number };
 
+/**
+ * هرس فقط کلیدهای واقعاً راکد — نه `clear()` کامل. با `clear()`، مهاجمی که با
+ * تغییرِ x-forwarded-for می‌تواند کلید بسازد، به‌سادگی نقشه را پر و شمارنده‌ی
+ * محافظتیِ **همه‌ی کاربرانِ دیگر** را هم صفر می‌کرد — دقیقاً همان چیزی که این
+ * فایل برایش ساخته شده. بدترین حالتِ این نسخه، رشدِ موقتِ حافظه است، نه خلعِ سلاحِ
+ * محافظتِ همه.
+ */
+function sweep(now: number) {
+  for (const [k, times] of hits)
+    if (times.length === 0 || now - times[times.length - 1] > STALE_MS) hits.delete(k);
+}
+
 /** آیا این کلید مجاز است؟ هر فراخوانیِ مجاز، یک ضربه ثبت می‌کند. */
 export function checkRate(key: string, limit: number, windowMs: number, now = Date.now()): RateResult {
-  if (hits.size > MAX_KEYS) hits.clear(); // sweep ساده؛ بدترین حالت: یک‌بار صفر شدن شمارنده‌ها
+  if (hits.size > MAX_KEYS) sweep(now);
 
   const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
   if (recent.length >= limit) {

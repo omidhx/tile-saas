@@ -1,4 +1,13 @@
+import * as Sentry from "@sentry/nextjs";
 import { sql, withTenant } from "@/db/client";
+
+// فقط شناسه — هرگز شماره/ایمیل (مدلِ احرازِ این اپ موبایل‌محور است). بدونِ این،
+// خطاهای Sentry هیچ ردی از «کدامین tenant/کاربر» ندارند — دقیقاً همان کلاسِ باگ
+// (نشتِ بین‌تنانتی) که این chokepoint برایش ساخته شده، کندتر تشخیص داده می‌شود.
+function tagRequest(userId: string, tenantId?: string) {
+  Sentry.setUser({ id: userId });
+  if (tenantId) Sentry.setTag("tenantId", tenantId);
+}
 
 export class AuthzError extends Error {}
 
@@ -43,6 +52,7 @@ export async function authorizeAgent(
       SELECT default_reservation_ttl_hours AS ttl FROM tenant WHERE id = ${tenantId}`;
     if (!t) throw new AuthzError("tenant یافت نشد");
 
+    tagRequest(userId, tenantId);
     return { userId, tenantId, agentAccountId, ttlHours: t.ttl };
   });
 }
@@ -59,6 +69,7 @@ export async function authorizeStaff(userId: string, tenantId: string): Promise<
       LIMIT 1`;
     if (!m) throw new AuthzError("کاربر عضو این tenant نیست");
     if (m.role !== "staff" && m.role !== "admin") throw new AuthzError("این عملیات نیازمند نقشِ staff است");
+    tagRequest(userId, tenantId);
     return { userId, tenantId, role: m.role };
   });
 }
@@ -77,6 +88,7 @@ export async function authorizeAdmin(userId: string, tenantId: string): Promise<
       LIMIT 1`;
     if (!m) throw new AuthzError("کاربر عضو این tenant نیست");
     if (m.role !== "admin") throw new AuthzError("این عملیات نیازمند نقشِ admin است");
+    tagRequest(userId, tenantId);
     return { userId, tenantId };
   });
 }
@@ -95,6 +107,7 @@ export async function authorizeAccessManager(userId: string, tenantId: string): 
       LIMIT 1`;
     if (!m) throw new AuthzError("کاربر عضو این tenant نیست");
     if (m.role !== "admin" || !m.can_manage_access) throw new AuthzError("این عملیات نیازمندِ مدیرِ دسترسی است");
+    tagRequest(userId, tenantId);
     return { userId, tenantId };
   });
 }
@@ -109,6 +122,7 @@ export async function authorizePlatformAdmin(userId: string): Promise<{ userId: 
   const [u] = await sql<{ is_platform_admin: boolean }[]>`
     SELECT is_platform_admin FROM app_user WHERE id = ${userId}`;
   if (!u || !u.is_platform_admin) throw new AuthzError("این عملیات نیازمندِ مدیرِ پلتفرم است");
+  tagRequest(userId);
   return { userId };
 }
 
@@ -129,6 +143,7 @@ export async function authorizeStaffPage(
     if (m.role !== "staff" && m.role !== "admin") throw new AuthzError("این عملیات نیازمند نقشِ staff است");
     if (m.role === "staff" && m.allowed_pages.length > 0 && !m.allowed_pages.includes(pageKey))
       throw new AuthzError("دسترسیِ این بخش برای شما باز نشده است");
+    tagRequest(userId, tenantId);
     return { userId, tenantId, role: m.role };
   });
 }

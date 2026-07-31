@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import Icon from "../../Icon";
-import { getJson, loadError } from "@/lib/api";
+import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
@@ -81,16 +81,13 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
     if (scopeType === "warehouse" && !scopeWh) { setErr("انبار را برای scope انتخاب کن."); return; }
     setErr(""); setPending(true);
     try {
-      const res = await fetch("/api/imports", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          tenantId: ctx.tenantId, idempotencyKey: key, filename: fileName,
-          scope: scopeType === "tenant" ? { type: "tenant" } : { type: "warehouse", warehouseId: scopeWh },
-          rows,
-        }),
+      const res = await postJson("/api/imports", {
+        tenantId: ctx.tenantId, idempotencyKey: key, filename: fileName,
+        scope: scopeType === "tenant" ? { type: "tenant" } : { type: "warehouse", warehouseId: scopeWh },
+        rows,
       });
-      if (res.ok) setResult(await res.json());
-      else setErr(`خطا (${res.status})`);
+      if (res.ok) setResult(res.data as Result);
+      else setErr(actionError(res.status));
     } finally { setPending(false); }
   }
 

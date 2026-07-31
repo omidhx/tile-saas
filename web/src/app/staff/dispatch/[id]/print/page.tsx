@@ -94,7 +94,7 @@ export default function DispatchPrintPage() {
         </tbody>
       </table>
 
-      <div className="row" style={{ marginTop: "var(--sp-8)", alignItems: "flex-end" }}>
+      <div className="row" style={{ marginTop: "var(--sp-6)", alignItems: "flex-end" }}>
         <div style={{ borderTop: "1px solid var(--text)", paddingTop: "var(--sp-2)", width: "45%" }}>امضاءِ انباردار</div>
         <div style={{ borderTop: "1px solid var(--text)", paddingTop: "var(--sp-2)", width: "45%" }}>امضاءِ تحویل‌گیرنده / راننده</div>
       </div>

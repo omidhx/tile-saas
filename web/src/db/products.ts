@@ -75,7 +75,7 @@ type Attrs = {
 
 export type CreateResult =
   | { ok: true; id: string }
-  | { ok: false; reason: "duplicate_code" | "duplicate_sku" | "missing" };
+  | { ok: false; reason: "duplicate_code" | "duplicate_sku" | "missing" | "invalid_stock" };
 
 /** image_url را برابرِ عکسِ اصلی (کمترین sort_order) می‌کند — کَش را تازه نگه می‌دارد. */
 function syncPrimary(tx: TransactionSql, tenantId: string, productId: string) {
@@ -105,6 +105,11 @@ export async function addProductImageTx(tx: TransactionSql, tenantId: string, pr
  *  actorUserId فقط برای لجرِ موجودیِ اولیه لازم است (رفِ audit). */
 export async function createProduct(tenantId: string, a: Attrs, actorUserId?: string): Promise<CreateResult> {
   if (!a.name.trim() || !a.code.trim() || !a.sku.trim()) return { ok: false, reason: "missing" };
+  // همان گاردی که هر مسیرِ دیگرِ نویسنده‌ی لجر دارد (incoming/imports/waitlist) —
+  // تکیه‌کردن به اعتبارسنجیِ caller (route) کافی نیست، چون این تابع یک منبعِ حقیقتِ
+  // مشترک است و هر فراخوانِ آینده‌ای (اسکریپت، تستِ seed) ممکن است این چک را نداشته باشد.
+  if (a.initialStock && (!Number.isInteger(a.initialStock.quantityBoxes) || a.initialStock.quantityBoxes < 0))
+    return { ok: false, reason: "invalid_stock" };
   return withTenant(tenantId, async (tx) => {
     const [dupCode] = await tx`SELECT 1 FROM product WHERE tenant_id = ${tenantId} AND code = ${a.code.trim()}`;
     if (dupCode) return { ok: false as const, reason: "duplicate_code" as const };

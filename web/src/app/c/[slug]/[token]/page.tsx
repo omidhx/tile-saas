@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { getPublicCatalog } from "@/db/sharedCatalog";
 import CatalogView from "./CatalogView";
 
@@ -5,6 +6,10 @@ import CatalogView from "./CatalogView";
 // DB می‌خواند، هیچ API عمومی‌ای باز نمی‌شود و هیچ JSِ کلاینتی لازم نیست. قیمت و عددِ
 // دقیقِ موجودی عمداً نمایش داده نمی‌شوند.
 export const dynamic = "force-dynamic"; // موجود/ناموجود باید زنده باشد، نه build-time
+
+// این لینک امنیتش روی «حدس‌نزدنی بودنِ توکن» است، نه احراز هویت — ایندکس‌شدن در
+// گوگل یعنی توکن از طریقِ نتایجِ جست‌وجو/کش قابلِ‌کشف می‌شود.
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function PublicCatalogPage(
   { params }: { params: Promise<{ slug: string; token: string }> },
