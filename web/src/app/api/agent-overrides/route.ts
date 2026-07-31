@@ -1,21 +1,6 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeAdmin, AuthzError } from "@/auth/authz";
+import { adminCtx } from "@/auth/httpCtx";
 import { listAgentOverrides, createAgentOverride, updateAgentOverride, deleteAgentOverride } from "@/db/pricing";
-
-/** context مشترک: admin-only — همان گیتِ بقیه‌ی مدیریتِ نمایندگی در /staff/agents. */
-async function adminCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeAdmin(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId };
-}
 
 const statusFor = (reason: string) => (reason === "not_found" ? 404 : reason === "overlap" ? 409 : 400);
 

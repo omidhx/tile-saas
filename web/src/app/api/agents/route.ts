@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaff, authorizeAdmin, AuthzError } from "@/auth/authz";
+import { staffCtx as authStaffCtx, adminCtx } from "@/auth/httpCtx";
 import { listAgentsFull, createAgent, updateAgent, addAgentUser, deleteAgent } from "@/db/agents";
 import { listStaffOptions } from "@/db/team";
 
@@ -10,58 +9,36 @@ import { listStaffOptions } from "@/db/team";
  * GET /api/agents?tenantId&detail=1 — فهرستِ کامل با کاربران/قیمت/سقف، برای صفحه‌ی مدیریت. admin-only.
  */
 export async function GET(req: Request) {
-  const userId = await currentUserId();
-  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const url = new URL(req.url);
-  const tenantId = url.searchParams.get("tenantId") ?? "";
+  const tenantId = url.searchParams.get("tenantId");
   const detail = url.searchParams.get("detail") === "1";
 
   if (detail) {
-    try {
-      await authorizeAdmin(userId, tenantId);
-    } catch (e) {
-      if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-      throw e;
-    }
-    const [agents, staffOptions] = await Promise.all([listAgentsFull(tenantId), listStaffOptions(tenantId)]);
+    const c = await adminCtx(tenantId);
+    if ("err" in c) return c.err;
+    const [agents, staffOptions] = await Promise.all([listAgentsFull(c.tenantId), listStaffOptions(c.tenantId)]);
     return NextResponse.json({ agents, staffOptions });
   }
 
-  try {
-    await authorizeStaff(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    throw e;
-  }
-  const agents = await withTenant(tenantId, (tx) =>
+  const c = await authStaffCtx(tenantId);
+  if ("err" in c) return c.err;
+  const agents = await withTenant(c.tenantId, (tx) =>
     tx`SELECT id, legal_name AS "legalName" FROM agent_account
-       WHERE tenant_id = ${tenantId} AND is_active ORDER BY legal_name`,
+       WHERE tenant_id = ${c.tenantId} AND is_active ORDER BY legal_name`,
   );
   return NextResponse.json({ agents });
-}
-
-async function requireAdmin(tenantId: string) {
-  const userId = await currentUserId();
-  if (!userId) return { error: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  try {
-    await authorizeAdmin(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return { error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { userId };
 }
 
 /** POST /api/agents — نمایندگیِ تازه + کاربرِ اولش. admin-only. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, legalName, code, priceListId, creditLimit, autoApproveLimit, assignedStaffUserId, firstUserPhone, firstUserEmail } = body ?? {};
-  if (typeof tenantId !== "string" || typeof legalName !== "string" || !legalName.trim()
+  if (typeof legalName !== "string" || !legalName.trim()
     || typeof code !== "string" || !code.trim() || typeof firstUserPhone !== "string" || !firstUserPhone.trim())
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
-  const auth = await requireAdmin(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await adminCtx(tenantId);
+  if ("err" in auth) return auth.err;
 
   const r = await createAgent({
     tenantId, legalName: legalName.trim(), code: code.trim(),
@@ -85,11 +62,11 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, agentAccountId, addUser } = body ?? {};
-  if (typeof tenantId !== "string" || typeof agentAccountId !== "string")
+  if (typeof agentAccountId !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
-  const auth = await requireAdmin(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await adminCtx(tenantId);
+  if ("err" in auth) return auth.err;
 
   if (addUser) {
     if (typeof addUser.phone !== "string" || !addUser.phone.trim())
@@ -112,11 +89,11 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tenantId, agentAccountId } = body ?? {};
-  if (typeof tenantId !== "string" || typeof agentAccountId !== "string")
+  if (typeof agentAccountId !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
-  const auth = await requireAdmin(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await adminCtx(tenantId);
+  if ("err" in auth) return auth.err;
 
   const r = await deleteAgent({ tenantId, agentAccountId });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });

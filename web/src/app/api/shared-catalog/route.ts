@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
-import { currentUserId } from "@/auth/session";
-import { authorizeAgent, AuthzError } from "@/auth/authz";
+import { agentCtx } from "@/auth/httpCtx";
 import { listCatalogs, listPickableVariants, getTenantSlug, createCatalog, updateCatalog, setCatalogActive, deleteCatalog } from "@/db/sharedCatalog";
 import type { CatalogItemInput } from "@/db/sharedCatalog";
 
@@ -17,21 +16,6 @@ function parseItems(raw: unknown): CatalogItemInput[] | null {
     out.push({ variantId: it.variantId, customerPrice: cp == null ? null : cp });
   }
   return out;
-}
-
-// کاتالوگ را نماینده برای مشتریِ خودش می‌سازد — پس دسترسیِ نماینده لازم است.
-async function agentCtx(tenantId: unknown, agentAccountId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string" || typeof agentAccountId !== "string")
-    return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeAgent(userId, tenantId, agentAccountId);
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId, agentAccountId };
 }
 
 export async function GET(req: Request) {

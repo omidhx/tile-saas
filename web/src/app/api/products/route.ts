@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { staffPageCtx } from "@/auth/httpCtx";
 import { listProducts, createProduct, updateProduct } from "@/db/products";
 
 /** ویژگی‌های اختیاریِ متنی از بدنه؛ رشته یا null (خالی → null در لایه‌ی db). */
@@ -18,18 +17,7 @@ function optPosInt(v: unknown): { ok: true; value: number | null | undefined } |
   return Number.isInteger(n) && n > 0 ? { ok: true, value: n } : { ok: false };
 }
 
-async function staffCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeStaffPage(userId, tenantId, "catalog");
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId, userId };
-}
+const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "catalog");
 
 /** GET ?tenantId — همه‌ی محصولات + وضعیتِ عکس (پنل کاتالوگ). */
 export async function GET(req: Request) {

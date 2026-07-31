@@ -1,21 +1,9 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { staffPageCtx } from "@/auth/httpCtx";
 import { addProductImage, removeProductImage, setPrimaryImage } from "@/db/products";
 
 // گالریِ تصاویرِ محصول را پشتیبان مدیریت می‌کند — staff-only.
-async function staffCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeStaffPage(userId, tenantId, "catalog");
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId };
-}
+const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "catalog");
 
 /** POST — افزودنِ عکس به گالریِ یک محصول. { productId, url } */
 export async function POST(req: Request) {

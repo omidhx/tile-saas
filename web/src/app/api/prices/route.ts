@@ -1,24 +1,11 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { staffPageCtx } from "@/auth/httpCtx";
 import { writeAudit } from "@/db/audit";
 import { listVolumeDiscounts } from "@/db/pricing";
 
-/** context مشترک: staff-only — قیمت‌گذاری کارِ پشتیبان است، نه نماینده. */
-async function staffCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeStaffPage(userId, tenantId, "prices");
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  // userId هم برمی‌گردد: دفترِ تغییرات باید بداند «چه کسی»
-  return { tenantId, userId };
-}
+/** قیمت‌گذاری کارِ پشتیبان است، نه نماینده. */
+const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "prices");
 
 /** GET ?tenantId — لیست‌های قیمت + اقلامشان + پله‌های تخفیف (پنل قیمت‌گذاری staff). */
 export async function GET(req: Request) {

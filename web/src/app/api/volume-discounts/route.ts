@@ -1,21 +1,9 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { staffPageCtx } from "@/auth/httpCtx";
 import { createVolumeDiscount, updateVolumeDiscount, deleteVolumeDiscount } from "@/db/pricing";
 
-/** context مشترک: staff-only، همان pageKey=«prices» — پله‌ی تخفیف بخشی از قیمت‌گذاری است. */
-async function staffCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeStaffPage(userId, tenantId, "prices");
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId };
-}
+/** همان pageKey=«prices» — پله‌ی تخفیف بخشی از قیمت‌گذاری است. */
+const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "prices");
 
 const statusFor = (reason: string) => (reason === "not_found" ? 404 : reason === "duplicate" ? 409 : 400);
 

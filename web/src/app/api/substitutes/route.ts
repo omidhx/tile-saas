@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaff, authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { staffCtx, staffPageCtx as staffPageCtxOf } from "@/auth/httpCtx";
 import { listSubstitutes, addSubstitute, removeSubstitute } from "@/db/substitutes";
 
 /**
@@ -9,31 +8,7 @@ import { listSubstitutes, addSubstitute, removeSubstitute } from "@/db/substitut
  * می‌کرد). ویرایشِ واقعی (POST/DELETE) فقط از /staff/substitutes ممکن است،
  * پس همان‌جا pageKey='substitutes' اعمال می‌شود.
  */
-async function staffCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeStaff(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId };
-}
-
-async function staffPageCtx(tenantId: unknown) {
-  const userId = await currentUserId();
-  if (!userId) return { err: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  if (typeof tenantId !== "string") return { err: NextResponse.json({ error: "invalid" }, { status: 400 }) };
-  try {
-    await authorizeStaffPage(userId, tenantId, "substitutes");
-  } catch (e) {
-    if (e instanceof AuthzError) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { tenantId };
-}
+const staffPageCtx = (tenantId: unknown) => staffPageCtxOf(tenantId, "substitutes");
 
 export async function GET(req: Request) {
   const c = await staffCtx(new URL(req.url).searchParams.get("tenantId"));

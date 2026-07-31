@@ -1,21 +1,7 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeAccessManager, AuthzError } from "@/auth/authz";
+import { accessManagerCtx } from "@/auth/httpCtx";
 import { listTeam, inviteTeamMember, setTeamMember, deleteTeamMember, type Role } from "@/db/team";
 import { STAFF_PAGE_KEYS } from "@/lib/staffPages";
-
-/** همه‌ی متدهای این فایل «مدیرِ دسترسی» می‌خواهند — adminِ ساده کافی نیست (v4). */
-async function requireAccessManager(tenantId: string) {
-  const userId = await currentUserId();
-  if (!userId) return { error: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
-  try {
-    await authorizeAccessManager(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return { error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-    throw e;
-  }
-  return { userId };
-}
 
 function validAllowedPages(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((p) => typeof p === "string" && STAFF_PAGE_KEYS.includes(p));
@@ -24,8 +10,8 @@ function validAllowedPages(v: unknown): v is string[] {
 /** GET /api/team?tenantId — فهرستِ اعضای تیمِ پشتیبان/مدیر. فقط مدیرِ دسترسی. */
 export async function GET(req: Request) {
   const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
-  const auth = await requireAccessManager(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await accessManagerCtx(tenantId);
+  if ("err" in auth) return auth.err;
   return NextResponse.json({ members: await listTeam(tenantId) });
 }
 
@@ -45,8 +31,8 @@ export async function POST(req: Request) {
   if (allowedPages !== undefined && !validAllowedPages(allowedPages))
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
-  const auth = await requireAccessManager(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await accessManagerCtx(tenantId);
+  if ("err" in auth) return auth.err;
 
   const r = await inviteTeamMember({ tenantId, phone: phone.trim(), email, fullName, role: role as Role, canManageAccess, allowedPages });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "seat_limit" ? 403 : 409 });
@@ -65,8 +51,8 @@ export async function PATCH(req: Request) {
     || (fullName !== undefined && typeof fullName !== "string"))
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
-  const auth = await requireAccessManager(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await accessManagerCtx(tenantId);
+  if ("err" in auth) return auth.err;
 
   const r = await setTeamMember({ tenantId, membershipId, role, isActive, canManageAccess, allowedPages, fullName });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
@@ -80,8 +66,8 @@ export async function DELETE(req: Request) {
   if (typeof tenantId !== "string" || typeof membershipId !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
-  const auth = await requireAccessManager(tenantId);
-  if (auth.error) return auth.error;
+  const auth = await accessManagerCtx(tenantId);
+  if ("err" in auth) return auth.err;
 
   const r = await deleteTeamMember({ tenantId, membershipId });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
