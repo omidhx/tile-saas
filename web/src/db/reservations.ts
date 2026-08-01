@@ -59,6 +59,58 @@ export async function cancelReservation(params: {
   });
 }
 
+export type ReservationListItem = {
+  id: string; status: string; expiresAt: string; agentName: string;
+  assignedStaffName: string | null; assignedStaffPhone: string | null;
+  items: { name: string; code: string; quantityBoxes: number; boxesPerPallet: number | null; sqcmPerBox: number }[];
+};
+
+/**
+ * فهرستِ رزروها — با agentAccountId → «رزروهای من» (نماینده)، بدونِ آن → صفِ تأیید (staff).
+ * هرگز فقط به status تکیه نکن: worker انقضا ممکنه هنوز نرسیده باشه، پس وضعیتِ مؤثر
+ * همین‌جا مشتق می‌شه (هم‌راستا با تعریفِ held). spec ۱۴ / بخش ۵.۳.
+ */
+export async function listReservations(params: {
+  tenantId: string; agentAccountId?: string;
+}): Promise<ReservationListItem[]> {
+  const { tenantId, agentAccountId } = params;
+  const staffView = !agentAccountId;
+  return withTenant(tenantId, (tx) =>
+    tx<ReservationListItem[]>`
+      SELECT r.id,
+        CASE WHEN r.status = 'active' AND r.expires_at <= now() THEN 'expired' ELSE r.status END AS status,
+        r.expires_at AS "expiresAt", aa.legal_name AS "agentName",
+        -- v5: پشتیبانِ ثابتِ همین نمایندگی — هم صفِ staff (بداند سفارش دستِ کیست)
+        -- هم صفحه‌ی نماینده («این را چه کسی پیگیری می‌کند») از همین یک ستون می‌خوانند.
+        su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone",
+        COALESCE(json_agg(json_build_object(
+          'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes,
+          -- برای پنلِ پشتیبان: معادلِ پالت/مترمربع کنارِ عددِ کارتن (spec تبدیلِ واحد).
+          -- override رویِ خودِ Lot اگر باشد ارجح است، هم‌راستا با کوئریِ /api/lots.
+          'boxesPerPallet', COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet),
+          'sqcmPerBox', pv.sqcm_per_box
+        )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items
+      FROM reservation r
+      JOIN agent_account aa ON aa.id = r.agent_account_id
+      LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
+      LEFT JOIN reservation_item ri ON ri.reservation_id = r.id
+      LEFT JOIN inventory_lot l ON l.id = ri.lot_id
+      LEFT JOIN product_variant pv ON pv.id = l.variant_id
+      LEFT JOIN product p ON p.id = pv.product_id
+      WHERE r.tenant_id = ${tenantId}
+        AND ${staffView
+            // صفِ تأیید: فقط رزروِ واقعاً زنده — منقضی نباید به‌عنوان «در انتظار تأیید» دیده شه
+            ? tx`r.status = 'active' AND r.expires_at > now()`
+            : tx`r.agent_account_id = ${agentAccountId}`}
+      GROUP BY r.id, aa.legal_name, su.full_name, su.phone
+      -- صفِ تأیید یعنی صفِ کار: چیزی که زودتر منقضی می‌شود باید اول دیده شود،
+      -- وگرنه رزروِ قدیمی زیرِ رزروهای تازه‌تر گم می‌شود و بدونِ تأیید منقضی می‌شود.
+      -- «رزروهای من» (agent view) نیازی به این ترتیب ندارد چون صفِ کار نیست.
+      ORDER BY ${staffView ? tx`r.expires_at ASC` : tx`r.created_at DESC`}
+      LIMIT 50`,
+  );
+}
+
 export type ReserveItem = { lotId: string; quantityBoxes: number };
 export type ReserveResult =
   | {
