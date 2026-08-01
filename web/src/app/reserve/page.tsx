@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
@@ -496,7 +497,7 @@ export default function ReservePage() {
               <button className={l.image_url ? "thumb" : "thumb thumb--empty"} onClick={() => openPreview(l)}
                       aria-label={`جزئیاتِ ${l.name}`}>
                 {l.image_url
-                  ? <img onError={hideOnError} src={l.image_url} alt={l.name} loading="lazy" />
+                  ? <Image onError={hideOnError} src={l.image_url} alt={l.name} loading="lazy" width={88} height={88} />
                   : <Icon name="info" size={20} />}
               </button>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -704,13 +705,16 @@ export default function ReservePage() {
               <strong>{preview.name}</strong>
               <button ref={closeBtnRef} className="ghost" onClick={() => setPreviewId(null)} aria-label="بستن">✕</button>
             </div>
-            {main && <img onError={hideOnError} src={main} alt={preview.name} className="modal-img" />}
+            {main && (
+              <Image onError={hideOnError} src={main} alt={preview.name} className="modal-img"
+                width={800} height={600} style={{ width: "100%", height: "auto" }} />
+            )}
             {gallery.length > 1 && (
               <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
                 {gallery.map((u, i) => (
                   <button key={i} className={`gallery-item ${i === galleryIdx ? "gallery-item--primary" : ""}`}
                           onClick={() => setGalleryIdx(i)} aria-label={`عکس ${i + 1}`}>
-                    <img onError={hideOnError} src={u} alt="" loading="lazy" />
+                    <Image onError={hideOnError} src={u} alt="" loading="lazy" width={72} height={72} />
                   </button>
                 ))}
               </div>

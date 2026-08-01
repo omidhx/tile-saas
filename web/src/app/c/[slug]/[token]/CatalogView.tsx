@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import type { PublicItem } from "@/db/sharedCatalog";
 import { hideOnError } from "@/lib/img";
 
@@ -33,7 +34,7 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
           <button className="card catalog-card" key={it.code} style={{ margin: 0 }} onClick={() => show(it)}
                   aria-label={`جزئیاتِ ${it.name}`}>
             {it.imageUrl
-              ? <img onError={hideOnError} src={it.imageUrl} alt={it.name} loading="lazy" className="catalog-img" />
+              ? <Image onError={hideOnError} src={it.imageUrl} alt={it.name} loading="lazy" className="catalog-img" width={300} height={300} />
               : <div className="catalog-img catalog-img--empty" aria-hidden="true" />}
             <div style={{ marginTop: "var(--sp-2)" }}>
               <div className="row">
@@ -63,13 +64,16 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
                 <strong>{open.name}</strong>
                 <button ref={closeBtnRef} className="ghost" onClick={() => setOpen(null)} aria-label="بستن">✕</button>
               </div>
-              {main && <img onError={hideOnError} src={main} alt={open.name} className="modal-img" />}
+              {main && (
+                <Image onError={hideOnError} src={main} alt={open.name} className="modal-img"
+                  width={800} height={600} style={{ width: "100%", height: "auto" }} />
+              )}
               {g.length > 1 && (
                 <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
                   {g.map((u, i) => (
                     <button key={i} className={`gallery-item ${i === idx ? "gallery-item--primary" : ""}`}
                             onClick={() => setIdx(i)} aria-label={`عکس ${i + 1}`}>
-                      <img onError={hideOnError} src={u} alt="" loading="lazy" />
+                      <Image onError={hideOnError} src={u} alt="" loading="lazy" width={72} height={72} />
                     </button>
                   ))}
                 </div>

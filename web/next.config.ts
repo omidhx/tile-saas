@@ -23,6 +23,15 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  images: {
+    // ponytail: پشتیبان می‌تواند برای عکسِ محصول هر URL دلخواهی paste کند (نه فقط
+    // آپلودِ خودش) — یعنی remotePatterns یا باید wildcard باشد (پروکسیِ باز، ریسکِ
+    // SSRF) یا آن قابلیت باید حذف شود. فعلاً بهینه‌سازی/پروکسیِ next/image خاموش
+    // است؛ عکس مستقیم از src سرو می‌شود (مثلِ <img> قبلی). upgrade path: وقتی
+    // Object Storageِ ایران (آروان/چابکان) نهایی شد، این را بردار و remotePatterns
+    // را با همان دامنه پر کن.
+    unoptimized: true,
+  },
 };
 
 export default withSentryConfig(nextConfig, {

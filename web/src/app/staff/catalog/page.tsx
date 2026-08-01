@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import Icon from "../../Icon";
 import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
@@ -275,7 +276,7 @@ export default function CatalogPage() {
         <div className="lot-head">
           <div>
             {form.imageUrl
-              ? <span className="thumb"><img onError={hideOnError} src={form.imageUrl} alt="پیش‌نمایش" /></span>
+              ? <span className="thumb"><Image onError={hideOnError} src={form.imageUrl} alt="پیش‌نمایش" loading="eager" width={88} height={88} /></span>
               : <span className="thumb thumb--empty" aria-hidden="true"><Icon name="info" size={20} /></span>}
             <label className="btn-file" style={{ marginTop: "var(--sp-2)", width: 88, fontSize: ".8rem", padding: ".4rem" }}>
               {uploading ? "…" : "عکس اصلی"}
@@ -345,7 +346,7 @@ export default function CatalogPage() {
         <div className="card" key={p.id}>
           <div className="lot-head">
             {p.imageUrl
-              ? <span className="thumb"><img onError={hideOnError} src={p.imageUrl} alt={p.name} loading="lazy" /></span>
+              ? <span className="thumb"><Image onError={hideOnError} src={p.imageUrl} alt={p.name} loading="lazy" width={88} height={88} /></span>
               : <span className="thumb thumb--empty" aria-hidden="true"><Icon name="info" size={20} /></span>}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="row">
@@ -397,7 +398,7 @@ export default function CatalogPage() {
                     <div className="gallery" style={{ marginTop: "var(--sp-3)" }}>
                       {p.images.map((img, i) => (
                         <div key={img.id} className={`gallery-item ${i === 0 ? "gallery-item--primary" : ""}`}>
-                          <img onError={hideOnError} src={img.url} alt="" loading="lazy" />
+                          <Image onError={hideOnError} src={img.url} alt="" loading="lazy" width={72} height={72} />
                           {i === 0
                             ? <span className="gallery-badge">اصلی</span>
                             : <button className="gallery-star" title="عکسِ اصلی شود" aria-label="عکسِ اصلی شود"
