@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import * as XLSX from "xlsx";
 import Icon from "../../Icon";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
@@ -53,6 +52,8 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
     if (file.size > MAX_FILE_BYTES) { setErr(`فایل خیلی بزرگ است (حداکثر ${MAX_FILE_BYTES / 1024 / 1024} مگابایت).`); return; }
     setFileName(file.name);
     try {
+      // import پویا: xlsx (~۷۰۰KB) فقط وقتی لازم است که کاربر واقعاً فایلی انتخاب کند.
+      const XLSX = await import("xlsx");
       const wb = XLSX.read(await file.arrayBuffer());
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]]);
       const all: Row[] = json.map((o) => ({
