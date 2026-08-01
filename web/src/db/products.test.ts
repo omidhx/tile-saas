@@ -13,6 +13,9 @@ const T = "11111111-1111-1111-1111-111111111111";
 const WH = "a3333333-3333-3333-3333-333333333333";
 const U = "a8888888-8888-8888-8888-888888888888";
 
+/** لیستِ کاملِ محصولات — تست‌ها با تعدادِ کم کار می‌کنند، صفحه‌بندی لازم ندارند. */
+const list = async () => (await listProducts({ tenantId: T, limit: 1000 })).items;
+
 before(async () => {
   await resetSchema();
   await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');`);
@@ -21,11 +24,14 @@ before(async () => {
 });
 after(async () => { await sql.end(); });
 beforeEach(async () => {
-  // ترتیب مهم است: lot به variant قفل است (RESTRICT، نه CASCADE) — بدونِ پاک‌کردنِ
-  // اول لجر/بالانس/لات، حذفِ variant در تستِ موجودیِ اولیه با خطای FK رد می‌شود.
+  // ترتیب مهم است: lot و price_list_item به variant قفل‌اند (RESTRICT، نه CASCADE) —
+  // بدونِ پاک‌کردنِ اول لجر/بالانس/لات/قیمت، حذفِ variant با خطای FK رد می‌شود
+  // (تستِ basePrice یک price_list_item می‌سازد که تستِ بعدی را همین‌جا گیر می‌انداخت).
   await sql`DELETE FROM inventory_transaction WHERE tenant_id = ${T}`;
   await sql`DELETE FROM inventory_balance WHERE tenant_id = ${T}`;
   await sql`DELETE FROM inventory_lot WHERE tenant_id = ${T}`;
+  await sql`DELETE FROM price_list_item WHERE tenant_id = ${T}`;
+  await sql`DELETE FROM price_list WHERE tenant_id = ${T}`;
   await sql`DELETE FROM product_variant WHERE tenant_id = ${T}`;
   await sql`DELETE FROM product WHERE tenant_id = ${T}`;
 });
@@ -54,10 +60,10 @@ test("نام/کد/sku الزامی‌اند", async () => {
 test("فهرست: hasStock درست است، sku می‌آید", async () => {
   const r = await createProduct(T, { name: "کاشی", code: "K1", sku: "K1-A" });
   assert.ok(r.ok);
-  const list = await listProducts(T);
-  assert.equal(list.length, 1);
-  assert.equal(list[0].sku, "K1-A");
-  assert.equal(list[0].hasStock, false, "محصولِ تازه هنوز موجودی/lot ندارد");
+  const rows = await list();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].sku, "K1-A");
+  assert.equal(rows[0].hasStock, false, "محصولِ تازه هنوز موجودی/lot ندارد");
 });
 
 test("ویرایشِ ویژگی‌ها، sku و کد را دست نمی‌زند", async () => {
@@ -99,35 +105,35 @@ test("گالری: افزودن چند عکس، عکسِ اصلی = تامنیل 
   const r = await createProduct(T, { name: "P", code: "P1", sku: "P1-A", imageUrl: "https://cdn/a.jpg" });
   assert.ok(r.ok);
   // عکسِ اولِ سازنده → گالری + کَشِ اصلی
-  let p = (await listProducts(T))[0];
+  let p = (await list())[0];
   assert.equal(p.imageUrl, "https://cdn/a.jpg", "image_url = عکسِ اصلی");
   assert.equal(p.images.length, 1);
 
   await addProductImage({ tenantId: T, productId: r.id, url: "https://cdn/b.jpg" });
-  p = (await listProducts(T))[0];
+  p = (await list())[0];
   assert.equal(p.images.length, 2);
   assert.equal(p.imageUrl, "https://cdn/a.jpg", "اصلی هنوز a است");
 
   // b را اصلی کن → تامنیل عوض می‌شود
   const b = p.images.find((i) => i.url === "https://cdn/b.jpg")!;
   await setPrimaryImage({ tenantId: T, imageId: b.id });
-  p = (await listProducts(T))[0];
+  p = (await list())[0];
   assert.equal(p.imageUrl, "https://cdn/b.jpg", "اصلی حالا b");
   assert.equal(p.images[0].url, "https://cdn/b.jpg", "اولِ گالری = اصلی");
 
   // حذفِ اصلی → عکسِ بعدی خودکار اصلی
   await removeProductImage({ tenantId: T, imageId: b.id });
-  p = (await listProducts(T))[0];
+  p = (await list())[0];
   assert.equal(p.images.length, 1);
   assert.equal(p.imageUrl, "https://cdn/a.jpg", "بعدِ حذفِ اصلی، a اصلی شد");
 
   // افزودنِ تکراری بی‌اثر است (idempotent)
   await addProductImage({ tenantId: T, productId: r.id, url: "https://cdn/a.jpg" });
-  assert.equal((await listProducts(T))[0].images.length, 1);
+  assert.equal((await list())[0].images.length, 1);
 
   // حذفِ آخری → بدونِ عکس
-  await removeProductImage({ tenantId: T, imageId: (await listProducts(T))[0].images[0].id });
-  p = (await listProducts(T))[0];
+  await removeProductImage({ tenantId: T, imageId: (await list())[0].images[0].id });
+  p = (await list())[0];
   assert.equal(p.images.length, 0);
   assert.equal(p.imageUrl, null, "گالریِ خالی → تامنیلِ null");
 });
@@ -135,11 +141,11 @@ test("گالری: افزودن چند عکس، عکسِ اصلی = تامنیل 
 test("ویرایشِ فیلدهای اطلاعاتِ بیشتر (ابعاد/ضخامت/کاربری/توضیحات)", async () => {
   const r = await createProduct(T, { name: "P", code: "P2", sku: "P2-A", size: "۶۰×۶۰", description: "کاشیِ کف" });
   assert.ok(r.ok);
-  let p = (await listProducts(T)).find((x) => x.code === "P2")!;
+  let p = (await list()).find((x) => x.code === "P2")!;
   assert.equal(p.size, "۶۰×۶۰");
   assert.equal(p.description, "کاشیِ کف");
   await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, thickness: "۹ میلی‌متر", usageArea: "کف/دیوار", size: "" });
-  p = (await listProducts(T)).find((x) => x.code === "P2")!;
+  p = (await list()).find((x) => x.code === "P2")!;
   assert.equal(p.thickness, "۹ میلی‌متر");
   assert.equal(p.usageArea, "کف/دیوار");
   assert.equal(p.size, null, "رشته‌ی خالی → null");
@@ -149,18 +155,18 @@ test("ویرایشِ فیلدهای اطلاعاتِ بیشتر (ابعاد/ضخ
 test("بسته‌بندی: در ساخت ثبت می‌شود؛ در ویرایش فقط با variantId عوض می‌شود", async () => {
   const r = await createProduct(T, { name: "P", code: "P3", sku: "P3-A", boxesPerPallet: 48, sqcmPerBox: 3600 });
   assert.ok(r.ok);
-  let p = (await listProducts(T)).find((x) => x.code === "P3")!;
+  let p = (await list()).find((x) => x.code === "P3")!;
   assert.equal(p.boxesPerPallet, 48);
   assert.equal(p.sqcmPerBox, 3600);
 
   // بدونِ variantId، آپدیت بسته‌بندی نادیده گرفته می‌شود — نه خطا، فقط بی‌اثر
   await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, boxesPerPallet: 96 });
-  p = (await listProducts(T)).find((x) => x.code === "P3")!;
+  p = (await list()).find((x) => x.code === "P3")!;
   assert.equal(p.boxesPerPallet, 48, "بدونِ variantId دست‌نخورده می‌ماند");
 
   // با variantId درست عوض می‌شود
   await updateProduct({ tenantId: T, productId: r.id, actorUserId: U, variantId: p.variantId!, boxesPerPallet: 96, sqcmPerBox: null });
-  p = (await listProducts(T)).find((x) => x.code === "P3")!;
+  p = (await list()).find((x) => x.code === "P3")!;
   assert.equal(p.boxesPerPallet, 96);
   assert.equal(p.sqcmPerBox, null, "null صریح یعنی پاک‌کردن");
 });
@@ -174,7 +180,7 @@ test("موجودیِ اولیه: ساختِ محصول با انبار+تعدا�
   }, actor);
   assert.ok(r.ok);
 
-  const p = (await listProducts(T)).find((x) => x.code === "PS1")!;
+  const p = (await list()).find((x) => x.code === "PS1")!;
   assert.equal(p.hasStock, true, "بدونِ این، دقیقاً همان گزارشِ کاربر تکرار می‌شد");
 
   const [lot] = await sql<{ id: string }[]>`SELECT id FROM inventory_lot WHERE variant_id = ${p.variantId}`;
@@ -191,7 +197,7 @@ test("موجودیِ اولیه: ساختِ محصول با انبار+تعدا�
 test("موجودیِ اولیه: بدونِ initialStock محصول همچنان بدونِ lot می‌ماند (بدون رگرسیون)", async () => {
   const r = await createProduct(T, { name: "بدون‌موجودی", code: "PS2", sku: "PS2-A" });
   assert.ok(r.ok);
-  const p = (await listProducts(T)).find((x) => x.code === "PS2")!;
+  const p = (await list()).find((x) => x.code === "PS2")!;
   assert.equal(p.hasStock, false);
 });
 
@@ -199,14 +205,34 @@ test("basePrice از اولین لیستِ قیمت می‌آید (نمایشی�
   const r = await createProduct(T, { name: "قیمت‌دار", code: "PR1", sku: "PR1-A" });
   assert.ok(r.ok);
   // بدونِ لیست قیمت، basePrice باید null باشد
-  assert.equal((await listProducts(T)).find((p) => p.code === "PR1")!.basePrice, null);
+  assert.equal((await list()).find((p) => p.code === "PR1")!.basePrice, null);
 
   // یک لیست + قیمت
   const [pl] = await sql<{ id: string }[]>`INSERT INTO price_list (tenant_id,name) VALUES (${T},'پایه') RETURNING id`;
   const [v] = await sql<{ id: string }[]>`SELECT id FROM product_variant WHERE sku = 'PR1-A'`;
   await sql`INSERT INTO price_list_item (tenant_id,price_list_id,variant_id,price) VALUES (${T},${pl.id},${v.id},7500000)`;
 
-  const row = (await listProducts(T)).find((p) => p.code === "PR1")!;
+  const row = (await list()).find((p) => p.code === "PR1")!;
   assert.equal(row.basePrice, 7_500_000, "عدد، نه رشته‌ی bigint");
   assert.equal(typeof row.basePrice, "number");
+});
+
+test("🔴 صفحه‌بندی: limit/offset/hasMore درست‌اند، q روی نام/کد/رنگ فیلتر می‌کند", async () => {
+  for (const code of ["Z1", "Z2", "Z3"])
+    await createProduct(T, { name: `کاشیِ ${code}`, code, sku: `${code}-A`, color: code === "Z2" ? "طلایی" : null });
+
+  const page1 = await listProducts({ tenantId: T, limit: 2 });
+  assert.equal(page1.items.length, 2, "limit را رعایت می‌کند");
+  assert.equal(page1.hasMore, true, "ردیفِ سوم هست ولی در این صفحه نیامده");
+
+  const page2 = await listProducts({ tenantId: T, limit: 2, offset: 2 });
+  assert.equal(page2.items.length, 1);
+  assert.equal(page2.hasMore, false, "آخرین صفحه");
+  assert.notEqual(page1.items[0].code, page2.items[0].code, "صفحه‌ی دوم تکرارِ اول نیست");
+
+  const byCode = await listProducts({ tenantId: T, q: "Z2" });
+  assert.deepEqual(byCode.items.map((p) => p.code), ["Z2"], "جستجو با کد کار می‌کند");
+
+  const byColor = await listProducts({ tenantId: T, q: "طلایی" });
+  assert.deepEqual(byColor.items.map((p) => p.code), ["Z2"], "جستجو با رنگ هم کار می‌کند");
 });

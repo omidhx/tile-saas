@@ -19,11 +19,17 @@ function optPosInt(v: unknown): { ok: true; value: number | null | undefined } |
 
 const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "catalog");
 
-/** GET ?tenantId — همه‌ی محصولات + وضعیتِ عکس (پنل کاتالوگ). */
+/** GET ?tenantId[&q][&offset] — محصولات صفحه‌بندی‌شده + وضعیتِ عکس (پنل کاتالوگ). */
 export async function GET(req: Request) {
-  const c = await staffCtx(new URL(req.url).searchParams.get("tenantId"));
+  const url = new URL(req.url);
+  const c = await staffCtx(url.searchParams.get("tenantId"));
   if ("err" in c) return c.err;
-  return NextResponse.json({ products: await listProducts(c.tenantId) });
+  const { items, hasMore } = await listProducts({
+    tenantId: c.tenantId,
+    q: url.searchParams.get("q") ?? undefined,
+    offset: Number(url.searchParams.get("offset")) || 0,
+  });
+  return NextResponse.json({ products: items, hasMore });
 }
 
 /** POST — محصولِ جدید (نام، کد، sku + ویژگی‌ها و عکس اختیاری). */

@@ -6,8 +6,8 @@ import { hasPageAccess } from "@/lib/staffPages";
 import NavMenu from "../../NavMenu";
 import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
+import { usePaginatedSearch } from "@/lib/usePaginatedSearch";
 import { useContexts, type Ctx } from "@/lib/useContexts";
-import { matches } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
 import ImportSection from "./ImportSection";
 import PriceImportSection from "./PriceImportSection";
@@ -38,16 +38,30 @@ type Panel = "edit" | "subs" | "price" | "incoming";
 /** آیا این pageKey برای کاربر باز است؟ ادمین همیشه، وگرنه allowed_pages. */
 const canSeePage = (ctx: Ctx, key: string) => ctx.role === "admin" || hasPageAccess(ctx.allowedPages, key);
 
+/**
+ * صفحه‌بندی‌شده — کارخانه‌ای با چندصد محصول دیگر کلِ کاتالوگ را در یک fetch
+ * نمی‌گیرد. وقتی tenantId هنوز آماده نیست (ctxِ بیرونی در حالِ بارگذاری)، fetch
+ * واقعی زده نمی‌شود؛ نتیجه‌ی خالی برمی‌گردد تا بعداً با tenantId درست دوباره بگیرد.
+ */
+const fetchProducts = (tenantId: string, q: string, offset: number) =>
+  tenantId
+    ? getJson<{ products: Product[]; hasMore: boolean }>(
+        `/api/products?tenantId=${tenantId}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ""}`)
+    : Promise.resolve({ ok: true as const, data: { products: [] as Product[], hasMore: false } });
+
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
   const [tab, setTab] = useState("catalog");
-  const [products, setProducts] = useState<Product[]>([]);
+  const {
+    rows: products, q: query, hasMore: productsHasMore, moreBusy: productsMoreBusy,
+    loadErr: productsLoadErr, loaded: productsLoaded, search: searchProducts,
+    loadMore: loadMoreProducts, reload: reloadProducts,
+  } = usePaginatedSearch(ctx?.tenantId ?? "", fetchProducts, (raw) => raw.products);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [whs, setWhs] = useState<Wh[]>([]);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [priceItems, setPriceItems] = useState<PriceItem[]>([]);
   const [incomingItems, setIncomingItems] = useState<IncomingItem[]>([]);
-  const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
   // پیامِ نتیجه‌ی آخرین عملیات + نوعش (موفق/خطا) — صریح، نه با حدسِ startsWith
@@ -77,32 +91,38 @@ export default function CatalogPage() {
   const [uploading, setUploading] = useState(false);
 
   // پرسیدنِ /api/substitutes|prices|incoming وقتی آن pageKey را نداری فقط ۴۰۳
-  // می‌گیرد — و چون همه‌ی این ۵ درخواست یک loadErr مشترک دارند، همان ۴۰۳ به‌عنوانِ
+  // می‌گیرد — و چون همه‌ی این ۴ درخواست یک loadErr مشترک دارند، همان ۴۰۳ به‌عنوانِ
   // «دسترسیِ این بخش را نداری» روی کلِ صفحه (که خودش کاملاً در دسترس است) می‌نشیند.
   // پس هرکدام را فقط وقتی می‌پرسیم که واقعاً بخشِ نمایش‌دهنده‌اش دیده می‌شود.
+  // محصولات دیگر اینجا نیستند — صفحه‌بندیِ خودشان را در usePaginatedSearch دارند.
   const load = useCallback(async (c: Ctx) => {
     const tenantId = c.tenantId;
     const emptySubs = Promise.resolve({ ok: true as const, data: { items: [] as Sub[] } });
     const emptyPrices = Promise.resolve({ ok: true as const, data: { lists: [] as PriceList[], items: [] as PriceItem[] } });
     const emptyIncoming = Promise.resolve({ ok: true as const, data: { items: [] as IncomingItem[] } });
-    const [p, s, w, pr, inc] = await Promise.all([
-      getJson<{ products: Product[] }>(`/api/products?tenantId=${tenantId}`),
+    const [s, w, pr, inc] = await Promise.all([
       canSeePage(c, "substitutes") ? getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`) : emptySubs,
       getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${tenantId}`),
       canSeePage(c, "prices") ? getJson<{ lists: PriceList[]; items: PriceItem[] }>(`/api/prices?tenantId=${tenantId}`) : emptyPrices,
       canSeePage(c, "incoming") ? getJson<{ items: IncomingItem[] }>(`/api/incoming?tenantId=${tenantId}`) : emptyIncoming,
     ]);
-    if (p.ok) setProducts(p.data.products);
     if (s.ok) setSubs(s.data.items);
     if (w.ok) setWhs(w.data.warehouses);
     if (pr.ok) { setPriceLists(pr.data.lists); setPriceItems(pr.data.items); }
     if (inc.ok) setIncomingItems(inc.data.items);
-    const failed = [p, s, w, pr, inc].find((x) => !x.ok);
+    const failed = [s, w, pr, inc].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
 
   useEffect(() => { if (ctx) load(ctx); }, [ctx, load]);
+
+  /** بعدِ هر عملیاتی که ممکن است روی محصول اثر بگذارد (قیمت/موجودی/گالری/ویرایش)
+   *  هم بارِ ۴تایی و هم صفحه‌ی جاریِ محصولات را تازه می‌کند. */
+  const refreshAll = useCallback(
+    async (c: Ctx) => { await Promise.all([load(c), reloadProducts()]); },
+    [load, reloadProducts],
+  );
 
   // آدرسِ ورودی (مثلاً از NavMenu: ?tab=import) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «catalog» است) ناسازگار نشود.
@@ -150,7 +170,7 @@ export default function CatalogPage() {
     } else {
       setForm(EMPTY_FORM);
       setMsg("محصول ساخته شد.", true);
-      await load(ctx);
+      await refreshAll(ctx);
     }
     setPending(null);
   }
@@ -164,7 +184,7 @@ export default function CatalogPage() {
     setPending("img" + productId); setMsg("");
     const res = await postJson("/api/product-images", { tenantId: ctx.tenantId, ...body }, method);
     if (!res.ok) setMsg(actionError(res.status));
-    else await load(ctx);
+    else await refreshAll(ctx);
     setPending(null);
   }
   function addImg(product: Product, url: string) {
@@ -200,11 +220,13 @@ export default function CatalogPage() {
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
 
-  const visible = products.filter((p) => matches(query, [p.name, p.code, p.color, p.glaze, p.punch]));
   const withImage = products.filter((p) => p.imageUrl).length;
   const ready = form.name.trim() && form.code.trim() && form.sku.trim();
 
-  // مقدارهای یکتای هر فیلدِ توصیفی، از خودِ محصولاتِ موجود — پایه‌ی QuickPickِ فرمِ ساخت
+  // مقدارهای یکتای هر فیلدِ توصیفی، برای QuickPickِ فرمِ ساخت — از همین صفحه‌ی
+  // بارگذاری‌شده مشتق می‌شود (نه کلِ کاتالوگ)، چون محصولات دیگر یک‌جا نمی‌آیند.
+  // ponytail: با اسکرول/جستجوی بیشتر کامل‌تر می‌شود؛ برای فهرستِ کاملِ گزینه‌ها
+  // یک endpoint سبکِ «مقادیرِ یکتا» جدا لازم است، نه بارگذاریِ کلِ کاتالوگ.
   const distinctVal = (key: AttrKey) =>
     [...new Set(products.map((p) => p[key]).filter((v): v is string => !!v))].sort();
 
@@ -233,7 +255,7 @@ export default function CatalogPage() {
           همه‌جا دیده می‌شود. قیمت، بسته‌بندی، موجودیِ در راه و جایگزین هم روی کارتِ
           همان محصول مدیریت می‌شوند.
           {" "}<span className="num">{withImage.toLocaleString("fa-IR")}</span> از{" "}
-          <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصول عکس دارد.
+          <span className="num">{products.length.toLocaleString("fa-IR")}</span> محصولِ بارگذاری‌شده عکس دارد.
           {" "}می‌توانید <strong>موجودیِ اولیه</strong> را همین‌جا (پایینِ فرم) هم ثبت کنید؛ برای
           واردات دسته‌جمعی هم تبِ{" "}
           <button type="button" className="link-plain" onClick={() => go("import")} style={{ textDecoration: "underline" }}>ورودِ اکسل</button>
@@ -309,15 +331,14 @@ export default function CatalogPage() {
       </div>
 
       <h2>محصولات</h2>
-      {products.length > 6 && (
-        <div className="row row--start" style={{ marginBottom: "var(--sp-3)" }}>
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="جستجوی محصول…" aria-label="جستجو" style={{ maxWidth: 280 }} />
-        </div>
-      )}
-      {loaded && products.length === 0 && <p className="empty">هنوز محصولی ساخته نشده.</p>}
+      <div className="row row--start" style={{ marginBottom: "var(--sp-3)" }}>
+        <input type="search" value={query} onChange={(e) => searchProducts(e.target.value)}
+          placeholder="جستجوی محصول…" aria-label="جستجو" style={{ maxWidth: 280 }} />
+      </div>
+      {productsLoadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{productsLoadErr}</span></div>}
+      {productsLoaded && products.length === 0 && <p className="empty">{query ? "چیزی پیدا نشد." : "هنوز محصولی ساخته نشده."}</p>}
 
-      {visible.map((p) => {
+      {products.map((p) => {
         const inFlight = p.variantId ? incomingItems.filter((i) => i.variantId === p.variantId
           && (i.status === "planned" || i.status === "confirmed")) : [];
         return (
@@ -446,29 +467,34 @@ export default function CatalogPage() {
 
               {isOpen(p.id, "edit") && (
                 <EditPanel ctx={ctx} product={p} products={products}
-                  onSaved={() => load(ctx)} onClose={() => setOpenFor(null)}
+                  onSaved={() => refreshAll(ctx)} onClose={() => setOpenFor(null)}
                   onMsg={setMsg} onBusyChange={(busy) => setEditBusyId(busy ? p.id : null)} />
               )}
 
               {p.variantId && isOpen(p.id, "price") && (
                 <PricePanel ctx={ctx} product={p} priceLists={priceLists} priceItems={priceItems}
-                  onSaved={() => load(ctx)} onMsg={setMsg} onGoImport={() => go("priceImport")} />
+                  onSaved={() => refreshAll(ctx)} onMsg={setMsg} onGoImport={() => go("priceImport")} />
               )}
 
               {p.variantId && isOpen(p.id, "incoming") && (
                 <IncomingPanel ctx={ctx} product={p} whs={whs} incomingItems={incomingItems}
-                  onSaved={() => load(ctx)} onMsg={setMsg} />
+                  onSaved={() => refreshAll(ctx)} onMsg={setMsg} />
               )}
 
               {p.variantId && isOpen(p.id, "subs") && (
                 <SubsPanel ctx={ctx} product={p} products={products} subs={subs}
-                  onSaved={() => load(ctx)} onMsg={setMsg} />
+                  onSaved={() => refreshAll(ctx)} onMsg={setMsg} />
               )}
             </div>
           </div>
         </div>
         );
       })}
+      {productsHasMore && (
+        <button onClick={loadMoreProducts} aria-busy={productsMoreBusy} disabled={productsMoreBusy} style={{ width: "100%" }}>
+          {productsMoreBusy && <span className="spinner" aria-hidden="true" />}بیشتر
+        </button>
+      )}
       </>
       )}
     </main>

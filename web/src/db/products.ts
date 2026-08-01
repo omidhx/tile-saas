@@ -35,7 +35,19 @@ export type ProductRow = {
   basePrice: number | null;
 };
 
-export function listProducts(tenantId: string) {
+/**
+ * فهرستِ محصولات — صفحه‌بندی‌شده و اختیاراً فیلترشده با جستجو (نام/کد/sku/
+ * رنگ/لعاب/پانچ)، چون بدونِ آن یک کارخانه با چندصد محصول کلِ کاتالوگ (با
+ * گالریِ عکس‌ها) را در یک fetch می‌گرفت — حتی برای پیداکردنِ یک محصول.
+ *
+ * الگوی limit+1 (مثلِ listDispatches/listAuditEntries): یک ردیفِ اضافه
+ * می‌گیریم؛ اگر برگشت یعنی صفحه‌ی بعدی هست (hasMore) — بدونِ COUNT(*) جدا.
+ */
+export async function listProducts(p: {
+  tenantId: string; q?: string; limit?: number; offset?: number;
+}): Promise<{ items: ProductRow[]; hasMore: boolean }> {
+  const { tenantId } = p;
+  const limit = p.limit ?? 40, offset = p.offset ?? 0, q = p.q?.trim();
   return withTenant(tenantId, async (tx) => {
     const rows = await tx<(Omit<ProductRow, "basePrice"> & { basePrice: string | null })[]>`
       SELECT p.id, p.name, p.code, p.image_url AS "imageUrl",
@@ -56,8 +68,14 @@ export function listProducts(tenantId: string) {
         SELECT pv.id, pv.sku, pv.boxes_per_pallet, pv.sqcm_per_box FROM product_variant pv
         WHERE pv.product_id = p.id ORDER BY pv.sku LIMIT 1
       ) v ON TRUE
-      WHERE p.tenant_id = ${tenantId} ORDER BY p.name`;
-    return rows.map((r) => ({ ...r, basePrice: r.basePrice == null ? null : Number(r.basePrice) }));
+      WHERE p.tenant_id = ${tenantId}
+        AND ${q ? tx`(p.name ILIKE ${"%" + q + "%"} OR p.code ILIKE ${"%" + q + "%"} OR v.sku ILIKE ${"%" + q + "%"}
+                      OR p.color ILIKE ${"%" + q + "%"} OR p.glaze ILIKE ${"%" + q + "%"} OR p.punch ILIKE ${"%" + q + "%"})`
+             : tx`TRUE`}
+      ORDER BY p.name
+      LIMIT ${limit + 1} OFFSET ${offset}`;
+    const items = rows.slice(0, limit).map((r) => ({ ...r, basePrice: r.basePrice == null ? null : Number(r.basePrice) }));
+    return { items, hasMore: rows.length > limit };
   });
 }
 
