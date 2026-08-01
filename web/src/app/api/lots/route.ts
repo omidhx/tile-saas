@@ -1,27 +1,16 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
-import { currentUserId } from "@/auth/session";
-import { authorizeAgent, AuthzError } from "@/auth/authz";
+import { agentCtx } from "@/auth/httpCtx";
 import { resolvePrices } from "@/db/pricing";
 
 // Lotهای قابل‌سفارش برای یک context. پشت chokepoint دسترسی + فیلترِ صریحِ tenant_id
 // (belt & suspenders با RLS). فقط available>0 — نماینده available می‌بینه نه on_hand.
 export async function GET(req: Request) {
-  const userId = await currentUserId();
-  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-
   const url = new URL(req.url);
-  const tenantId = url.searchParams.get("tenantId") ?? "";
-  const agentAccountId = url.searchParams.get("agentAccountId") ?? "";
+  const c = await agentCtx(url.searchParams.get("tenantId"), url.searchParams.get("agentAccountId"));
+  if ("err" in c) return c.err;
 
-  try {
-    await authorizeAgent(userId, tenantId, agentAccountId);
-  } catch (e) {
-    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    throw e;
-  }
-
-  const lots = await withTenant(tenantId, (tx) =>
+  const lots = await withTenant(c.tenantId, (tx) =>
     tx<{
       lot_id: string; variant_id: string; name: string; code: string; grade: string | null;
       shade_code: string | null; caliber_code: string | null;
@@ -51,14 +40,14 @@ export async function GET(req: Request) {
       JOIN warehouse w        ON w.id = l.warehouse_id
       JOIN product_variant pv ON pv.id = l.variant_id
       JOIN product p          ON p.id = pv.product_id
-      WHERE a.tenant_id = ${tenantId} AND a.available_qty_boxes > 0
+      WHERE a.tenant_id = ${c.tenantId} AND a.available_qty_boxes > 0
       ORDER BY p.name, w.name`,
   );
 
   // «قیمت من» — قیمتِ همین نماینده (spec ۵.۷: نماینده‌ها نباید قیمت هم را ببینند).
   // یک کوئریِ بالک برای همه‌ی variantها، نه یکی به‌ازای هر قلم.
   const prices = await resolvePrices({
-    tenantId, agentAccountId,
+    tenantId: c.tenantId, agentAccountId: c.agentAccountId,
     variantIds: [...new Set(lots.map((l) => l.variant_id))],
   });
 

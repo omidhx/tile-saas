@@ -1,23 +1,15 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { staffCtx } from "@/auth/httpCtx";
 import { createDispatchFromRequest, createBackorderDispatch, listDispatches } from "@/db/dispatches";
 
 /** GET /api/sales-dispatches?tenantId[&q][&offset] — لیستِ حواله‌ها برای پنل staff، صفحه‌بندی‌شده. */
 export async function GET(req: Request) {
-  const userId = await currentUserId();
-  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const u = new URL(req.url);
-  const tenantId = u.searchParams.get("tenantId") ?? "";
+  const c = await staffCtx(u.searchParams.get("tenantId"));
+  if ("err" in c) return c.err;
   const q = u.searchParams.get("q") ?? undefined;
   const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
-  try {
-    await authorizeStaff(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    throw e;
-  }
-  const { items: dispatches, hasMore } = await listDispatches({ tenantId, q, offset });
+  const { items: dispatches, hasMore } = await listDispatches({ tenantId: c.tenantId, q, offset });
   return NextResponse.json({ dispatches, hasMore });
 }
 
@@ -27,27 +19,18 @@ export async function GET(req: Request) {
  *   • { agentAccountId, items } → حواله‌ی مستقلِ backorder (محصول ناموجود، بیرون از موجودی)
  */
 export async function POST(req: Request) {
-  const userId = await currentUserId();
-  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-
   const body = await req.json().catch(() => ({}));
-  const { tenantId, salesRequestId, agentAccountId, items, customerName, destination, customerId } = body ?? {};
+  const c = await staffCtx(body?.tenantId);
+  if ("err" in c) return c.err;
+
+  const { salesRequestId, agentAccountId, items, customerName, destination, customerId } = body ?? {};
   // dispatchCode دیگر از کلاینت نمی‌آید — سرور خودش D-1404-003 می‌سازد (schema: «auto-generated سمت اپ»)
   const dispatchCode = typeof body?.dispatchCode === "string" ? body.dispatchCode : undefined;
-  if (typeof tenantId !== "string")
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-
-  try {
-    await authorizeStaff(userId, tenantId);
-  } catch (e) {
-    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    throw e;
-  }
 
   const result = Array.isArray(items)
-    ? await createBackorderDispatch({ tenantId, agentAccountId, createdByUserId: userId, dispatchCode, customerName, destination, items, customerId })
+    ? await createBackorderDispatch({ tenantId: c.tenantId, agentAccountId, createdByUserId: c.userId, dispatchCode, customerName, destination, items, customerId })
     : typeof salesRequestId === "string"
-      ? await createDispatchFromRequest({ tenantId, salesRequestId, createdByUserId: userId, dispatchCode, customerName, destination, customerId })
+      ? await createDispatchFromRequest({ tenantId: c.tenantId, salesRequestId, createdByUserId: c.userId, dispatchCode, customerName, destination, customerId })
       : null;
   if (!result) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   if (!result.ok) {

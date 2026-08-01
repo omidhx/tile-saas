@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { staffPageCtx } from "@/auth/httpCtx";
 import { buildReports, buildMonthlyAgentPerf } from "@/db/reports";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -10,21 +9,13 @@ const DAY = 24 * 60 * 60 * 1000;
  * GET /api/reports?tenantId&monthly=1[&months] — همان دسترسی، عملکردِ نماینده ماه‌به‌ماه (بازه‌ی مقایسه‌ای، نه from/to).
  */
 export async function GET(req: Request) {
-  const userId = await currentUserId();
-  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-
   const u = new URL(req.url);
-  const tenantId = u.searchParams.get("tenantId") ?? "";
-  try {
-    await authorizeStaffPage(userId, tenantId, "reports");
-  } catch (e) {
-    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    throw e;
-  }
+  const c = await staffPageCtx(u.searchParams.get("tenantId"), "reports");
+  if ("err" in c) return c.err;
 
   if (u.searchParams.get("monthly") === "1") {
     const months = Number(u.searchParams.get("months")) || 6;
-    return NextResponse.json(await buildMonthlyAgentPerf({ tenantId, months }));
+    return NextResponse.json(await buildMonthlyAgentPerf({ tenantId: c.tenantId, months }));
   }
 
   // پیش‌فرض: ۳۰ روز گذشته. تاریخِ نامعتبر → پیش‌فرض، نه NaN که کوئری را بی‌سروصدا خالی کند.
@@ -39,5 +30,5 @@ export async function GET(req: Request) {
   const agentAccountId = u.searchParams.get("agentAccountId") || null;
   const variantId = u.searchParams.get("variantId") || null;
 
-  return NextResponse.json(await buildReports({ tenantId, from, to, agentAccountId, variantId }));
+  return NextResponse.json(await buildReports({ tenantId: c.tenantId, from, to, agentAccountId, variantId }));
 }
