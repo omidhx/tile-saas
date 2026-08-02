@@ -21,8 +21,16 @@ export type Customer = {
   agentAccountId: string | null; agentName: string | null; isActive: boolean;
 };
 
-export async function listCustomers(p: { tenantId: string; agentAccountId?: string }) {
-  return withTenant(p.tenantId, (tx) => tx<Customer[]>`
+/**
+ * فهرستِ مشتری‌ها — صفحه‌بندی‌شده (الگوی limit+1 مثلِ listDispatches/listMovements):
+ * تعدادِ مشتری‌های نهاییِ یک نمایندگی می‌تواند با گذشتِ زمان به‌راحتی از چند ده بگذرد،
+ * برخلافِ نمایندگی‌ها/تیم/انبارها که تعدادشان ذاتاً کم است.
+ */
+export async function listCustomers(p: {
+  tenantId: string; agentAccountId?: string; q?: string; limit?: number; offset?: number;
+}): Promise<{ items: Customer[]; hasMore: boolean }> {
+  const limit = p.limit ?? 50, offset = p.offset ?? 0, q = p.q?.trim();
+  const rows = await withTenant(p.tenantId, (tx) => tx<Customer[]>`
     SELECT c.id, c.name, c.phone, c.note,
            c.agent_account_id AS "agentAccountId", aa.legal_name AS "agentName",
            c.is_active AS "isActive"
@@ -31,7 +39,10 @@ export async function listCustomers(p: { tenantId: string; agentAccountId?: stri
     WHERE c.tenant_id = ${p.tenantId}
       -- نماینده فقط مشتریانِ خودش را می‌بیند؛ staff همه را
       AND ${p.agentAccountId ? tx`c.agent_account_id = ${p.agentAccountId}` : tx`TRUE`}
-    ORDER BY c.is_active DESC, c.name`);
+      AND ${q ? tx`(c.name ILIKE ${"%" + q + "%"} OR c.phone ILIKE ${"%" + q + "%"} OR aa.legal_name ILIKE ${"%" + q + "%"})` : tx`TRUE`}
+    ORDER BY c.is_active DESC, c.name
+    LIMIT ${limit + 1} OFFSET ${offset}`);
+  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
 }
 
 export async function addCustomer(p: {

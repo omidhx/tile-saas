@@ -4,7 +4,8 @@ export type Warehouse = { id: string; name: string; code: string; type: string }
 
 export async function listWarehouses(tenantId: string): Promise<Warehouse[]> {
   return withTenant(tenantId, (tx) =>
-    tx<Warehouse[]>`SELECT id, name, code, type FROM warehouse WHERE tenant_id = ${tenantId} ORDER BY name`,
+    // «مدیریتِ همه‌ی انبارها»ست، نه جستجو — LIMIT فقط سقفِ دفاعی است.
+    tx<Warehouse[]>`SELECT id, name, code, type FROM warehouse WHERE tenant_id = ${tenantId} ORDER BY name LIMIT 500`,
   );
 }
 

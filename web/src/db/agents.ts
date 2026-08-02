@@ -40,7 +40,10 @@ export async function listAgentsFull(tenantId: string): Promise<AgentFull[]> {
       LEFT JOIN price_list pl ON pl.id = aa.price_list_id
       LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
       WHERE aa.tenant_id = ${tenantId}
-      ORDER BY aa.is_active DESC, aa.legal_name`;
+      ORDER BY aa.is_active DESC, aa.legal_name
+      -- این صفحه «مدیریتِ همه‌ی نمایندگی‌ها»ست، نه جستجو — تعدادشان ذاتاً کم است
+      -- (ده‌ها، نه هزاران). LIMIT فقط سقفِ دفاعی است، نه صفحه‌بندیِ واقعی.
+      LIMIT 500`;
     if (agents.length === 0) return [];
 
     const users = await tx<{ agentAccountId: string; userId: string; phone: string; email: string | null }[]>`

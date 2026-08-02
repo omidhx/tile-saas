@@ -40,7 +40,9 @@ export async function listTeam(tenantId: string): Promise<TeamMember[]> {
       FROM tenant_membership tm
       JOIN app_user u ON u.id = tm.user_id
       WHERE tm.tenant_id = ${tenantId} AND tm.role IN ('staff','admin')
-      ORDER BY tm.is_active DESC, u.phone`,
+      ORDER BY tm.is_active DESC, u.phone
+      -- «مدیریتِ همه‌ی تیم»ست، نه جستجو — سقفِ دفاعی، نه صفحه‌بندیِ واقعی.
+      LIMIT 500`,
   );
 }
 

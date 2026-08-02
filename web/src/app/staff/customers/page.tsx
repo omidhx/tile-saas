@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
 import { hasPageAccess } from "@/lib/staffPages";
@@ -36,6 +36,13 @@ const jstr = (j: Jalali) => `${j.jy}-${String(j.jm).padStart(2, "0")}-${String(j
 export default function CustomersPage() {
   const { ctx, state } = useContexts("staff");
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [custQ, setCustQ] = useState("");
+  const [custHasMore, setCustHasMore] = useState(false);
+  const [custMoreBusy, setCustMoreBusy] = useState(false);
+  // نسخه‌شمار: پاسخِ یک جستجوی قدیمی نباید بعدِ جستجوی جدید لیست را بازنویسی کند
+  // (همان الگوی race-guard در staff/page.tsx برای dispatches/backorders).
+  const custGen = useRef(0);
+  const custDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [rows, setRows] = useState<SalesRow[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [history, setHistory] = useState<Record<string, HistoryRow[]>>({});
@@ -54,20 +61,45 @@ export default function CustomersPage() {
   const inverted = jalaliToDate(from) > jalaliToDate(to);
 
   const load = useCallback(async (tenantId: string, f: Jalali, t: Jalali) => {
+    const myGen = ++custGen.current;
     const toExclusive = new Date(jalaliToDate(t).getTime() + 86400000).toISOString();
     const [c, r, ag] = await Promise.all([
-      getJson<{ customers: Customer[] }>(`/api/customers?tenantId=${tenantId}`),
+      getJson<{ customers: Customer[]; hasMore: boolean }>(`/api/customers?tenantId=${tenantId}&offset=0`),
       getJson<{ rows: SalesRow[] }>(
         `/api/customers?tenantId=${tenantId}&report=1&from=${jalaliToDate(f).toISOString()}&to=${toExclusive}`),
       getJson<{ agents: Agent[] }>(`/api/agents?tenantId=${tenantId}`),
     ]);
-    if (c.ok) setCustomers(c.data.customers);
+    if (myGen !== custGen.current) return;
+    if (c.ok) { setCustomers(c.data.customers); setCustHasMore(c.data.hasMore); setCustQ(""); }
     if (r.ok) setRows(r.data.rows);
     if (ag.ok) setAgents(ag.data.agents);
     const failed = [c, r, ag].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
+
+  function searchCustomers(tenantId: string, v: string) {
+    setCustQ(v);
+    if (custDebounce.current) clearTimeout(custDebounce.current);
+    const myGen = ++custGen.current;
+    custDebounce.current = setTimeout(async () => {
+      const res = await getJson<{ customers: Customer[]; hasMore: boolean }>(
+        `/api/customers?tenantId=${tenantId}&offset=0${v ? `&q=${encodeURIComponent(v)}` : ""}`);
+      if (myGen !== custGen.current) return;
+      if (res.ok) { setCustomers(res.data.customers); setCustHasMore(res.data.hasMore); }
+    }, 300);
+  }
+
+  async function loadMoreCustomers(tenantId: string) {
+    const myGen = ++custGen.current;
+    setCustMoreBusy(true);
+    try {
+      const res = await getJson<{ customers: Customer[]; hasMore: boolean }>(
+        `/api/customers?tenantId=${tenantId}&offset=${customers.length}${custQ ? `&q=${encodeURIComponent(custQ)}` : ""}`);
+      if (myGen !== custGen.current) return;
+      if (res.ok) { setCustomers((prev) => [...prev, ...res.data.customers]); setCustHasMore(res.data.hasMore); }
+    } finally { if (myGen === custGen.current) setCustMoreBusy(false); }
+  }
 
   useEffect(() => { if (ctx && !inverted) load(ctx.tenantId, from, to); }, [ctx, from, to, load, inverted]);
 
@@ -138,18 +170,27 @@ export default function CustomersPage() {
   const totalValue = rows.reduce((s, r) => s + r.value, 0);
   const unlinked = rows.filter((r) => !r.linked).length;
 
-  function exportCustomers() {
-    exportXlsx(`مشتریان-${jstr(from)}-تا-${jstr(to)}.xlsx`, {
-      "پرخریدترین": rows.map((r) => ({
-        "مشتری": r.name, "وصل به رکورد": r.linked ? "بله" : "خیر",
-        "تعداد حواله": r.dispatches, "کارتن": r.boxes,
-        "ارزش (ریال)": r.value, "حواله‌ی بی‌ارزشِ معلوم": r.unknownValueDispatches,
-      })),
-      "همه‌ی مشتریان": customers.map((c) => ({
-        "نام": c.name, "شماره": c.phone ?? "", "نمایندگی": c.agentName ?? "مستقیمِ کارخانه",
-        "یادداشت": c.note ?? "", "وضعیت": c.isActive ? "فعال" : "غیرفعال",
-      })),
-    });
+  // «همه‌ی مشتریان» روی صفحه صفحه‌بندی‌شده است — خروجیِ اکسل باید کلِ فهرست باشد،
+  // نه فقط صفحه‌ی بارگذاری‌شده (همان الگوی exportAll در LedgerSection).
+  async function exportCustomers() {
+    if (!ctx) return;
+    setPending("export"); setMsg("");
+    try {
+      const res = await getJson<{ customers: Customer[] }>(
+        `/api/customers?tenantId=${ctx.tenantId}&offset=0&limit=20000${custQ ? `&q=${encodeURIComponent(custQ)}` : ""}`);
+      if (!res.ok) { setMsg(actionError(res.status)); return; }
+      exportXlsx(`مشتریان-${jstr(from)}-تا-${jstr(to)}.xlsx`, {
+        "پرخریدترین": rows.map((r) => ({
+          "مشتری": r.name, "وصل به رکورد": r.linked ? "بله" : "خیر",
+          "تعداد حواله": r.dispatches, "کارتن": r.boxes,
+          "ارزش (ریال)": r.value, "حواله‌ی بی‌ارزشِ معلوم": r.unknownValueDispatches,
+        })),
+        "همه‌ی مشتریان": res.data.customers.map((c) => ({
+          "نام": c.name, "شماره": c.phone ?? "", "نمایندگی": c.agentName ?? "مستقیمِ کارخانه",
+          "یادداشت": c.note ?? "", "وضعیت": c.isActive ? "فعال" : "غیرفعال",
+        })),
+      });
+    } finally { setPending(null); }
   }
 
   return (
@@ -163,7 +204,9 @@ export default function CustomersPage() {
       </div>
 
       <div className="row row--start no-print" style={{ gap: "var(--sp-2)" }}>
-        <button onClick={exportCustomers}><Icon name="download" size={13} />خروجیِ اکسل</button>
+        <button onClick={exportCustomers} aria-busy={pending === "export"} disabled={pending === "export"}>
+          {pending === "export" && <span className="spinner" aria-hidden="true" />}<Icon name="download" size={13} />خروجیِ اکسل
+        </button>
         <button onClick={() => window.print()}><Icon name="printer" size={13} />خروجیِ PDF (چاپ)</button>
       </div>
 
@@ -270,7 +313,12 @@ export default function CustomersPage() {
       ))}
 
       <h2>همه‌ی مشتریان</h2>
-      {loaded && customers.length === 0 && <p className="empty">مشتری‌ای ثبت نشده.</p>}
+      <input type="search" aria-label="جستجوی مشتریان" placeholder="جستجو: نام، شماره، نمایندگی…"
+        value={custQ} onChange={(e) => searchCustomers(ctx.tenantId, e.target.value)}
+        style={{ marginBottom: "var(--sp-3)" }} />
+      {loaded && customers.length === 0 && (
+        <p className="empty">{custQ ? "چیزی پیدا نشد." : "مشتری‌ای ثبت نشده."}</p>
+      )}
       {customers.map((c) => (
         <div className="card" key={c.id}>
           <div className="row">
@@ -311,6 +359,12 @@ export default function CustomersPage() {
           )}
         </div>
       ))}
+      {custHasMore && (
+        <button className="no-print" onClick={() => loadMoreCustomers(ctx.tenantId)}
+                aria-busy={custMoreBusy} disabled={custMoreBusy} style={{ width: "100%" }}>
+          {custMoreBusy && <span className="spinner" aria-hidden="true" />}بیشتر
+        </button>
+      )}
     </main>
   );
 }

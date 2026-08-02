@@ -31,7 +31,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ rows: await customerSales({ tenantId: c.tenantId, from, to }) });
   }
 
-  return NextResponse.json({ customers: await listCustomers({ tenantId: c.tenantId }) });
+  const q = u.searchParams.get("q") ?? undefined;
+  const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
+  // limit صریح برای خروجیِ اکسل (کلِ نتیجه‌ی فیلترشده، نه فقط صفحه‌ی روی صفحه)؛
+  // سقفِ ۲۰٬۰۰۰ ضدِ درخواستِ سنگین (همان الگوی /api/ledger).
+  const limit = Math.min(Number(u.searchParams.get("limit")) || 50, 20_000);
+  const { items: customers, hasMore } = await listCustomers({ tenantId: c.tenantId, q, offset, limit });
+  return NextResponse.json({ customers, hasMore });
 }
 
 export async function POST(req: Request) {

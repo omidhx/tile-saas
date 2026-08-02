@@ -74,12 +74,13 @@ test("ساخت و فهرست، و محدود بودن به نمایندگیِ خ
   await addCustomer({ tenantId: T, name: "مشتریِ نمایندگیِ دیگر", agentAccountId: AG2 });
 
   const all = await listCustomers({ tenantId: T });
-  assert.equal(all.length, 2, "staff همه را می‌بیند");
+  assert.equal(all.items.length, 2, "staff همه را می‌بیند");
+  assert.equal(all.hasMore, false);
 
   const onlyMine = await listCustomers({ tenantId: T, agentAccountId: AG });
-  assert.equal(onlyMine.length, 1, "نماینده نباید مشتریانِ نمایندگیِ دیگر را ببیند");
-  assert.equal(onlyMine[0].id, mine);
-  assert.equal(onlyMine[0].agentName, "نمایندگی الف");
+  assert.equal(onlyMine.items.length, 1, "نماینده نباید مشتریانِ نمایندگیِ دیگر را ببیند");
+  assert.equal(onlyMine.items[0].id, mine);
+  assert.equal(onlyMine.items[0].agentName, "نمایندگی الف");
 });
 
 test("🔴 نامِ روی حواله snapshot است — اصلاحِ نامِ مشتری تاریخچه را بازنویسی نمی‌کند", async () => {
@@ -176,10 +177,29 @@ test("غیرفعال‌کردن مشتری، حذفش نمی‌کند (تاری�
   const c = await addCustomer({ tenantId: T, name: "مشتری غیرفعال", agentAccountId: AG });
   await updateCustomer({ tenantId: T, id: c, actorUserId: U, isActive: false });
   const list = await listCustomers({ tenantId: T, agentAccountId: AG });
-  const row = list.find((x) => x.id === c)!;
+  const row = list.items.find((x) => x.id === c)!;
   assert.equal(row.isActive, false, "غیرفعال، نه حذف — وگرنه حواله‌های گذشته مرجعشان را از دست می‌دهند");
 });
 
 test("نامِ خالی رد می‌شود", async () => {
   await assert.rejects(addCustomer({ tenantId: T, name: "   " }));
+});
+
+test("listCustomers: صفحه‌بندی با limit+1 (hasMore درست) + جستجو روی نام", async () => {
+  for (const name of ["جستجو-یک", "جستجو-دو", "جستجو-سه"]) await addCustomer({ tenantId: T, name });
+
+  const total = (await listCustomers({ tenantId: T, limit: 1000 })).items.length;
+  assert.ok(total >= 3);
+
+  const page1 = await listCustomers({ tenantId: T, limit: total - 1 });
+  assert.equal(page1.items.length, total - 1, "فقط limit تا برمی‌گرده، نه limit+1");
+  assert.equal(page1.hasMore, true, "ردیفِ اضافه‌ی limit+1 باید hasMore=true بدهد");
+
+  const page2 = await listCustomers({ tenantId: T, limit: total - 1, offset: total - 1 });
+  assert.equal(page2.items.length, 1, "صفحه‌ی دوم باید دقیقاً بقیه را بدهد");
+  assert.equal(page2.hasMore, false, "بعدِ آخرین صفحه دیگه hasMore نیست");
+
+  const found = await listCustomers({ tenantId: T, q: "جستجو-دو" });
+  assert.equal(found.items.length, 1);
+  assert.equal(found.items[0].name, "جستجو-دو");
 });
