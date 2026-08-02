@@ -10,6 +10,7 @@ import Icon from "../Icon";
 import { formatJalaliDate } from "@/lib/date";
 import { matches, normalize } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -260,16 +261,8 @@ export default function ReservePage() {
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
   useEffect(() => { if (ctx) { setCart({}); loadLots(ctx); } }, [ctx, loadLots]);
 
-  // Esc مودال را می‌بندد — دسترسی‌پذیریِ پایه برای هر دیالوگ
-  useEffect(() => {
-    if (!previewId) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreviewId(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [previewId]);
-
-  // فوکوس روی دکمه‌ی بستن، همان الگویِ NavMenu — کاربرِ کیبورد مجبور نیست کورکورانه Tab بزند
-  useEffect(() => { if (previewId) closeBtnRef.current?.focus(); }, [previewId]);
+  // Esc می‌بندد + فوکوس روی دکمه‌ی بستن — دسترسی‌پذیریِ پایه برای هر دیالوگ
+  useEscapeClose(!!previewId, () => setPreviewId(null), closeBtnRef);
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));

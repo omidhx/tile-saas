@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Icon from "./Icon";
 import type { Ctx } from "@/lib/useContexts";
 import { hasPageAccess } from "@/lib/staffPages";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 /**
  * منوی ناوبریِ پنل پشتیبان.
@@ -92,29 +93,21 @@ export default function NavMenu({ ctx }: { ctx: Ctx }) {
   // با رفتن به صفحه‌ی دیگر، منو باید بسته شود — وگرنه روی صفحه‌ی جدید باز می‌ماند
   useEffect(() => { setOpen(false); }, [pathname]);
 
+  // فوکوس برمی‌گردد به دکمه، نه به ابتدای صفحه
+  useEscapeClose(open, () => { setOpen(false); buttonRef.current?.focus(); });
+
   useEffect(() => {
     if (!open) return;
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        buttonRef.current?.focus(); // فوکوس برمی‌گردد به دکمه، نه به ابتدای صفحه
-      }
-    };
     const onClick = (e: MouseEvent) => {
       const t = e.target as Node;
       if (!panelRef.current?.contains(t) && !buttonRef.current?.contains(t)) setOpen(false);
     };
-
-    document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onClick);
     // اولین لینک فوکوس می‌گیرد تا کاربرِ کیبورد لازم نباشد کورکورانه Tab بزند
     panelRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
 
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
-    };
+    return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
   return (

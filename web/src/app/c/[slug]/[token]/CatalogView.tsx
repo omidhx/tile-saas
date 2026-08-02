@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import type { PublicItem } from "@/db/sharedCatalog";
 import { hideOnError } from "@/lib/img";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 // نمای کاتالوگِ مشتری: گرید + پاپ‌آپِ گالری/جزئیات. کلاینت چون کلیک و مودال لازم دارد.
 const money = (v: number) => v.toLocaleString("fa-IR");
@@ -13,16 +14,9 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const show = (it: PublicItem) => { setOpen(it); setIdx(0); };
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  // فوکوس روی دکمه‌ی بستن — همان الگویِ /reserve و NavMenu؛ این صفحه را مشتریِ
-  // بدونِ‌لاگین هم می‌بیند، پس دسترسی‌پذیریِ کیبورد اینجا مهم‌تر هم هست.
-  useEffect(() => { if (open) closeBtnRef.current?.focus(); }, [open]);
+  // Esc می‌بندد + فوکوس روی دکمه‌ی بستن — این صفحه را مشتریِ بدونِ‌لاگین هم
+  // می‌بیند، پس دسترسی‌پذیریِ کیبورد اینجا مهم‌تر هم هست.
+  useEscapeClose(!!open, () => setOpen(null), closeBtnRef);
 
   const gallery = (it: PublicItem) => it.images.length ? it.images.map((i) => i.url) : it.imageUrl ? [it.imageUrl] : [];
   const specs = (it: PublicItem) => [it.color, it.glaze, it.punch, it.body].filter(Boolean).join(" · ");
