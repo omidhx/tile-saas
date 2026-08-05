@@ -34,6 +34,7 @@ export default function DispatchSection({
       <input type="search" aria-label="جستجوی حواله" placeholder="جستجو: کدِ حواله، مشتری، نمایندگی…"
         value={dispsQ} onChange={(e) => onSearch(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
       {loaded && !loadErr && disps.length === 0 && <p className="empty">{dispsQ ? "چیزی پیدا نشد." : "حواله‌ای نیست."}</p>}
+      <div data-testid="dispatch-list">
       {disps.map((d) => (
         <div className="card" key={d.id}>
           <div className="row">
@@ -62,6 +63,7 @@ export default function DispatchSection({
           </div>
         </div>
       ))}
+      </div>
       {dispsHasMore && (
         <button onClick={onLoadMore} aria-busy={dispsBusy} disabled={dispsBusy} style={{ width: "100%" }}>
           {dispsBusy && <span className="spinner" aria-hidden="true" />}بیشتر

@@ -42,6 +42,7 @@ export default function QueueSection({
         {pendingResvs.length > 0 && <span className="badge badge--warn">{num(pendingResvs.length)}</span>}
       </h2>
       {loaded && !loadErr && pendingResvs.length === 0 && <p className="empty">رزروِ فعالی برای تأیید نیست.</p>}
+      <div data-testid="pending-reservations">
       {pendingResvs.map((r) => {
         // مهلتِ باقی‌مانده تا انقضا — صف حالا با همین ترتیب دارد (زودترین انقضا اول)،
         // پس دیدنِ خودِ عدد هم لازم است، وگرنه ترتیب بی‌توضیح می‌ماند.
@@ -92,12 +93,14 @@ export default function QueueSection({
         </div>
         );
       })}
+      </div>
 
       <h2>
         درخواست‌های تأییدشده
         {reqs.length > 0 && <span className="badge">{num(reqs.length)}</span>}
       </h2>
       {loaded && !loadErr && reqs.length === 0 && <p className="empty">درخواست تأییدشده‌ای برای حواله نیست.</p>}
+      <div data-testid="approved-requests">
       {reqs.map((r) => (
         <div className={highlightReq.has(r.id) ? "card card--new" : "card"} key={r.id}>
           <div className="row">
@@ -119,6 +122,7 @@ export default function QueueSection({
           </div>
         </div>
       ))}
+      </div>
     </>
   );
 }

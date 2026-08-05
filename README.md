@@ -38,6 +38,7 @@ npm run dev               # http://localhost:3000  → /login → /reserve
 | `npm run dev` | سرور توسعه |
 | `npm run build` | بیلد پروداکشن |
 | `npm test` | تست یکپارچه (نیازمند `DATABASE_URL` به Postgres تازه) |
+| `npm run test:e2e` | e2e با Playwright — مسیرِ حیاتی (ورود→رزرو→تأیید→حواله→بارگیری). خودش DBِ dev را با `seed:dev` بازمی‌سازد و سرور را بالا می‌آورد؛ اولین بار `npx playwright install chromium` لازم است |
 | `npm run db:pull` | introspect اسکیمای typed از دیتابیس → `src/db/generated/` |
 
 ## ساختار پوشه

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
+    "test:e2e": "playwright test",
     "db:pull": "drizzle-kit pull",
     "seed:dev": "node --env-file=.env --import tsx scripts/seed-dev.ts",
     "worker:expire": "node --env-file-if-exists=.env --import tsx scripts/expire.ts",
@@ -25,6 +26,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
