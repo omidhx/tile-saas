@@ -3,19 +3,19 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { inviteTeamMember, setTeamMember, listTeam, deleteTeamMember } from "./team";
+import { T, seedTenant } from "./_fixtures";
 
 /**
  * دعوتِ عضوِ تیمِ پشتیبان/مدیر (v3). قاعده‌های اصلی: سقفِ اشتراک (max_staff)،
  * find-or-create روی کاربرِ سراسری، و گاردِ «حداقل یک adminِ فعال».
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
 const U_ADMIN = "55555555-5555-5555-5555-555555555556";
 
 before(async () => {
   await resetSchema();
+  await seedTenant();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
     INSERT INTO app_user (id,phone,password_hash) VALUES ('${U_ADMIN}','09120000001','x');
     INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${T}','${U_ADMIN}','admin',true);
   `);

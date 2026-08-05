@@ -3,12 +3,11 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { createWarehouse, updateWarehouse, listWarehouses, deleteWarehouse } from "./warehouses";
-
-const T = "11111111-1111-1111-1111-111111111111";
+import { T, seedTenant } from "./_fixtures";
 
 before(async () => {
   await resetSchema();
-  await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');`);
+  await seedTenant();
 });
 after(async () => { await sql.end(); });
 

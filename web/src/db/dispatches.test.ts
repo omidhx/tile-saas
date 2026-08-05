@@ -2,21 +2,19 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
+import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 import { createDispatchFromRequest, setDispatchStatus, listDispatches } from "./dispatches";
 
-const T = "11111111-1111-1111-1111-111111111111";
 const AG = "a5555555-5555-5555-5555-555555555555";
-const U = "a8888888-8888-8888-8888-888888888888";
 const VAR = "a2222222-2222-2222-2222-222222222222";
 const LOT = "a4444444-4444-4444-4444-444444444444";
 
 before(async () => {
   await resetSchema();
+  await seedTenantUser();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
-    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','0910','x');
     INSERT INTO product (id,tenant_id,code,name) VALUES ('a1111111-1111-1111-1111-111111111111','${T}','P1','P1');
     INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('${VAR}','${T}','a1111111-1111-1111-1111-111111111111','S1');
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('a3333333-3333-3333-3333-333333333333','${T}','W','W1','main');

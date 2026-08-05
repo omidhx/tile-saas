@@ -2,6 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
+import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 import { createDispatchFromRequest, setDispatchStatus, createBackorderDispatch } from "./dispatches";
@@ -14,8 +15,6 @@ import { addCustomer, listCustomers, updateCustomer, customerSales, customerHist
  *   • ارزشِ نامعلوم با صفر یکی گزارش نمی‌شود.
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
-const U = "a8888888-8888-8888-8888-888888888888";
 const AG = "a5555555-5555-5555-5555-555555555555";
 const AG2 = "a5555555-5555-5555-5555-555555555556";
 const PL = "aaaa1111-1111-1111-1111-111111111111";
@@ -35,9 +34,8 @@ const key = () => `cust-${++seq}`;
 
 before(async () => {
   await resetSchema();
+  await seedTenantUser();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
-    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','0910','x');
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES
       ('${AG}','${T}','نمایندگی الف','AG1','${PL}'),

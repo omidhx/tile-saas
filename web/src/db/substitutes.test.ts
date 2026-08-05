@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { suggestSubstitutes, addSubstitute, listSubstitutes, removeSubstitute } from "./substitutes";
+import { T, seedTenant } from "./_fixtures";
 
 /**
  * پیشنهاد کالای جایگزین. قاعده‌ی اصلی که تست‌ها قفلش می‌کنند:
  * **هرگز چیزی پیشنهاد نشود که خودش هم ناموجود است** — نماینده را دو بار ناامید می‌کند.
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
 const AG = "a5555555-5555-5555-5555-555555555555";
 const PL = "aaaa1111-1111-1111-1111-111111111111";
 const WH = "a3333333-3333-3333-3333-333333333333";
@@ -24,8 +24,8 @@ const V_DEAD   = "a2222222-2222-2222-2222-22222222220d"; // محصولِ دیگ�
 
 before(async () => {
   await resetSchema();
+  await seedTenant();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG}','${T}','نماینده','AG1','${PL}');
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','W','W1','main');

@@ -2,6 +2,7 @@ import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
+import { T, U, seedTenantUser } from "./_fixtures";
 import { addIncoming, listIncoming, markArrived, expectedArrivals, setIncomingStatus } from "./incoming";
 import { joinWaitlist } from "./waitlist";
 
@@ -11,17 +12,14 @@ import { joinWaitlist } from "./waitlist";
  *   ۲. **لجر تراز بماند** — رسیدن از همان مسیرِ import عبور کند، نه UPDATE مستقیم.
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
-const U = "a8888888-8888-8888-8888-888888888888";
 const AG = "a5555555-5555-5555-5555-555555555555";
 const WH = "a3333333-3333-3333-3333-333333333333";
 const V = "a2222222-2222-2222-2222-222222222222";
 
 before(async () => {
   await resetSchema();
+  await seedTenantUser();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
-    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','0910','x');
     INSERT INTO tenant_membership (tenant_id,user_id,role) VALUES ('${T}','${U}','agent');
     INSERT INTO agent_account (id,tenant_id,legal_name,code) VALUES ('${AG}','${T}','نماینده','AG1');
     INSERT INTO agent_account_user (tenant_id,agent_account_id,user_id,role) VALUES ('${T}','${AG}','${U}','op');

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
+import { T, seedTenant } from "./_fixtures";
 
 /**
  * تأیید هیبریدی. تمرکزِ تست‌ها روی **مرزها و مسیرهای ابهام** است، نه حالتِ خوش:
@@ -10,7 +11,6 @@ import { reserve } from "./reservations";
  * اشتباه پول را متعهد می‌کند.
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
 const AG = "a5555555-5555-5555-5555-555555555555";   // سقفِ خودش را ندارد → ارث از tenant
 const AG2 = "a5555555-5555-5555-5555-555555555556";  // سقفِ اختصاصی
 const PL = "aaaa1111-1111-1111-1111-111111111111";
@@ -27,8 +27,8 @@ const key = () => `auto-${++seq}`;
 
 before(async () => {
   await resetSchema();
+  await seedTenant();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES
       ('${AG}','${T}','نماینده ارثی','AG1','${PL}'),

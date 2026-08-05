@@ -2,10 +2,9 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
+import { T, U, seedTenantUser } from "./_fixtures";
 import { applySnapshot } from "./imports";
 
-const T = "11111111-1111-1111-1111-111111111111";
-const U = "a8888888-8888-8888-8888-888888888888";
 const VAR = "a2222222-2222-2222-2222-222222222222";
 const WA = "aaaaaaa1-0000-0000-0000-000000000001";
 const WB = "aaaaaaa2-0000-0000-0000-000000000002";
@@ -19,9 +18,8 @@ const LD1 = "bbbbbbb5-0000-0000-0000-000000000005";
 
 before(async () => {
   await resetSchema();
+  await seedTenantUser();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
-    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','0910','x');
     INSERT INTO product (id,tenant_id,code,name) VALUES ('a1111111-1111-1111-1111-111111111111','${T}','P1','P1');
     INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('${VAR}','${T}','a1111111-1111-1111-1111-111111111111','S1');
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES

@@ -3,19 +3,19 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
+import { T, seedTenant } from "./_fixtures";
 
 // تستِ یکپارچه — نیازمند DATABASE_URL به یک Postgres تازه. schema.sql خودش بارگذاری می‌شه.
 // اجرا: DATABASE_URL=... node --import tsx --test src/db/reserve.test.ts
 
-const T = "11111111-1111-1111-1111-111111111111"; // tenant
 const AG = "a5555555-5555-5555-5555-555555555555"; // agent
 const LOT1 = "a4444444-4444-4444-4444-444444444444"; // on_hand 100
 const LOT2 = "a9999999-9999-9999-9999-999999999999"; // on_hand 3
 
 before(async () => {
   await resetSchema();
+  await seedTenant();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
     INSERT INTO product (id,tenant_id,code,name) VALUES ('a1111111-1111-1111-1111-111111111111','${T}','P1','P1');
     INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('a2222222-2222-2222-2222-222222222222','${T}','a1111111-1111-1111-1111-111111111111','S1');
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('a3333333-3333-3333-3333-333333333333','${T}','W','W1','main');

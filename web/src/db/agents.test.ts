@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { createAgent, updateAgent, addAgentUser, listAgentsFull, deleteAgent } from "./agents";
+import { T, seedTenant } from "./_fixtures";
 
 /**
  * ساختِ نمایندگی + کاربرِ اولش (v3، ادمینِ کارخانه به‌جای SQL دستی).
@@ -10,15 +11,12 @@ import { createAgent, updateAgent, addAgentUser, listAgentsFull, deleteAgent } f
  * کاربرِ سراسری (شماره‌ی تکراری = همان حساب، نه دو تا).
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
 const U = "a8888888-8888-8888-8888-888888888888";
 
 before(async () => {
   await resetSchema();
-  await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
-    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');
-  `);
+  await seedTenant();
+  await sql.unsafe(`INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');`);
 });
 after(async () => { await sql.end(); });
 

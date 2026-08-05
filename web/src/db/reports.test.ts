@@ -7,9 +7,8 @@ import { approveReservation } from "./salesRequests";
 import { createDispatchFromRequest, setDispatchStatus } from "./dispatches";
 import { buildReports, buildMonthlyAgentPerf } from "./reports";
 import { toJalali } from "@/lib/date";
+import { T, U, seedTenantUser } from "./_fixtures";
 
-const T = "11111111-1111-1111-1111-111111111111";
-const U = "a8888888-8888-8888-8888-888888888888";
 const AG = "a5555555-5555-5555-5555-555555555555";
 const PL = "aaaa1111-1111-1111-1111-111111111111";
 const WH = "a3333333-3333-3333-3333-333333333333";
@@ -22,9 +21,8 @@ const range = () => ({ from: new Date(Date.now() - 7 * 86400000), to: new Date(D
 
 before(async () => {
   await resetSchema();
+  await seedTenantUser();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
-    INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','0910','x');
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG}','${T}','نمایندگی الف','AG1','${PL}');
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','W','W1','main');

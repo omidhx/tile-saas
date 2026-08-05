@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { sql } from "./client";
 import { resetSchema } from "./_testdb";
 import { createProduct, listProducts, updateProduct, addProductImage, removeProductImage, setPrimaryImage } from "./products";
+import { T, seedTenant } from "./_fixtures";
 
 /**
  * مدیریت محصول. قاعده‌ای که مهم است: ساختِ محصول باید هم‌زمان یک variant بسازد،
  * وگرنه محصولِ بی‌واریانت هرگز قابلِ سفارش نمی‌شود (تله‌ای که فرمِ ساده پنهانش می‌کند).
  */
 
-const T = "11111111-1111-1111-1111-111111111111";
 const WH = "a3333333-3333-3333-3333-333333333333";
 const U = "a8888888-8888-8888-8888-888888888888";
 
@@ -18,7 +18,7 @@ const list = async () => (await listProducts({ tenantId: T, limit: 1000 })).item
 
 before(async () => {
   await resetSchema();
-  await sql.unsafe(`INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');`);
+  await seedTenant();
   await sql.unsafe(`INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','انبارِ اصلی','W1','main');`);
   await sql.unsafe(`INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');`);
 });

@@ -5,8 +5,8 @@ import { resetSchema } from "./_testdb";
 import { subscribeAlert, listAlertsAndOutOfStock } from "./alerts";
 import { applySnapshot } from "./imports";
 import { sendPendingNotifications } from "./outbox";
+import { T, seedTenant } from "./_fixtures";
 
-const T = "11111111-1111-1111-1111-111111111111";
 const U = "a8888888-8888-8888-8888-888888888888";
 const AG = "a5555555-5555-5555-5555-555555555555";
 const VAR = "a2222222-2222-2222-2222-222222222222";
@@ -14,8 +14,8 @@ const WH = "a3333333-3333-3333-3333-333333333333";
 
 before(async () => {
   await resetSchema();
+  await seedTenant();
   await sql.unsafe(`
-    INSERT INTO tenant (id,name,slug) VALUES ('${T}','A','a');
     INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09121112222','x');
     INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${T}','${U}','agent',true);
     INSERT INTO agent_account (id,tenant_id,legal_name,code) VALUES ('${AG}','${T}','Ag','AG1');
