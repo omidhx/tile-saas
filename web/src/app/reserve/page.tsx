@@ -7,10 +7,13 @@ import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
-import { formatJalaliDate } from "@/lib/date";
-import { matches, normalize } from "@/lib/search";
+import MessageBanner from "../MessageBanner";
+import { matches } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
 import { ImageGalleryModal } from "../ImageGalleryModal";
+import QtyPicker from "./QtyPicker";
+import CartSummary from "./CartSummary";
+import OutOfStockSection, { type WaitlistEntry, type Arrival, type Substitute } from "./OutOfStockSection";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -24,116 +27,8 @@ type Lot = {
   images: { id: string; url: string }[];
 };
 
-type WaitlistEntry = { variantId: string; name: string; code: string; quantityBoxes: number; position: number };
-
-type Arrival = { quantityBoxes: number; expectedAt: string; status: "planned" | "confirmed" };
-
-type Substitute = {
-  variantId: string; name: string; code: string; grade: string | null;
-  available: number; unitPrice: number | null; note: string | null;
-  source: "explicit" | "same_product";
-};
-
 // پول در دیتابیس عددِ صحیح است؛ اعشار/جداکننده فقط همین‌جا در لایه‌ی UI (قانون #۷)
 const money = (v: number) => v.toLocaleString("fa-IR");
-const fmtUnit = (n: number) => n.toLocaleString("fa-IR", { maximumFractionDigits: 2 });
-
-type Unit = "box" | "pallet" | "sqm";
-
-/**
- * ورودیِ تعداد با انتخابِ واحد (کارتن/پالت/مترمربع). بسته‌بندی مشخصه‌ی ثابتِ
- * کارخانه است (پشتیبان در مدیریتِ محصول تنظیمش می‌کند)، پس اینجا فقط تبدیل
- * می‌شود — نه چیزی که نماینده هر بار حدس بزند.
- *
- * منبعِ حقیقت همیشه `value` (کارتن، در cart) است؛ `text` فقط بازنمودِ محلیِ
- * واحدِ انتخاب‌شده است تا کاربر بتواند اعشار تایپ کند بدونِ فرمت‌شدنِ هر keystroke.
- * اگر تبدیل به سقفِ موجودی بخورد، متن با معادلِ واقعی جایگزین می‌شود — وگرنه
- * عددِ نمایش‌داده‌شده با آنچه واقعاً رزرو می‌شود فرق می‌کرد.
- */
-function QtyPicker({
-  id, label, max, boxesPerPallet, sqcmPerBox, value, onChange,
-}: {
-  id: string; label: string; max: number;
-  boxesPerPallet: number | null; sqcmPerBox: number | null;
-  value: number; onChange: (boxes: number) => void;
-}) {
-  const [unit, setUnit] = useState<Unit>("box");
-  const [text, setText] = useState(value > 0 ? String(value) : "");
-  const hasFactor = boxesPerPallet != null || sqcmPerBox != null;
-  // آخرین مقداری که خودِ این کامپوننت به بیرون فرستاده — برای تشخیصِ اینکه
-  // آیا `value` از بیرون عوض شده (مثلاً سبد بر اساسِ موجودیِ تازه کلمپ شد)
-  // یا فقط اکوی همان چیزی است که خودمان لحظه‌ای پیش فرستادیم.
-  const lastPushed = useRef(value);
-
-  // اگر `value` از بیرون تغییر کرد (نه در واکنش به تایپِ خودِ کاربر اینجا)،
-  // متنِ محلی هم باید هم‌گام شود — وگرنه کادر عددی نشان می‌دهد که دیگر واقعی نیست
-  // (مثلاً بعدِ کلمپ‌شدنِ سبد، ورودی هنوز مقدارِ قدیمیِ بزرگ‌تر را نشان می‌دهد).
-  useEffect(() => {
-    if (value === lastPushed.current) return;
-    lastPushed.current = value;
-    if (value === 0) setText("");
-    else if (unit === "box") setText(String(value));
-    else if (unit === "pallet") setText(fmtUnit(value / (boxesPerPallet ?? 1)));
-    else setText(fmtUnit((value * (sqcmPerBox ?? 0)) / 10000));
-  }, [value]);
-
-  function toBoxes(n: number, u: Unit): number {
-    if (u === "box") return Math.floor(n);
-    if (u === "pallet") return Math.ceil(n * (boxesPerPallet ?? 0));
-    return Math.ceil((n * 10000) / (sqcmPerBox || 1));
-  }
-
-  function commit(raw: string, u: Unit) {
-    setText(raw);
-    const n = Number(normalize(raw).replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(n) || n <= 0) { lastPushed.current = 0; onChange(0); return; }
-    const boxes = toBoxes(n, u);
-    const clamped = Math.max(0, Math.min(max, boxes));
-    lastPushed.current = clamped;
-    onChange(clamped);
-    if (clamped !== boxes) {
-      // به سقفِ موجودی خورد — متن باید معادلِ واقعیِ رزروشده را نشان دهد، نه عددِ خام‌تایپ‌شده
-      if (u === "box") setText(String(clamped));
-      else if (u === "pallet") setText(fmtUnit(clamped / (boxesPerPallet ?? 1)));
-      else setText(fmtUnit((clamped * (sqcmPerBox ?? 0)) / 10000));
-    }
-  }
-
-  function switchUnit(u: Unit) {
-    setUnit(u);
-    if (value <= 0) { setText(""); return; }
-    if (u === "box") setText(String(value));
-    else if (u === "pallet") setText(fmtUnit(value / (boxesPerPallet ?? 1)));
-    else setText(fmtUnit((value * (sqcmPerBox ?? 0)) / 10000));
-  }
-
-  const placeholder = unit === "box" ? "تعداد کارتن" : unit === "pallet" ? "تعداد پالت" : "متراژ (مترمربع)";
-
-  return (
-    <div style={{ marginTop: "var(--sp-3)" }}>
-      <div className="row row--start" style={{ flexWrap: "wrap" }}>
-        <label htmlFor={id} className="sr-only">{label}</label>
-        <input id={id} type="text" inputMode="decimal" placeholder={placeholder}
-               value={text} style={{ maxWidth: 130 }}
-               onChange={(e) => commit(e.target.value, unit)} />
-        {hasFactor ? (
-          <select aria-label="واحدِ ورود" value={unit} onChange={(e) => switchUnit(e.target.value as Unit)} style={{ maxWidth: 110 }}>
-            <option value="box">کارتن</option>
-            {boxesPerPallet != null && <option value="pallet">پالت</option>}
-            {sqcmPerBox != null && <option value="sqm">مترمربع</option>}
-          </select>
-        ) : <span className="subtle">کارتن</span>}
-      </div>
-      {value > 0 && hasFactor && (
-        <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>
-          معادل: {money(value)} کارتن
-          {boxesPerPallet != null && ` · ${fmtUnit(value / boxesPerPallet)} پالت`}
-          {sqcmPerBox != null && ` · ${fmtUnit((value * sqcmPerBox) / 10000)} مترمربع`}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function ReservePage() {
   const { contexts, ctx, state, select } = useContexts("agent");
@@ -401,11 +296,7 @@ export default function ReservePage() {
       )}
       {/* یک جایِ ثابت برای همه‌ی پیام‌ها — چه از دکمه‌ی ثبت باشد چه از «خبرم کن»/نوبت
           که پایینِ صفحه‌اند؛ اگر پیام همان‌جا پایین بماند، بدونِ اسکرول دیده نمی‌شود. */}
-      {msg && (
-        <div className={`banner banner--${msg.kind === "ok" ? "ok" : "error"}`} role="status">
-          <Icon name={msg.kind === "ok" ? "check" : "alert"} /><span>{msg.text}</span>
-        </div>
-      )}
+      <MessageBanner msg={msg} />
       {loaded && !loadErr && lots.length === 0 && <p className="empty">فعلاً کالای قابل‌سفارشی نیست.</p>}
 
       {/* جستجو/فیلتر (spec ۱۱.۲) — فقط وقتی فهرست به‌اندازه‌ای هست که ارزش داشته باشد.
@@ -538,164 +429,15 @@ export default function ReservePage() {
       })}
 
       {items.length > 0 && (
-        <div className="card card--raised" style={{ position: "sticky", bottom: "var(--sp-3)" }}>
-          <div className="row">
-            <strong>سبد رزرو</strong>
-            <span className="badge">{money(items.length)} قلم · {money(cartBoxes)} کارتن</span>
-          </div>
-
-          {/* جمعِ ریالیِ تقریبی — «تقریبی» چون تخفیفِ حجمی و قیمتِ قطعی در لحظه‌ی تأیید */}
-          {cartValue > 0 && (
-            <div className="row" style={{ marginTop: "var(--sp-2)" }}>
-              <span className="muted">جمعِ تقریبی</span>
-              <span className="metric">{money(cartValue)} ریال</span>
-            </div>
-          )}
-          {anyUnpriced && (
-            <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>
-              بعضی اقلام قیمتِ ثبت‌شده ندارند و در این جمع نیستند — قیمتِ نهایی را پشتیبان تأیید می‌کند.
-            </div>
-          )}
-
-          {/* هشدارِ نرم، نه منع: تصمیم با نماینده است ولی باید پیامدش را بداند */}
-          {mixedShade && (
-            <div className="banner banner--warn" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
-              <Icon name="alert" /><span>شیدهای متفاوت در سبد — برای یک سطحِ پیوسته توصیه نمی‌شود.</span>
-            </div>
-          )}
-          {mixedWarehouse && (
-            <div className="banner banner--warn" style={{ marginTop: "var(--sp-2)", marginBottom: 0 }}>
-              <Icon name="warehouse" />
-              <span>
-                سبد از {money(cartWarehouses.size)} انبار است ({[...cartWarehouses].join("، ")}) — این سفارش به{" "}
-                {money(cartWarehouses.size)} حواله‌ی جدا تقسیم می‌شود، چون هر کامیون از یک انبار بار می‌زند.
-              </span>
-            </div>
-          )}
-
-          <div className="row row--stack-mobile" style={{ marginTop: "var(--sp-3)", justifyContent: "flex-start" }}>
-            <button className="primary" onClick={submit} disabled={pending} aria-busy={pending}>
-              {pending && <span className="spinner" aria-hidden="true" />}
-              {pending ? "در حال ثبت…" : "ثبت رزرو (همه یا هیچ)"}
-            </button>
-          </div>
-        </div>
+        <CartSummary itemCount={items.length} cartBoxes={cartBoxes} cartValue={cartValue} anyUnpriced={anyUnpriced}
+          mixedShade={mixedShade} mixedWarehouse={mixedWarehouse} cartWarehouses={cartWarehouses}
+          pending={pending} onSubmit={submit} />
       )}
 
-      {outOfStock.length > 0 && (
-        <>
-          <h2>ناموجودها</h2>
-          {/* دو گزینه‌ی متفاوت که راحت با هم اشتباه می‌شوند، پس تفاوتشان صریح گفته
-              می‌شود: یکی فقط خبر می‌دهد، دیگری واقعاً موجودی را نگه می‌دارد. */}
-          <div className="banner banner--info">
-            <Icon name="info" />
-            <span>
-              <strong>خبرم کن</strong>: به‌محض موجود شدن یک پیامک می‌گیری — ولی موجودی برایت
-              نگه داشته نمی‌شود و هرکس زودتر سفارش دهد می‌برد.<br />
-              <strong>نوبت بگیر</strong>: به‌ترتیبِ نوبت، به‌محض آزاد شدن موجودی همان تعداد
-              <strong> برایت رزرو می‌شود</strong>.
-            </span>
-          </div>
-          {outOfStock.map((v) => {
-            const on = subscribed.includes(v.variantId);
-            const q = queue.find((w) => w.variantId === v.variantId);
-            const qty = Number(queueQty[v.variantId]);
-            return (
-              <div className="card" key={v.variantId}>
-                <div className="row">
-                  <span><strong>{v.name}</strong> <span className="subtle">{v.code}</span></span>
-                  <button className={on ? "primary" : "ghost"} disabled={alertPending === v.variantId}
-                    aria-busy={alertPending === v.variantId}
-                    onClick={() => toggleAlert(v.variantId, !on)}>
-                    {alertPending === v.variantId
-                      ? <span className="spinner" aria-hidden="true" />
-                      : <Icon name="bell" />}
-                    {on ? "خبرم بده (فعال)" : "خبرم کن"}
-                  </button>
-                </div>
-
-                {q ? (
-                  <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
-                    <span className="badge badge--ok">
-                      <Icon name="queue" size={13} />
-                      نفر {money(q.position)} · {money(q.quantityBoxes)} کارتن
-                    </span>
-                    <button className="ghost" disabled={queuePending === v.variantId}
-                      aria-busy={queuePending === v.variantId}
-                      onClick={() => leaveQueue(v.variantId)}>
-                      {queuePending === v.variantId && <span className="spinner" aria-hidden="true" />}
-                      انصراف از نوبت
-                    </button>
-                  </div>
-                ) : (
-                  <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
-                    <label htmlFor={`wl-${v.variantId}`} className="sr-only">تعداد کارتن برای نوبتِ {v.name}</label>
-                    <input id={`wl-${v.variantId}`} type="number" min={1} inputMode="numeric" placeholder="تعداد کارتن"
-                      style={{ maxWidth: 150 }}
-                      value={queueQty[v.variantId] ?? ""}
-                      onChange={(e) => setQueueQty({ ...queueQty, [v.variantId]: e.target.value })} />
-                    <button disabled={queuePending === v.variantId || !(qty > 0)}
-                      aria-busy={queuePending === v.variantId}
-                      onClick={() => joinQueue(v.variantId)}>
-                      {queuePending === v.variantId && <span className="spinner" aria-hidden="true" />}
-                      نوبت بگیر
-                    </button>
-                  </div>
-                )}
-
-                {/* «کِی می‌رسد» — همان چیزی که در v1 کم بود. نماینده باید بتواند بین
-                    صبر کردن و گرفتنِ جایگزین انتخاب کند، و بدونِ تاریخ نمی‌تواند. */}
-                {(arrivals[v.variantId] ?? []).length > 0 && (
-                  <div className="banner banner--info" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
-                    <Icon name="clock" />
-                    <span>
-                      {(arrivals[v.variantId] ?? []).map((a, i) => (
-                        <div key={i}>
-                          <strong>{money(a.quantityBoxes)} کارتن</strong> در راه —
-                          حدودِ {formatJalaliDate(a.expectedAt)}
-                          {a.status === "planned"
-                            ? <span className="subtle"> (برنامه‌ریزی‌شده، هنوز قطعی نیست)</span>
-                            : <span className="subtle"> (قطعی‌شده)</span>}
-                        </div>
-                      ))}
-                    </span>
-                  </div>
-                )}
-
-                {/* جایگزین‌ها دقیقاً همین‌جا می‌آیند — جایی که نماینده تازه فهمیده
-                    کالا نیست. فرستادنش به بالای صفحه برای پیدا کردنِ مشابه، همان
-                    فروشی است که از دست می‌رود. */}
-                {(subs[v.variantId] ?? []).length > 0 && (
-                  <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
-                    <div className="muted" style={{ marginBottom: "var(--sp-2)" }}>به‌جایش موجود است:</div>
-                    {(subs[v.variantId] ?? []).map((s) => (
-                      <div className="row" key={s.variantId} style={{ marginBottom: "var(--sp-2)" }}>
-                        <span>
-                          <strong>{s.name}</strong> <span className="subtle">{s.code}</span>
-                          {s.grade ? <span className="subtle"> · درجه {s.grade}</span> : null}
-                          {/* منبعِ پیشنهاد صریح گفته می‌شود: «کارخانه گفته» با
-                              «سیستم حدس زده» برای نماینده یکی نیست. */}
-                          {s.note
-                            ? <div className="subtle">{s.note}</div>
-                            : s.source === "same_product"
-                              ? <div className="subtle">همین کالا با درجه‌ی دیگر</div>
-                              : null}
-                        </span>
-                        <span style={{ textAlign: "start" }}>
-                          <span className="metric">{money(s.available)}</span> <span className="muted">کارتن</span>
-                          {s.unitPrice !== null && (
-                            <div className="subtle num">{money(s.unitPrice)} ریال / کارتن</div>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </>
-      )}
+      <OutOfStockSection outOfStock={outOfStock} subscribed={subscribed} queue={queue} queueQty={queueQty}
+        alertPending={alertPending} queuePending={queuePending} subs={subs} arrivals={arrivals}
+        onToggleAlert={toggleAlert} onJoinQueue={joinQueue} onLeaveQueue={leaveQueue}
+        onQueueQtyChange={(variantId, v) => setQueueQty((q) => ({ ...q, [variantId]: v }))} />
 
       {/* مودالِ جزئیاتِ محصول: گالری + ویژگی‌ها + توضیحات. کلیک روی پس‌زمینه یا Esc می‌بندد. */}
       {preview && (

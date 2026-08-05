@@ -2,51 +2,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
-import Link from "next/link";
-import { remainingTime } from "@/lib/date";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import NavMenu from "../NavMenu";
+import QueueSection, { type Resv, type Req } from "./QueueSection";
+import DispatchSection, { type Disp } from "./DispatchSection";
+import BackorderSection, { type Agent, type Variant, type Backorder } from "./BackorderSection";
 
 /** ارقامِ فارسی، همه‌جا یکسان. */
 const num = (v: number) => v.toLocaleString("fa-IR");
-/** معادلِ اعشاری (پالت/مترمربع) — برای دو رقمِ اعشار کافی، نه عددِ صحیح مثلِ کارتن. */
-const numUnit = (v: number) => v.toLocaleString("fa-IR", { maximumFractionDigits: 2 });
 /** صفِ رزرو/درخواست را هر چند وقت دوباره بخوان — همان الگوی «رزروهای من»ِ نماینده. */
 const QUEUE_REFRESH_MS = 60_000;
-
-type ResvItem = {
-  name: string; code: string; quantityBoxes: number;
-  /** برای نمایشِ معادلِ پالت/مترمربع کنارِ عددِ کارتن — بسته‌بندی مشخصه‌ی ثابتِ محصول است. */
-  boxesPerPallet: number | null; sqcmPerBox: number | null;
-};
-type Resv = { id: string; status: string; expiresAt: string; agentName: string; assignedStaffName: string | null; assignedStaffPhone: string | null; items: ResvItem[] };
-type Req = {
-  id: string; status: string; agentName: string; approvalMode: "manual" | "auto";
-  assignedStaffName: string | null; assignedStaffPhone: string | null;
-  items: { name: string; code: string; qty: number }[];
-};
-type Disp = { id: string; dispatchCode: string; status: string; customerName: string | null; items: number; warehouseName: string | null };
-type Agent = { id: string; legalName: string };
-type Variant = { id: string; name: string; code: string; sku: string };
-type Backorder = { id: string; status: string; qty: number; name: string; code: string; dispatchCode: string; agentName: string };
-
-const NEXT: Record<string, string[]> = {
-  registered: ["ready_for_loading", "cancelled"],
-  ready_for_loading: ["loaded", "cancelled"],
-  loaded: ["delivered"],
-  delivered: [], cancelled: [],
-};
-const FA: Record<string, string> = {
-  registered: "ثبت‌شده", ready_for_loading: "آماده بارگیری", loaded: "بارگیری‌شده",
-  delivered: "تحویل‌شده", cancelled: "لغوشده",
-};
-const BO_NEXT: Record<string, string[]> = {
-  pending_production: ["ready", "cancelled"], ready: ["fulfilled", "cancelled"], fulfilled: [], cancelled: [],
-};
-const BO_FA: Record<string, string> = {
-  pending_production: "در انتظار تولید", ready: "آماده", fulfilled: "تحویل‌شده", cancelled: "لغوشده",
-};
 
 /** بوقِ کوتاهِ دوتُنی — بدونِ فایلِ صوتی/کتابخانه، فقط Web Audio API. */
 function playChime() {
@@ -354,184 +320,19 @@ export default function StaffPage() {
       {/* دو ستون: راست = کارهایی که منتظرِ تصمیم‌اند، چپ = چیزهایی که پیگیری می‌شوند */}
       <div className="cols">
       <div className="col">
-
-      {/* صفِ کار: چیزی که پشتیبان برای آن وارد شده، پس اول می‌آید و شمارشش
-          روی تیتر است تا بدون اسکرول معلوم باشد چقدر کار مانده. */}
-      <h2>
-        رزروهای در انتظار تأیید
-        {pendingResvs.length > 0 && <span className="badge badge--warn">{num(pendingResvs.length)}</span>}
-      </h2>
-      {loaded && !loadErr && pendingResvs.length === 0 && <p className="empty">رزروِ فعالی برای تأیید نیست.</p>}
-      {pendingResvs.map((r) => {
-        // مهلتِ باقی‌مانده تا انقضا — صف حالا با همین ترتیب دارد (زودترین انقضا اول)،
-        // پس دیدنِ خودِ عدد هم لازم است، وگرنه ترتیب بی‌توضیح می‌ماند.
-        const rem = remainingTime(r.expiresAt);
-        return (
-        <div className={highlightResv.has(r.id) ? "card card--new" : "card"} key={r.id}>
-          <div className="row">
-            <strong>{r.agentName}</strong>
-            <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
-              {highlightResv.has(r.id) && <span className="badge badge--warn">تازه</span>}
-              {/* پشتیبانِ ثابت: پورسانتِ این سفارش دستِ کیست — هر staffی که صف را می‌بیند باید بداند */}
-              {(r.assignedStaffName || r.assignedStaffPhone) && (
-                <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
-              )}
-              <span className={rem.low ? "err" : "subtle"} style={{ display: "inline-flex", gap: ".3em", alignItems: "center" }}>
-                <Icon name="clock" size={13} />{rem.text}{!rem.low ? " مانده" : ""}
-              </span>
-            </span>
-          </div>
-          <div className="muted">
-            {/* معادلِ پالت/مترمربع کنارِ هر قلم — سنجشِ سریعِ سفارش‌های بزرگ بدونِ محاسبه‌ی ذهنی */}
-            {r.items.map((i, idx) => (
-              <span key={idx}>
-                {idx > 0 && "، "}
-                {i.name} ×{num(i.quantityBoxes)}
-                {(i.boxesPerPallet || i.sqcmPerBox) && (
-                  <span className="subtle">
-                    {" ("}
-                    {i.boxesPerPallet && `${numUnit(i.quantityBoxes / i.boxesPerPallet)} پالت`}
-                    {i.boxesPerPallet && i.sqcmPerBox && "، "}
-                    {i.sqcmPerBox && `${numUnit((i.quantityBoxes * i.sqcmPerBox) / 10000)} مترمربع`}
-                    {")"}
-                  </span>
-                )}
-              </span>
-            ))}
-          </div>
-          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
-            <button className="primary" onClick={() => approve(r.id)}
-              disabled={pending === "approve" + r.id} aria-busy={pending === "approve" + r.id}>
-              {pending === "approve" + r.id && <span className="spinner" aria-hidden="true" />}تأیید
-            </button>
-            <button className="ghost" onClick={() => cancelResv(r.id)}
-              disabled={pending === "cancel" + r.id} aria-busy={pending === "cancel" + r.id}>
-              {pending === "cancel" + r.id && <span className="spinner" aria-hidden="true" />}لغو
-            </button>
-          </div>
-        </div>
-        );
-      })}
-
-      <h2>
-        درخواست‌های تأییدشده
-        {reqs.length > 0 && <span className="badge">{num(reqs.length)}</span>}
-      </h2>
-      {loaded && !loadErr && reqs.length === 0 && <p className="empty">درخواست تأییدشده‌ای برای حواله نیست.</p>}
-      {reqs.map((r) => (
-        <div className={highlightReq.has(r.id) ? "card card--new" : "card"} key={r.id}>
-          <div className="row">
-            <strong>{r.agentName}</strong>
-            <span className="row row--start" style={{ gap: "var(--sp-2)" }}>
-              {highlightReq.has(r.id) && <span className="badge badge--warn">تازه</span>}
-              {(r.assignedStaffName || r.assignedStaffPhone) && (
-                <span className="subtle">پشتیبان: {r.assignedStaffName ?? r.assignedStaffPhone}</span>
-              )}
-              {/* پشتیبان باید ببیند کدام سفارش بدونِ او تأیید شده — وگرنه فیچر بی‌سروصدا کار می‌کند */}
-              {r.approvalMode === "auto" && <span className="badge badge--ok">تأیید خودکار (زیر سقف)</span>}
-            </span>
-          </div>
-          <div className="muted">{r.items.map((i) => `${i.name} ×${num(i.qty)}`).join("، ")}</div>
-          <div className="row row--start" style={{ marginTop: "var(--sp-3)" }}>
-            <button onClick={() => makeDispatch(r.id)} disabled={pending === r.id} aria-busy={pending === r.id}>
-              {pending === r.id && <span className="spinner" aria-hidden="true" />}ساخت حواله
-            </button>
-          </div>
-        </div>
-      ))}
-
+        <QueueSection pendingResvs={pendingResvs} reqs={reqs} highlightResv={highlightResv} highlightReq={highlightReq}
+          pending={pending} onApprove={approve} onCancel={cancelResv} onMakeDispatch={makeDispatch}
+          loaded={loaded} loadErr={loadErr} />
       </div>{/* /col — کارهای در انتظار تصمیم */}
       <div className="col">
-
-      <h2>حواله‌ها</h2>
-      <input type="search" aria-label="جستجوی حواله" placeholder="جستجو: کدِ حواله، مشتری، نمایندگی…"
-        value={dispsQ} onChange={(e) => searchDispatches(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
-      {loaded && !loadErr && disps.length === 0 && <p className="empty">{dispsQ ? "چیزی پیدا نشد." : "حواله‌ای نیست."}</p>}
-      {disps.map((d) => (
-        <div className="card" key={d.id}>
-          <div className="row">
-            <strong className="num">{d.dispatchCode}</strong>
-            <span className="row row--start" style={{ gap: "var(--sp-1)" }}>
-              {/* انبار badge است نه متن: انباردار باید با یک نگاه بفهمد این حواله مالِ اوست */}
-              {d.warehouseName && <span className="badge"><Icon name="warehouse" size={13} />{d.warehouseName}</span>}
-              <span className={`badge${d.status === "delivered" || d.status === "loaded" ? " badge--ok" : d.status === "cancelled" ? " badge--error" : ""}`}>
-                {FA[d.status] ?? d.status}
-              </span>
-              <span className="subtle">{num(d.items)} قلم</span>
-            </span>
-          </div>
-          {d.customerName && <div className="muted">{d.customerName}</div>}
-          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
-            {(NEXT[d.status] ?? []).map((s) => (
-              <button key={s} className={s === "cancelled" ? "danger" : s === "loaded" ? "primary" : undefined}
-                onClick={() => advance(d.id, s)} disabled={pending === d.id + s} aria-busy={pending === d.id + s}>
-                {pending === d.id + s && <span className="spinner" aria-hidden="true" />}{FA[s]}
-              </button>
-            ))}
-            {/* انباردار روی کاغذ کار می‌کند نه صفحه‌نمایش — لینکِ برگه‌ی چاپی همیشه در دسترس است، حتی حواله‌ی نهایی‌شده */}
-            <Link href={`/staff/dispatch/${d.id}/print`} target="_blank">
-              <button type="button"><Icon name="printer" size={13} />چاپ</button>
-            </Link>
-          </div>
-        </div>
-      ))}
-      {dispsHasMore && (
-        <button onClick={loadMoreDispatches} aria-busy={dispsBusy} disabled={dispsBusy} style={{ width: "100%" }}>
-          {dispsBusy && <span className="spinner" aria-hidden="true" />}بیشتر
-        </button>
-      )}
-
-      <h2>Backorder (محصول ناموجود)</h2>
-      <div className="card">
-        <label htmlFor="bo-agent">ثبت backorder جدید</label>
-        <div className="row row--start" style={{ gap: "var(--sp-2)" }}>
-          <select id="bo-agent" aria-label="نمایندگی" value={boAgent} onChange={(e) => setBoAgent(e.target.value)}
-            style={{ maxWidth: 200 }}>
-            <option value="">نمایندگی…</option>
-            {agents.map((a) => <option key={a.id} value={a.id}>{a.legalName}</option>)}
-          </select>
-          <select aria-label="کالا" value={boVariant} onChange={(e) => setBoVariant(e.target.value)}
-            style={{ maxWidth: 240 }}>
-            <option value="">کالا…</option>
-            {variants.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
-          </select>
-          <input type="number" min={1} placeholder="کارتن" aria-label="تعداد کارتن" value={boQty}
-            onChange={(e) => setBoQty(e.target.value)} style={{ maxWidth: 110 }} />
-          <button onClick={createBackorder} aria-busy={pending === "bo-create"}
-            disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
-            {pending === "bo-create" && <span className="spinner" aria-hidden="true" />}ثبت
-          </button>
-        </div>
-      </div>
-      <input type="search" aria-label="جستجوی backorder" placeholder="جستجو: کالا، کد، نمایندگی، کدِ حواله…"
-        value={boListQ} onChange={(e) => searchBackorders(e.target.value)} style={{ marginBottom: "var(--sp-3)" }} />
-      {loaded && !loadErr && backorders.length === 0 && <p className="empty">{boListQ ? "چیزی پیدا نشد." : "backorderی نیست."}</p>}
-      {backorders.map((b) => (
-        <div className="card" key={b.id}>
-          <div className="row">
-            <strong>{b.name} <span className="subtle">{b.code}</span> ×{num(b.qty)}</strong>
-            <span className={`badge${b.status === "fulfilled" ? " badge--ok" : b.status === "cancelled" ? " badge--error" : " badge--warn"}`}>
-              {BO_FA[b.status] ?? b.status}
-            </span>
-          </div>
-          <div className="muted">{b.agentName} · <span className="num">{b.dispatchCode}</span></div>
-          <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
-            {(BO_NEXT[b.status] ?? []).map((s) => (
-              <button key={s} className={s === "cancelled" ? "danger" : s === "fulfilled" ? "primary" : undefined}
-                onClick={() => advanceBackorder(b.id, s)} disabled={pending === "bo" + b.id + s}
-                aria-busy={pending === "bo" + b.id + s}>
-                {pending === "bo" + b.id + s && <span className="spinner" aria-hidden="true" />}{BO_FA[s]}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      {boHasMore && (
-        <button onClick={loadMoreBackorders} aria-busy={boBusy} disabled={boBusy} style={{ width: "100%" }}>
-          {boBusy && <span className="spinner" aria-hidden="true" />}بیشتر
-        </button>
-      )}
-
+        <DispatchSection disps={disps} dispsQ={dispsQ} dispsHasMore={dispsHasMore} dispsBusy={dispsBusy}
+          onSearch={searchDispatches} onLoadMore={loadMoreDispatches} onAdvance={advance}
+          pending={pending} loaded={loaded} loadErr={loadErr} />
+        <BackorderSection agents={agents} variants={variants} boAgent={boAgent} boVariant={boVariant} boQty={boQty}
+          onAgentChange={setBoAgent} onVariantChange={setBoVariant} onQtyChange={setBoQty} onCreate={createBackorder}
+          backorders={backorders} boListQ={boListQ} boHasMore={boHasMore} boBusy={boBusy}
+          onSearch={searchBackorders} onLoadMore={loadMoreBackorders} onAdvance={advanceBackorder}
+          pending={pending} loaded={loaded} loadErr={loadErr} />
       </div>{/* /col — پیگیری */}
       </div>{/* /cols */}
     </main>
