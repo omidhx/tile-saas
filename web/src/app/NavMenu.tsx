@@ -65,6 +65,7 @@ const GROUPS: Group[] = [
       { href: "/staff/team?tab=agents", label: "نمایندگی‌ها", adminOnly: true },
       { href: "/staff/team?tab=warehouses", label: "انبارها", adminOnly: true },
       { href: "/staff/team?tab=auto-approve", label: "تأیید خودکار", pageKey: "auto-approve" },
+      { href: "/staff/team?tab=settings", label: "تنظیماتِ کارخانه", adminOnly: true },
     ],
   },
   {

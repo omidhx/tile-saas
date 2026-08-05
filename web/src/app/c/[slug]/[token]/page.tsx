@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { getPublicCatalog } from "@/db/sharedCatalog";
 import CatalogView from "./CatalogView";
 
@@ -29,9 +30,15 @@ export default async function PublicCatalogPage(
 
   return (
     <main>
-      <div style={{ marginBottom: "var(--sp-4)" }}>
-        <h1 style={{ marginBottom: "var(--sp-1)" }}>{data.title}</h1>
-        <p className="muted" style={{ margin: 0 }}>{data.tenantName}</p>
+      <div className="row row--start" style={{ marginBottom: "var(--sp-4)", gap: "var(--sp-3)" }}>
+        {data.tenantLogoUrl && (
+          <Image src={data.tenantLogoUrl} alt={data.tenantName} width={56} height={56}
+            style={{ borderRadius: "var(--radius-sm)", objectFit: "contain" }} />
+        )}
+        <div>
+          <h1 style={{ marginBottom: "var(--sp-1)" }}>{data.title}</h1>
+          <p className="muted" style={{ margin: 0 }}>{data.tenantName}</p>
+        </div>
       </div>
 
       {data.items.length === 0

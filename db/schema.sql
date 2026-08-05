@@ -90,6 +90,9 @@ CREATE TABLE tenant (
     slug                        TEXT NOT NULL UNIQUE,
     is_active                   BOOLEAN NOT NULL DEFAULT TRUE,
     default_reservation_ttl_hours INT NOT NULL DEFAULT 24,   -- بخش ۷.۸ پیش‌فرض ۲۴ ساعت
+    -- v9 تنظیماتِ کارخانه: لوگو برای کاتالوگِ عمومیِ مشتری (spec ۷.۸، «لوگو»).
+    -- NULL یعنی هنوز آپلود نشده — همان‌جا فقط نامِ کارخانه نشان داده می‌شود.
+    logo_url                    TEXT,
     track_shade_caliber         TEXT NOT NULL DEFAULT 'optional'
         CHECK (track_shade_caliber IN ('off','optional','required')),  -- بخش ۷.۱ پیش‌فرض optional
     -- v2 «تأیید هیبریدی» (بخش ۹): سقفِ ارزشِ سفارش که زیرش رزرو خودکار تأیید می‌شود.

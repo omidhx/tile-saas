@@ -126,8 +126,8 @@ export async function deleteCatalog(p: { tenantId: string; agentAccountId: strin
  * «قیمتِ منِ» نماینده و نه عددِ دقیقِ موجودی.
  */
 export async function getPublicCatalog(p: { slug: string; token: string }) {
-  const [t] = await sql<{ id: string; name: string }[]>`
-    SELECT id, name FROM tenant WHERE slug = ${p.slug} AND is_active = true`;
+  const [t] = await sql<{ id: string; name: string; logoUrl: string | null }[]>`
+    SELECT id, name, logo_url AS "logoUrl" FROM tenant WHERE slug = ${p.slug} AND is_active = true`;
   if (!t) return null;
   return withTenant(t.id, async (tx) => {
     const [cat] = await tx<{ id: string; title: string; showDetails: boolean }[]>`
@@ -161,6 +161,6 @@ export async function getPublicCatalog(p: { slug: string; token: string }) {
       usageArea: cat.showDetails ? r.usageArea : null,
       description: cat.showDetails ? r.description : null,
     }));
-    return { tenantName: t.name, title: cat.title, showDetails: cat.showDetails, items };
+    return { tenantName: t.name, tenantLogoUrl: t.logoUrl, title: cat.title, showDetails: cat.showDetails, items };
   });
 }

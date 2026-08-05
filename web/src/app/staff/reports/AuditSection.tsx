@@ -20,6 +20,7 @@ const ACTION_FA: Record<string, string> = {
   "auto_approve_limit.agent": "سقف تأیید خودکار — نمایندگی",
   "product.edit": "ویرایشِ محصول",
   "customer.edit": "ویرایشِ مشتری",
+  "tenant_settings.edit": "تنظیماتِ کارخانه",
 };
 
 const FIELD_FA: Record<string, string> = {
@@ -27,6 +28,7 @@ const FIELD_FA: Record<string, string> = {
   size: "ابعاد", thickness: "ضخامت", usageArea: "کاربری", description: "توضیحات",
   boxesPerPallet: "کارتن در پالت", sqcmPerBox: "متراژِ کارتن",
   phone: "شماره تماس", note: "یادداشت", isActive: "فعال",
+  ttlHours: "مدتِ اعتبارِ رزرو (ساعت)", logoUrl: "لوگو",
 };
 
 const fieldVal = (v: string | number | boolean | null) =>

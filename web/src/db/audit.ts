@@ -35,7 +35,8 @@ export type AuditAction =
   | "auto_approve_limit.tenant"
   | "auto_approve_limit.agent"
   | "product.edit"
-  | "customer.edit";
+  | "customer.edit"
+  | "tenant_settings.edit";
 
 export async function writeAudit(
   tx: TransactionSql,
