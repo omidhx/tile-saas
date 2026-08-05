@@ -10,7 +10,7 @@ import Icon from "../Icon";
 import { formatJalaliDate } from "@/lib/date";
 import { matches, normalize } from "@/lib/search";
 import { hideOnError } from "@/lib/img";
-import { useEscapeClose } from "@/lib/useEscapeClose";
+import { ImageGalleryModal } from "../ImageGalleryModal";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -170,7 +170,6 @@ export default function ReservePage() {
   const [galleryIdx, setGalleryIdx] = useState(0);
   const openPreview = (l: Lot) => { setPreviewId(l.lot_id); setGalleryIdx(0); };
   const preview = lots.find((l) => l.lot_id === previewId) ?? null;
-  const closeBtnRef = useRef<HTMLButtonElement>(null);
   const [subs, setSubs] = useState<Record<string, Substitute[]>>({});
   const [arrivals, setArrivals] = useState<Record<string, Arrival[]>>({});
   const [loadErr, setLoadErr] = useState("");
@@ -260,9 +259,6 @@ export default function ReservePage() {
 
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
   useEffect(() => { if (ctx) { setCart({}); loadLots(ctx); } }, [ctx, loadLots]);
-
-  // Esc می‌بندد + فوکوس روی دکمه‌ی بستن — دسترسی‌پذیریِ پایه برای هر دیالوگ
-  useEscapeClose(!!previewId, () => setPreviewId(null), closeBtnRef);
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));
@@ -686,65 +682,41 @@ export default function ReservePage() {
       )}
 
       {/* مودالِ جزئیاتِ محصول: گالری + ویژگی‌ها + توضیحات. کلیک روی پس‌زمینه یا Esc می‌بندد. */}
-      {preview && (() => {
-        const gallery = preview.images.length ? preview.images.map((i) => i.url)
-          : preview.image_url ? [preview.image_url] : [];
-        const main = gallery[galleryIdx] ?? gallery[0];
-        return (
-        <div className="modal-backdrop" onClick={() => setPreviewId(null)} role="dialog" aria-modal="true"
-             aria-label={`جزئیات ${preview.name}`}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+      {preview && (
+        <ImageGalleryModal title={preview.name}
+          gallery={preview.images.length ? preview.images.map((i) => i.url) : preview.image_url ? [preview.image_url] : []}
+          activeIndex={galleryIdx} onSelectIndex={setGalleryIdx} onClose={() => setPreviewId(null)}>
+          <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
+            <div className="row"><span className="muted">کد</span><span className="num">{preview.code}</span></div>
+            {preview.color && <div className="row"><span className="muted">رنگ</span><span>{preview.color}</span></div>}
+            {preview.glaze && <div className="row"><span className="muted">لعاب</span><span>{preview.glaze}</span></div>}
+            {preview.punch && <div className="row"><span className="muted">پانچ</span><span>{preview.punch}</span></div>}
+            {preview.body && <div className="row"><span className="muted">بدنه</span><span>{preview.body}</span></div>}
+            {preview.size && <div className="row"><span className="muted">ابعاد</span><span>{preview.size}</span></div>}
+            {preview.thickness && <div className="row"><span className="muted">ضخامت</span><span>{preview.thickness}</span></div>}
+            {preview.usage_area && <div className="row"><span className="muted">کاربری</span><span>{preview.usage_area}</span></div>}
+            {preview.grade && <div className="row"><span className="muted">درجه</span><span>{preview.grade}</span></div>}
+            {preview.shade_code && <div className="row"><span className="muted">شید</span><span>{preview.shade_code}</span></div>}
+            {preview.caliber_code && <div className="row"><span className="muted">کالیبر</span><span>{preview.caliber_code}</span></div>}
             <div className="row">
-              <strong>{preview.name}</strong>
-              <button ref={closeBtnRef} className="ghost" onClick={() => setPreviewId(null)} aria-label="بستن">✕</button>
+              <span className="muted">قابل‌سفارش</span>
+              <span className="metric">{money(preview.available)} کارتن</span>
             </div>
-            {main && (
-              <Image onError={hideOnError} src={main} alt={preview.name} className="modal-img"
-                width={800} height={600} style={{ width: "100%", height: "auto" }} />
-            )}
-            {gallery.length > 1 && (
-              <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
-                {gallery.map((u, i) => (
-                  <button key={i} className={`gallery-item ${i === galleryIdx ? "gallery-item--primary" : ""}`}
-                          onClick={() => setGalleryIdx(i)} aria-label={`عکس ${i + 1}`}>
-                    <Image onError={hideOnError} src={u} alt="" loading="lazy" width={72} height={72} />
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
-              <div className="row"><span className="muted">کد</span><span className="num">{preview.code}</span></div>
-              {preview.color && <div className="row"><span className="muted">رنگ</span><span>{preview.color}</span></div>}
-              {preview.glaze && <div className="row"><span className="muted">لعاب</span><span>{preview.glaze}</span></div>}
-              {preview.punch && <div className="row"><span className="muted">پانچ</span><span>{preview.punch}</span></div>}
-              {preview.body && <div className="row"><span className="muted">بدنه</span><span>{preview.body}</span></div>}
-              {preview.size && <div className="row"><span className="muted">ابعاد</span><span>{preview.size}</span></div>}
-              {preview.thickness && <div className="row"><span className="muted">ضخامت</span><span>{preview.thickness}</span></div>}
-              {preview.usage_area && <div className="row"><span className="muted">کاربری</span><span>{preview.usage_area}</span></div>}
-              {preview.grade && <div className="row"><span className="muted">درجه</span><span>{preview.grade}</span></div>}
-              {preview.shade_code && <div className="row"><span className="muted">شید</span><span>{preview.shade_code}</span></div>}
-              {preview.caliber_code && <div className="row"><span className="muted">کالیبر</span><span>{preview.caliber_code}</span></div>}
+            {preview.unitPrice !== null && (
               <div className="row">
-                <span className="muted">قابل‌سفارش</span>
-                <span className="metric">{money(preview.available)} کارتن</span>
-              </div>
-              {preview.unitPrice !== null && (
-                <div className="row">
-                  <span className="muted">قیمت من</span>
-                  <span className="metric">{money(preview.unitPrice)} ریال / کارتن</span>
-                </div>
-              )}
-            </div>
-            {preview.description && (
-              <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
-                <div className="muted" style={{ marginBottom: "var(--sp-1)" }}>توضیحات</div>
-                <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{preview.description}</p>
+                <span className="muted">قیمت من</span>
+                <span className="metric">{money(preview.unitPrice)} ریال / کارتن</span>
               </div>
             )}
           </div>
-        </div>
-        );
-      })()}
+          {preview.description && (
+            <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+              <div className="muted" style={{ marginBottom: "var(--sp-1)" }}>توضیحات</div>
+              <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{preview.description}</p>
+            </div>
+          )}
+        </ImageGalleryModal>
+      )}
     </main>
   );
 }

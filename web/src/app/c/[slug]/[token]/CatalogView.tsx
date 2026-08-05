@@ -1,9 +1,9 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import type { PublicItem } from "@/db/sharedCatalog";
 import { hideOnError } from "@/lib/img";
-import { useEscapeClose } from "@/lib/useEscapeClose";
+import { ImageGalleryModal } from "@/app/ImageGalleryModal";
 
 // نمای کاتالوگِ مشتری: گرید + پاپ‌آپِ گالری/جزئیات. کلاینت چون کلیک و مودال لازم دارد.
 const money = (v: number) => v.toLocaleString("fa-IR");
@@ -11,12 +11,7 @@ const money = (v: number) => v.toLocaleString("fa-IR");
 export default function CatalogView({ items }: { items: PublicItem[] }) {
   const [open, setOpen] = useState<PublicItem | null>(null);
   const [idx, setIdx] = useState(0);
-  const closeBtnRef = useRef<HTMLButtonElement>(null);
   const show = (it: PublicItem) => { setOpen(it); setIdx(0); };
-
-  // Esc می‌بندد + فوکوس روی دکمه‌ی بستن — این صفحه را مشتریِ بدونِ‌لاگین هم
-  // می‌بیند، پس دسترسی‌پذیریِ کیبورد اینجا مهم‌تر هم هست.
-  useEscapeClose(!!open, () => setOpen(null), closeBtnRef);
 
   const gallery = (it: PublicItem) => it.images.length ? it.images.map((i) => i.url) : it.imageUrl ? [it.imageUrl] : [];
   const specs = (it: PublicItem) => [it.color, it.glaze, it.punch, it.body].filter(Boolean).join(" · ");
@@ -47,57 +42,33 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
         ))}
       </div>
 
-      {open && (() => {
-        const g = gallery(open);
-        const main = g[idx] ?? g[0];
-        return (
-          <div className="modal-backdrop" onClick={() => setOpen(null)} role="dialog" aria-modal="true"
-               aria-label={`جزئیاتِ ${open.name}`}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <div className="row">
-                <strong>{open.name}</strong>
-                <button ref={closeBtnRef} className="ghost" onClick={() => setOpen(null)} aria-label="بستن">✕</button>
-              </div>
-              {main && (
-                <Image onError={hideOnError} src={main} alt={open.name} className="modal-img"
-                  width={800} height={600} style={{ width: "100%", height: "auto" }} />
-              )}
-              {g.length > 1 && (
-                <div className="gallery" style={{ marginTop: "var(--sp-2)" }}>
-                  {g.map((u, i) => (
-                    <button key={i} className={`gallery-item ${i === idx ? "gallery-item--primary" : ""}`}
-                            onClick={() => setIdx(i)} aria-label={`عکس ${i + 1}`}>
-                      <Image onError={hideOnError} src={u} alt="" loading="lazy" width={72} height={72} />
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
-                <div className="row"><span className="muted">کد</span><span className="num">{open.code}</span></div>
-                <div className="row"><span className="muted">وضعیت</span>
-                  <span className={`badge ${open.inStock ? "badge--ok" : "badge--warn"}`}>{open.inStock ? "موجود" : "ناموجود"}</span></div>
-                {open.color && <div className="row"><span className="muted">رنگ</span><span>{open.color}</span></div>}
-                {open.glaze && <div className="row"><span className="muted">لعاب</span><span>{open.glaze}</span></div>}
-                {open.punch && <div className="row"><span className="muted">پانچ</span><span>{open.punch}</span></div>}
-                {open.body && <div className="row"><span className="muted">بدنه</span><span>{open.body}</span></div>}
-                {open.size && <div className="row"><span className="muted">ابعاد</span><span>{open.size}</span></div>}
-                {open.thickness && <div className="row"><span className="muted">ضخامت</span><span>{open.thickness}</span></div>}
-                {open.usageArea && <div className="row"><span className="muted">کاربری</span><span>{open.usageArea}</span></div>}
-                {open.customerPrice != null && (
-                  <div className="row"><span className="muted">قیمت</span>
-                    <span className="metric">{money(open.customerPrice)} ریال / مترمربع</span></div>
-                )}
-              </div>
-              {open.description && (
-                <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
-                  <div className="muted" style={{ marginBottom: "var(--sp-1)" }}>توضیحات</div>
-                  <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{open.description}</p>
-                </div>
-              )}
-            </div>
+      {open && (
+        <ImageGalleryModal title={open.name} gallery={gallery(open)} activeIndex={idx}
+          onSelectIndex={setIdx} onClose={() => setOpen(null)}>
+          <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
+            <div className="row"><span className="muted">کد</span><span className="num">{open.code}</span></div>
+            <div className="row"><span className="muted">وضعیت</span>
+              <span className={`badge ${open.inStock ? "badge--ok" : "badge--warn"}`}>{open.inStock ? "موجود" : "ناموجود"}</span></div>
+            {open.color && <div className="row"><span className="muted">رنگ</span><span>{open.color}</span></div>}
+            {open.glaze && <div className="row"><span className="muted">لعاب</span><span>{open.glaze}</span></div>}
+            {open.punch && <div className="row"><span className="muted">پانچ</span><span>{open.punch}</span></div>}
+            {open.body && <div className="row"><span className="muted">بدنه</span><span>{open.body}</span></div>}
+            {open.size && <div className="row"><span className="muted">ابعاد</span><span>{open.size}</span></div>}
+            {open.thickness && <div className="row"><span className="muted">ضخامت</span><span>{open.thickness}</span></div>}
+            {open.usageArea && <div className="row"><span className="muted">کاربری</span><span>{open.usageArea}</span></div>}
+            {open.customerPrice != null && (
+              <div className="row"><span className="muted">قیمت</span>
+                <span className="metric">{money(open.customerPrice)} ریال / مترمربع</span></div>
+            )}
           </div>
-        );
-      })()}
+          {open.description && (
+            <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+              <div className="muted" style={{ marginBottom: "var(--sp-1)" }}>توضیحات</div>
+              <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{open.description}</p>
+            </div>
+          )}
+        </ImageGalleryModal>
+      )}
     </>
   );
 }
