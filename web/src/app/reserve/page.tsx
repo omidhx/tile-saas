@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
@@ -260,47 +260,63 @@ export default function ReservePage() {
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
   useEffect(() => { if (ctx) { setCart({}); loadLots(ctx); } }, [ctx, loadLots]);
 
-  const items = Object.entries(cart).filter(([, q]) => q > 0);
-  const shades = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean));
+  // این‌ها همه از cart/lots مشتق می‌شوند و بدونِ useMemo در هر رندر از نو
+  // محاسبه می‌شدند — یعنی هر keystrokeِ QtyPicker (که به‌ازای هر رقم parent را
+  // رندر می‌کند) کل فهرستِ lots را چند بار filter/map/find می‌زد. با کاتالوگِ
+  // بزرگ محسوس می‌شود؛ با useMemo فقط وقتی cart یا lots واقعاً عوض شود دوباره می‌رود.
+  const items = useMemo(() => Object.entries(cart).filter(([, q]) => q > 0), [cart]);
+
+  const shades = useMemo(() =>
+    new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.shade_code).filter(Boolean)),
+    [items, lots]);
   const mixedShade = shades.size > 1; // spec ۷.۲: هشدار نرم، نه منع
 
   // فهرستِ انبارها از خودِ اقلام ساخته می‌شود، نه یک کوئریِ جدا: انباری که چیزی
   // برای سفارش ندارد، فیلترِ بی‌نتیجه می‌سازد.
-  const warehouses = [...new Map(lots.map((l) => [l.warehouse_id, l.warehouse_name])).entries()];
+  const warehouses = useMemo(() =>
+    [...new Map(lots.map((l) => [l.warehouse_id, l.warehouse_name])).entries()],
+    [lots]);
 
   // مقدارهای یکتای هر ویژگی، فقط از اقلامِ موجود — تا فیلترِ بی‌نتیجه ساخته نشود.
   // دراپ‌داون فقط وقتی نشان داده می‌شود که ۲ مقدار یا بیشتر باشد (یک مقدار فیلترِ بی‌فایده است).
-  const distinct = (key: "color" | "glaze" | "punch" | "body") =>
-    [...new Set(lots.map((l) => l[key]).filter((v): v is string => !!v))].sort();
-  const attrOpts = { color: distinct("color"), glaze: distinct("glaze"), punch: distinct("punch"), body: distinct("body") };
+  const attrOpts = useMemo(() => {
+    const distinct = (key: "color" | "glaze" | "punch" | "body") =>
+      [...new Set(lots.map((l) => l[key]).filter((v): v is string => !!v))].sort();
+    return { color: distinct("color"), glaze: distinct("glaze"), punch: distinct("punch"), body: distinct("body") };
+  }, [lots]);
   const attrActive = attr.color || attr.glaze || attr.punch || attr.body;
 
   // جستجو روی نام/کد/شید/کالیبر (spec ۱۱.۲). نرمال‌سازیِ ارقام و حروف در lib/search.
-  const visibleLots = lots.filter((l) =>
+  const visibleLots = useMemo(() => lots.filter((l) =>
     (!whFilter || l.warehouse_id === whFilter)
     && (!attr.color || l.color === attr.color)
     && (!attr.glaze || l.glaze === attr.glaze)
     && (!attr.punch || l.punch === attr.punch)
     && (!attr.body || l.body === attr.body)
-    && matches(query, [l.name, l.code, l.grade, l.shade_code, l.caliber_code]));
+    && matches(query, [l.name, l.code, l.grade, l.shade_code, l.caliber_code])),
+    [lots, whFilter, attr, query]);
 
   // سفارشِ دوانباره ممنوع نیست — فقط دو حواله می‌شود. هشدارِ نرم، مثل شیدِ مخلوط،
   // چون یک کامیون نمی‌تواند از دو انبار بار بزند و نماینده باید از قبل بداند.
-  const cartWarehouses = new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.warehouse_name).filter(Boolean));
+  const cartWarehouses = useMemo(() =>
+    new Set(items.map(([id]) => lots.find((l) => l.lot_id === id)?.warehouse_name).filter(Boolean)),
+    [items, lots]);
   const mixedWarehouse = cartWarehouses.size > 1;
 
   // جمعِ زنده‌ی سبد. برای کسی که تلفنی با مشتری هماهنگ می‌کند «الان چقدر شد؟»
   // سؤالِ لحظه‌به‌لحظه است. این فقط برآوردِ نمایشی است — قیمتِ قطعی در لحظه‌ی
   // **تأیید** snapshot می‌شود (تخفیفِ حجمی هم آنجا)، نه اینجا؛ پس صریح «تقریبی»
   // گفته می‌شود تا با فاکتور اشتباه نشود.
-  const cartBoxes = items.reduce((s, [, q]) => s + q, 0);
-  let cartValue = 0;
-  let anyUnpriced = false;
-  for (const [id, q] of items) {
-    const lot = lots.find((l) => l.lot_id === id);
-    if (lot?.unitPrice != null) cartValue += lot.unitPrice * q;
-    else anyUnpriced = true;
-  }
+  const { cartBoxes, cartValue, anyUnpriced } = useMemo(() => {
+    let cartBoxes = 0, cartValue = 0, anyUnpriced = false;
+    for (const [id, q] of items) {
+      cartBoxes += q;
+      const lot = lots.find((l) => l.lot_id === id);
+      if (lot?.unitPrice != null) cartValue += lot.unitPrice * q;
+      else anyUnpriced = true;
+    }
+    return { cartBoxes, cartValue, anyUnpriced };
+  }, [items, lots]);
 
   async function submit() {
     if (!ctx || items.length === 0) return;
