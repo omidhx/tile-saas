@@ -7,6 +7,7 @@ import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import DeleteButton from "../DeleteButton";
+import MessageBanner from "../MessageBanner";
 import { matches, normalize } from "@/lib/search";
 
 type Item = { variantId: string; customerPrice: number | null };
@@ -152,11 +153,7 @@ export default function CatalogsPage() {
       </div>
 
       {loadErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>}
-      {msg && (
-        <div className={`banner banner--${msg.kind === "ok" ? "ok" : "error"}`} role="status">
-          <Icon name={msg.kind === "ok" ? "check" : "alert"} /><span>{msg.text}</span>
-        </div>
-      )}
+      <MessageBanner msg={msg} />
 
       <h2>{editingId ? "ویرایشِ کاتالوگ" : "کاتالوگ جدید"}</h2>
       <div className="card">
