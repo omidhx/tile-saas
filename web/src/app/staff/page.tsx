@@ -4,7 +4,7 @@ import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
-import NavMenu from "../NavMenu";
+import PageShell from "../PageShell";
 import QueueSection, { type Resv, type Req } from "./QueueSection";
 import DispatchSection, { type Disp } from "./DispatchSection";
 import BackorderSection, { type Agent, type Variant, type Backorder } from "./BackorderSection";
@@ -280,20 +280,19 @@ export default function StaffPage() {
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
+    <PageShell ctx={ctx}>
     <main className="wide">
       <div className="topbar">
         <div>
           <h1>پنل پشتیبان</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        {/* ده لینکِ تخت روی موبایل می‌پیچید و روی دسکتاپ هم نویز بود.
-            «خروج» عمداً بیرونِ منو ماند: یک عملِ پرتکرار پشتِ یک کلیکِ اضافه نرود. */}
+        {/* ناوبریِ اصلی حالا در سایدبار است — این نوار فقط عملِ مخصوصِ همین صفحه‌ها را دارد. */}
         <nav>
           <button className="ghost" aria-pressed={!muted}
             onClick={() => setMuted((m) => { const next = !m; try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch { /* حالتِ خصوصیِ مرورگر */ } return next; })}>
             <Icon name="bell" size={14} />{muted ? "اعلانِ صوتی: خاموش" : "اعلانِ صوتی: روشن"}
           </button>
-          <NavMenu ctx={ctx} />
           <LogoutButton />
         </nav>
       </div>
@@ -343,5 +342,6 @@ export default function StaffPage() {
       </div>{/* /col — پیگیری */}
       </div>{/* /cols */}
     </main>
+    </PageShell>
   );
 }

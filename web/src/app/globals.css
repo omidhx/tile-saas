@@ -51,6 +51,18 @@
 
   --ring:          #2563eb;   /* آبی، تا حلقه‌ی فوکوس با هیچ وضعیتی اشتباه نشود */
 
+  /* --- سایدبار: همیشه از خانواده‌ی تیره، مستقل از تمِ روشن/تیره‌ی خودِ صفحه ---
+     (بازطراحیِ v1) — چون سایدبارِ روشن روی محتوای روشن هیچ مرزی نمی‌سازد، و
+     چون این رنگ‌ها به prefers-color-scheme/data-theme وابسته نیستند، فقط یک‌بار
+     همین‌جا تعریف می‌شوند، نه در بلوکِ تیره‌ی پایین. */
+  --sidebar-bg:         var(--slate-900);
+  --sidebar-surface:    #16233a;
+  --sidebar-border:     #223049;
+  --sidebar-text:       var(--slate-200);
+  --sidebar-text-muted: var(--slate-400);
+  --sidebar-accent:     #34d399;
+  --sidebar-active-bg:  rgba(52, 211, 153, .14);
+
   /* --- فاصله (چگالِ داشبورد: ۴→۳۲، نه ۱۶→۶۴ی صفحه‌ی فرود) ------------------ */
   --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
   --sp-5: 1.5rem; --sp-6: 2rem;
@@ -63,9 +75,19 @@
   color-scheme: light;
 }
 
-/* حالتِ تیره: انبار و کارگاه اغلب نورِ کم دارند، و کاربر شب هم سفارش می‌بیند. */
+/*
+  حالتِ تیره: انبار و کارگاه اغلب نورِ کم دارند، و کاربر شب هم سفارش می‌بیند.
+
+  بازطراحیِ v1 — تاگلِ دستی: `ThemeToggle` مقدارِ انتخابیِ کاربر را روی
+  `data-theme` (روی <html>) و در localStorage می‌نویسد. تا وقتی کاربر چیزی
+  انتخاب نکرده (data-theme ست نشده)، prefers-color-scheme همان نقشِ قبلی را
+  دارد — پس `:not([data-theme])` اینجا اضافه شد، نه برای تغییرِ رفتار، برای
+  اینکه بعدِ انتخابِ دستی این بلوکِ OS-محور با بلوکِ زیرش (که هارد ست می‌کند)
+  تداخل نکند. مقدارها عمداً همینجا هم تکرار شده‌اند: پروژه پیش‌پردازنده/mixin
+  ندارد و یک بلوکِ تکراریِ ۲۵خطی ساده‌تر از انتزاعِ زودهنگام است.
+*/
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --bg:            var(--slate-900);
     --surface:       var(--slate-800);
     --surface-sunken: #16233a;
@@ -97,6 +119,39 @@
     color-scheme: dark;
   }
 }
+
+/* انتخابِ دستیِ کاربر (ThemeToggle) — همیشه برنده، مستقل از prefers-color-scheme */
+:root[data-theme="dark"] {
+  --bg:            var(--slate-900);
+  --surface:       var(--slate-800);
+  --surface-sunken: #16233a;
+  --line:          #2c3a52;
+  --line-strong:   var(--slate-600);
+  --text:          var(--slate-100);
+  --text-muted:    var(--slate-400);
+  --text-subtle:   #8494a8;
+
+  --primary:       var(--slate-200);
+  --primary-hover: #ffffff;
+  --on-primary:    var(--slate-900);
+
+  --accent:        #34d399;
+  --accent-hover:  #6ee7b7;
+  --accent-weak:   #06281f;
+
+  --danger:        #f87171;
+  --danger-weak:   #2a1416;
+  --warn:          #fbbf24;
+  --warn-weak:     #2a2010;
+  --info-weak:     #16233a;
+
+  --ring:          #60a5fa;
+  --shadow:        0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-md:     0 4px 12px rgba(0, 0, 0, .5);
+
+  color-scheme: dark;
+}
+/* data-theme="light" نیازی به override ندارد: مقدارهای پیش‌فرضِ :root همان روشن‌اند */
 
 * { box-sizing: border-box; }
 
@@ -357,6 +412,113 @@ a { color: var(--ring); }
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* --- Shell: سایدبارِ چسبان + محتوا (بازطراحیِ v1) --------------------------
+   فقط صفحاتی که PageShell را استفاده می‌کنند این کلاس‌ها را می‌بینند؛ صفحاتِ
+   چاپ/ورود عمداً بیرون می‌مانند (main معمولیِ خودشان را نگه می‌دارند). */
+.app-shell { display: flex; min-height: 100dvh; }
+.app-shell__sidebar {
+  flex: none; width: 248px;
+  background: var(--sidebar-bg);
+  border-inline-start: 1px solid var(--sidebar-border);
+  display: flex; flex-direction: column;
+  position: sticky; inset-block-start: 0; height: 100dvh; overflow-y: auto;
+  transition: width .15s ease;
+}
+.app-shell--collapsed .app-shell__sidebar { width: 72px; }
+.app-shell--collapsed .app-shell__label,
+.app-shell--collapsed .app-shell__group-title { display: none; }
+.app-shell__brand {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-4); color: var(--sidebar-text); font-weight: 700;
+  border-bottom: 1px solid var(--sidebar-border);
+  white-space: nowrap; overflow: hidden;
+}
+.app-shell__nav { flex: 1; padding: var(--sp-2); overflow-y: auto; overflow-x: hidden; }
+.app-shell__group + .app-shell__group { margin-top: var(--sp-3); }
+.app-shell__group-title {
+  font-size: .7rem; font-weight: 600; color: var(--sidebar-text-muted);
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  text-transform: uppercase; letter-spacing: .04em;
+  white-space: nowrap;
+}
+.app-shell__link {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: .55rem var(--sp-2); min-height: 40px;
+  border-radius: var(--radius-sm);
+  color: var(--sidebar-text); text-decoration: none; font-size: .85rem;
+  white-space: nowrap; overflow: hidden;
+}
+.app-shell__link:hover { background: var(--sidebar-surface); }
+.app-shell__link[aria-current="page"] {
+  background: var(--sidebar-active-bg); color: var(--sidebar-accent); font-weight: 600;
+}
+.app-shell__link svg { flex: none; }
+.app-shell__footer {
+  padding: var(--sp-2); border-top: 1px solid var(--sidebar-border);
+  display: flex; align-items: center; gap: var(--sp-1); justify-content: space-between;
+}
+.app-shell__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.app-shell__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line); background: var(--surface);
+  position: sticky; inset-block-start: 0; z-index: 10;
+}
+/* بدونِ padding/max-width اینجا — <main> خودِ صفحه (globals همین فایل) همان‌ها
+   را دارد؛ این فقط کشیدنِ ارتفاع/عرض داخلِ ستونِ فلکسِ .app-shell__main است. */
+.app-shell__content { flex: 1; min-width: 0; }
+
+/* دکمه‌های کوچکِ روی سایدبار (جمع‌کردن/همبرگرِ موبایل) — بدونِ استایلِ دکمه‌ی معمولی */
+.sidebar-btn {
+  background: transparent; border: 1px solid var(--sidebar-border); color: var(--sidebar-text-muted);
+  min-height: 36px; min-width: 36px; padding: 0;
+}
+.sidebar-btn:hover:not(:disabled) { background: var(--sidebar-surface); color: var(--sidebar-text); }
+/* دکمه‌ی همبرگرِ بازکردنِ درِ کشویی روی موبایل، توی هدرِ روشنِ محتوا (نه سایدبار) */
+.header-btn { background: transparent; border: 1px solid var(--line-strong); color: var(--text-muted); }
+.header-btn:hover:not(:disabled) { background: var(--surface-sunken); color: var(--text); }
+
+.app-shell__backdrop { display: none; }
+
+/* موبایل/تبلت: سایدبار به drawerِ رویِ محتوا تبدیل می‌شود — پیش‌فرض بیرونِ صفحه */
+@media (max-width: 860px) {
+  .app-shell__sidebar {
+    /* right/left فیزیکی، نه منطقی: کلِ اپ فقط dir="rtl" است (بدونِ پشتیبانیِ LTR)،
+       پس ساده‌تر و بدونِ ابهام. سایدبار همیشه سمتِ راست می‌نشیند. */
+    position: fixed; top: 0; bottom: 0; right: 0; left: auto; z-index: 40;
+    transform: translateX(100%); /* بیرون از صفحه، به سمتِ راست */
+    box-shadow: var(--shadow-md);
+    width: 248px !important; /* کولاپسِ دسکتاپ روی موبایل معنا ندارد */
+  }
+  .app-shell--collapsed .app-shell__label,
+  .app-shell--collapsed .app-shell__group-title { display: block; }
+  .app-shell--drawer-open .app-shell__sidebar { transform: translateX(0); }
+  .app-shell--drawer-open .app-shell__backdrop {
+    display: block; position: fixed; inset: 0; z-index: 35; background: rgba(15, 23, 42, .5);
+  }
+}
+@media (min-width: 861px) { .header-btn--drawer { display: none; } }
+
+/* --- جدول (بازطراحیِ v1) ---------------------------------------------------
+   جایگزینِ style={{...}} پراکنده روی <table> خام؛ بدونِ تغییرِ داده/رفتار. */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: .88rem; }
+.table th {
+  text-align: start; padding: var(--sp-2) var(--sp-3);
+  font-size: .78rem; font-weight: 600; color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-bottom: 2px solid var(--line-strong);
+  position: sticky; inset-block-start: 0;
+}
+.table td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); }
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover { background: var(--surface-sunken); }
+
+/* --- فرم: بسته‌بندیِ یک فیلد (label+input) در فرم/مودالِ چندفیلدی ----------- */
+.field { margin-bottom: var(--sp-3); }
+.field > label { margin-top: 0; }
+.field-hint { color: var(--text-subtle); font-size: .78rem; margin-top: var(--sp-1); }
+
 /* --- چیدمانِ دوستونه (پنل پشتیبان) --------------------------------------- */
 /*
   پنل پشتیبان پنج بخش دارد و در یک ستون یعنی «حواله‌ها» همیشه زیرِ خطِ تا است.
@@ -568,4 +730,7 @@ button.gallery-item { padding: 0; background: none; min-height: 0; cursor: point
   body { background: #fff; }
   .print-sheet { color: #000; }
   .print-sheet .badge { border: 1px solid #000; background: none; color: #000; }
+  /* برگه‌ی چاپ از PageShell استفاده نمی‌کند، ولی اگر یک روز داخلِ آن رندر شد،
+     سایدبار/هدرِ shell نباید روی کاغذ بیاید — گاردِ اضافی، نه رفتارِ فعلی. */
+  .app-shell__sidebar, .app-shell__header, .app-shell__backdrop { display: none !important; }
 }

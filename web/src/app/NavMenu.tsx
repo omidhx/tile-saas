@@ -26,16 +26,17 @@ import { useEscapeClose } from "@/lib/useEscapeClose";
  * دسترسیِ کاربر را از ctx می‌گیرد و فیلتر می‌کند.
  */
 
-type Item = {
+export type NavItem = {
   href: string; label: string;
   // نبودِ هر سه یعنی همیشه نشان داده شود (مثلِ «امنیت حساب»)
   pageKey?: string;      // یکی از STAFF_PAGE_KEYS — برای role='staff' چک می‌شود
   adminOnly?: boolean;   // فقط role==='admin'
   deputyOnly?: boolean;  // فقط role==='admin' && canManageAccess
 };
-type Group = { title: string; items: Item[] };
+export type NavGroup = { title: string; items: NavItem[] };
 
-const GROUPS: Group[] = [
+/** گروه‌های ناوبریِ پشتیبان — هم NavMenu (dropdown) هم PageShell (sidebar) از همین یک منبع می‌خوانند. */
+export const STAFF_NAV_GROUPS: NavGroup[] = [
   {
     // v7: قیمت‌گذاری/موجودیِ در راه/جایگزین‌ها دیگر تبِ خودشان را ندارند — روی
     // کارتِ همان محصول در «محصولات» باز می‌شوند (pageKeyِ هرکدام همان‌جا، روی
@@ -74,11 +75,18 @@ const GROUPS: Group[] = [
   },
 ];
 
-function visible(item: Item, ctx: Ctx): boolean {
+function visible(item: NavItem, ctx: Ctx): boolean {
   if (item.deputyOnly) return ctx.role === "admin" && ctx.canManageAccess;
   if (item.adminOnly) return ctx.role === "admin";
   if (item.pageKey) return ctx.role === "admin" || hasPageAccess(ctx.allowedPages, item.pageKey);
   return true;
+}
+
+/** فیلترِ نقش/دسترسی، یک‌بار — NavMenu (dropdown) و PageShell (sidebar) هردو همین را صدا می‌زنند. */
+export function visibleNavGroups(groups: NavGroup[], ctx: Ctx): NavGroup[] {
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((it) => visible(it, ctx)) }))
+    .filter((g) => g.items.length > 0);
 }
 
 export default function NavMenu({ ctx }: { ctx: Ctx }) {
@@ -87,9 +95,7 @@ export default function NavMenu({ ctx }: { ctx: Ctx }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
 
-  const groups = GROUPS
-    .map((g) => ({ ...g, items: g.items.filter((it) => visible(it, ctx)) }))
-    .filter((g) => g.items.length > 0);
+  const groups = visibleNavGroups(STAFF_NAV_GROUPS, ctx);
 
   // با رفتن به صفحه‌ی دیگر، منو باید بسته شود — وگرنه روی صفحه‌ی جدید باز می‌ماند
   useEffect(() => { setOpen(false); }, [pathname]);

@@ -7,6 +7,7 @@ import { useContexts, type Ctx } from "@/lib/useContexts";
 import { formatMoney, formatMoneyWords } from "@/lib/money";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
+import PageShell from "../PageShell";
 import Icon from "../Icon";
 import MessageBanner from "../MessageBanner";
 import { matches } from "@/lib/search";
@@ -275,17 +276,16 @@ export default function ReservePage() {
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
           <h1>موجودی قابل‌سفارش</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName} — {ctx.agentLegalName}</p>
         </div>
+        {/* لینک‌های ناوبری حالا در سایدبار است — این نوار فقط سوییچِ نمایندگی + خروج را دارد. */}
         <nav>
           <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
-          <Link href="/reservations">رزروهای من</Link>
-          <Link href="/catalogs">کاتالوگ‌ها</Link>
-          <Link href="/account/password">امنیت حساب</Link>
           <LogoutButton />
         </nav>
       </div>
@@ -478,5 +478,6 @@ export default function ReservePage() {
         </ImageGalleryModal>
       )}
     </main>
+    </PageShell>
   );
 }
