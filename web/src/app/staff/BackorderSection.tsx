@@ -32,20 +32,27 @@ export default function BackorderSection({
     <>
       <h2>Backorder (محصول ناموجود)</h2>
       <div className="card">
-        <label htmlFor="bo-agent">ثبت backorder جدید</label>
-        <div className="row row--start" style={{ gap: "var(--sp-2)" }}>
-          <select id="bo-agent" aria-label="نمایندگی" value={boAgent} onChange={(e) => onAgentChange(e.target.value)}
-            style={{ maxWidth: 200 }}>
-            <option value="">نمایندگی…</option>
-            {agents.map((a) => <option key={a.id} value={a.id}>{a.legalName}</option>)}
-          </select>
-          <select aria-label="کالا" value={boVariant} onChange={(e) => onVariantChange(e.target.value)}
-            style={{ maxWidth: 240 }}>
-            <option value="">کالا…</option>
-            {variants.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
-          </select>
-          <input type="number" min={1} placeholder="کارتن" aria-label="تعداد کارتن" value={boQty}
-            onChange={(e) => onQtyChange(e.target.value)} style={{ maxWidth: 110 }} />
+        <strong>ثبت backorder جدید</strong>
+        <div className="row row--start row--stack-mobile" style={{ gap: "var(--sp-2)", alignItems: "flex-end" }}>
+          <div className="field" style={{ margin: 0, maxWidth: 200 }}>
+            <label htmlFor="bo-agent">نمایندگی</label>
+            <select id="bo-agent" value={boAgent} onChange={(e) => onAgentChange(e.target.value)}>
+              <option value="">نمایندگی…</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.legalName}</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0, maxWidth: 240 }}>
+            <label htmlFor="bo-variant">کالا</label>
+            <select id="bo-variant" value={boVariant} onChange={(e) => onVariantChange(e.target.value)}>
+              <option value="">کالا…</option>
+              {variants.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0, maxWidth: 110 }}>
+            <label htmlFor="bo-qty">کارتن</label>
+            <input id="bo-qty" type="number" min={1} placeholder="کارتن" value={boQty}
+              onChange={(e) => onQtyChange(e.target.value)} />
+          </div>
           <button onClick={onCreate} aria-busy={pending === "bo-create"}
             disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
             {pending === "bo-create" && <span className="spinner" aria-hidden="true" />}ثبت
