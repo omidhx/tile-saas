@@ -347,6 +347,10 @@ CREATE TABLE sales_request (
     id               UUID NOT NULL DEFAULT gen_random_uuid(),
     tenant_id        UUID NOT NULL REFERENCES tenant(id),
     agent_account_id UUID NOT NULL,
+    -- v11: هر sales_request دقیقاً از یک reservation ساخته می‌شود (approveReservationIn
+    -- تنها مسیرِ INSERTِ این جدول است) — این ستون همان لینک را نگه می‌دارد، تا «رزروهای
+    -- من» بتواند مبلغِ واقعیِ سفارشِ تأییدشده را نشان بدهد، نه فقط برآوردِ لحظه‌ی رزرو.
+    reservation_id   UUID NOT NULL,
     status           TEXT NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft','submitted','approved','rejected','cancelled','fulfilled')),
     -- v2 «تأیید هیبریدی»: چرا این سفارش تأیید شد. اولین سؤالِ کارخانه وقتی سفارشی
@@ -359,7 +363,9 @@ CREATE TABLE sales_request (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
-    FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id)
+    UNIQUE (reservation_id),
+    FOREIGN KEY (tenant_id, agent_account_id) REFERENCES agent_account(tenant_id, id),
+    FOREIGN KEY (tenant_id, reservation_id) REFERENCES reservation(tenant_id, id)
 );
 
 CREATE TABLE sales_request_item (

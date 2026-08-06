@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDateTime } from "@/lib/date";
+import { formatMoney, formatMoneyWords } from "@/lib/money";
 import Icon from "../../../../Icon";
 
 const num = (v: number) => v.toLocaleString("fa-IR");
@@ -21,7 +22,7 @@ type Item = {
 type Detail = {
   dispatchCode: string; status: string; customerName: string | null; destination: string | null;
   referenceNumber: string | null; agentLegalName: string; warehouseName: string | null;
-  createdAt: string; items: Item[];
+  createdAt: string; items: Item[]; totalValue: number | null;
 };
 
 /** برگه‌ی چاپیِ حواله — لیستِ برداشتِ انباردار: سرِ حواله + هر قلم با بچ/شید/کالیبر/محل، به‌علاوه‌ی خطِ امضا. */
@@ -46,7 +47,7 @@ export default function DispatchPrintPage() {
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسی نداری.</span></div></main>;
   if (loadErr)
     return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div></main>;
-  if (!detail) return null;
+  if (!detail || !ctx) return null;
 
   return (
     <main className="print-sheet">
@@ -93,6 +94,15 @@ export default function DispatchPrintPage() {
           ))}
         </tbody>
       </table>
+
+      {detail.totalValue != null && (
+        <div className="row" style={{ marginTop: "var(--sp-4)", justifyContent: "flex-end" }}>
+          <div style={{ textAlign: "start" }}>
+            <div><span className="subtle">جمعِ فاکتور: </span><strong className="metric">{formatMoney(detail.totalValue, ctx.currencyUnit)}</strong></div>
+            <div className="subtle">{formatMoneyWords(detail.totalValue, ctx.currencyUnit)}</div>
+          </div>
+        </div>
+      )}
 
       <div className="row" style={{ marginTop: "var(--sp-6)", alignItems: "flex-end" }}>
         <div style={{ borderTop: "1px solid var(--text)", paddingTop: "var(--sp-2)", width: "45%" }}>امضاءِ انباردار</div>

@@ -118,8 +118,8 @@ export async function approveReservationIn(
 
     // ۴. SalesRequest تأییدشده — با ثبتِ اینکه دستی بود یا خودکار (و با چه سقفی)
     const [sr] = await tx<{ id: string }[]>`
-      INSERT INTO sales_request (tenant_id, agent_account_id, status, approval_mode, auto_approve_limit_applied)
-      VALUES (${tenantId}, ${resv.agent_account_id}, 'approved', ${mode}, ${limitApplied ?? null})
+      INSERT INTO sales_request (tenant_id, agent_account_id, reservation_id, status, approval_mode, auto_approve_limit_applied)
+      VALUES (${tenantId}, ${resv.agent_account_id}, ${reservationId}, 'approved', ${mode}, ${limitApplied ?? null})
       RETURNING id`;
 
     // ۵. یک SalesRequestItem به‌ازای هر variant (جمعِ کارتن)، با line_no

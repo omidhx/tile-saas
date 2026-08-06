@@ -1,5 +1,5 @@
 import Icon from "../Icon";
-import { formatMoney, type CurrencyUnit } from "@/lib/money";
+import { formatMoney, formatMoneyWords, type CurrencyUnit } from "@/lib/money";
 
 const money = (v: number) => v.toLocaleString("fa-IR");
 
@@ -20,9 +20,12 @@ export default function CartSummary({
 
       {/* جمعِ ریالیِ تقریبی — «تقریبی» چون تخفیفِ حجمی و قیمتِ قطعی در لحظه‌ی تأیید */}
       {cartValue > 0 && (
-        <div className="row" style={{ marginTop: "var(--sp-2)" }}>
-          <span className="muted">جمعِ تقریبی</span>
-          <span className="metric">{formatMoney(cartValue, currencyUnit)}</span>
+        <div style={{ marginTop: "var(--sp-2)" }}>
+          <div className="row">
+            <span className="muted">جمعِ تقریبی</span>
+            <span className="metric">{formatMoney(cartValue, currencyUnit)}</span>
+          </div>
+          <div className="subtle">{formatMoneyWords(cartValue, currencyUnit)}</div>
         </div>
       )}
       {anyUnpriced && (

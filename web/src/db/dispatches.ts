@@ -162,9 +162,11 @@ export type DispatchDetail = {
     batchNumber: string | null; shadeCode: string | null; caliberCode: string | null;
     binLocation: string | null; quantityBoxes: number;
   }[];
+  /** v11 «مبلغِ خرید به حروف روی فاکتور»: null یعنی هیچ قلمی قیمتِ ثبت‌شده نداشت. */
+  totalValue: number | null;
 };
 
-/** برگه‌ی چاپیِ حواله (لیستِ برداشتِ انباردار): سرِ حواله + هر قلم با بچ/شید/کالیبر/بین. */
+/** برگه‌ی چاپیِ حواله (لیستِ برداشتِ انباردار + فاکتور): سرِ حواله + هر قلم با بچ/شید/کالیبر/بین + جمعِ مبلغ. */
 export async function getDispatchDetail(tenantId: string, dispatchId: string): Promise<DispatchDetail | null> {
   return withTenant(tenantId, async (tx) => {
     const [d] = await tx<{
@@ -194,10 +196,35 @@ export async function getDispatchDetail(tenantId: string, dispatchId: string): P
       WHERE sdi.dispatch_id = ${dispatchId} AND sdi.tenant_id = ${tenantId}
       ORDER BY p.code`;
 
+    // جمعِ فاکتور: یک sales_request می‌تواند به چند حواله (یک به‌ازای هر انبار) تقسیم شده
+    // باشد، پس unit_price_applied/discount_amount روی sales_request_item مالِ کلِ سفارش
+    // است، نه فقط سهمِ همین حواله — تخفیف به‌نسبتِ تعدادِ همین حواله سهم‌بندی می‌شود.
+    const priceRows = await tx<{
+      variant_id: string; unit_price_applied: string | null; discount_amount: string | null;
+      requested_qty_boxes: number; dispatch_qty: number;
+    }[]>`
+      SELECT sdi.variant_id, sri.unit_price_applied, sri.discount_amount, sri.requested_qty_boxes,
+             SUM(sdi.quantity_boxes)::int AS dispatch_qty
+      FROM sales_dispatch_item sdi
+      JOIN sales_dispatch sd ON sd.id = sdi.dispatch_id
+      JOIN sales_request_item sri ON sri.request_id = sd.sales_request_id
+        AND sri.variant_id = sdi.variant_id AND sri.tenant_id = sdi.tenant_id
+      WHERE sdi.dispatch_id = ${dispatchId} AND sdi.tenant_id = ${tenantId}
+      GROUP BY sdi.variant_id, sri.unit_price_applied, sri.discount_amount, sri.requested_qty_boxes`;
+
+    let totalValue = 0, anyPriced = false;
+    for (const r of priceRows) {
+      if (r.unit_price_applied == null) continue;
+      anyPriced = true;
+      const discountShare = Math.round(Number(r.discount_amount ?? 0) * r.dispatch_qty / r.requested_qty_boxes);
+      totalValue += Number(r.unit_price_applied) * r.dispatch_qty - discountShare;
+    }
+
     return {
       dispatchCode: d.dispatch_code, status: d.status, customerName: d.customer_name,
       destination: d.destination, referenceNumber: d.reference_number,
       agentLegalName: d.agent_legal_name, warehouseName: d.warehouse_name, createdAt: d.created_at,
+      totalValue: anyPriced ? totalValue : null,
       items: items.map((i) => ({
         productName: i.product_name, productCode: i.product_code, sku: i.sku, grade: i.grade,
         batchNumber: i.batch_number, shadeCode: i.shade_code, caliberCode: i.caliber_code,

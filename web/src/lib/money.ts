@@ -1,3 +1,5 @@
+import { numberToPersianWords } from "./numberToWords";
+
 export type CurrencyUnit = "rial" | "toman";
 
 /**
@@ -21,4 +23,9 @@ export function toDisplayAmount(rial: number, unit: CurrencyUnit = "rial"): numb
 /** برچسبِ واحد — برای عنوانِ ستونِ اکسل («ارزش (ریال)» / «ارزش (تومان)»). */
 export function currencyLabel(unit: CurrencyUnit = "rial"): string {
   return unit === "toman" ? "تومان" : "ریال";
+}
+
+/** مبلغ به حروف — «چهار میلیون و دویست هزار تومان». برای فاکتور/رسید و هرجا که مبلغِ خرید نهایی است. */
+export function formatMoneyWords(rial: number, unit: CurrencyUnit = "rial"): string {
+  return `${numberToPersianWords(toDisplayAmount(rial, unit))} ${currencyLabel(unit)}`;
 }

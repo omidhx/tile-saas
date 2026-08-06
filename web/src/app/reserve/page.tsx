@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, formatMoneyWords } from "@/lib/money";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
@@ -242,7 +242,7 @@ export default function ReservePage() {
         // به نماینده‌ای که سفارشش تأیید شده، او را بی‌دلیل منتظرِ تماسِ پشتیبان می‌گذارد.
         const { autoApproved } = await res.json().catch(() => ({ autoApproved: null }));
         setMsg(autoApproved
-          ? { kind: "ok", text: `سفارش شما تأیید شد و برای آماده‌سازی رفت — نیازی به تأیید پشتیبان نبود (${formatMoney(autoApproved.orderValue, ctx.currencyUnit)}).` }
+          ? { kind: "ok", text: `سفارش شما تأیید شد و برای آماده‌سازی رفت — نیازی به تأیید پشتیبان نبود (${formatMoney(autoApproved.orderValue, ctx.currencyUnit)} — ${formatMoneyWords(autoApproved.orderValue, ctx.currencyUnit)}).` }
           : { kind: "ok", text: "رزرو ثبت شد و در انتظار تأیید پشتیبان است." });
         await loadLots(ctx); // همگام‌سازیِ نمایشی بعد از موفقیت
       } else if (res.status === 409) {

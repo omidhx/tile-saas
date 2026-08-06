@@ -4,6 +4,7 @@ import { withTenant } from "./client";
 import { decideAutoApproval } from "./autoApprove";
 import { approveReservationIn } from "./salesRequests";
 import { advanceWaitlist } from "./waitlist";
+import { resolvePrices } from "./pricing";
 
 export type CancelResult =
   | { ok: true }
@@ -62,7 +63,14 @@ export async function cancelReservation(params: {
 export type ReservationListItem = {
   id: string; status: string; expiresAt: string; agentName: string;
   assignedStaffName: string | null; assignedStaffPhone: string | null;
-  items: { name: string; code: string; quantityBoxes: number; boxesPerPallet: number | null; sqcmPerBox: number }[];
+  items: {
+    variantId: string; name: string; code: string; quantityBoxes: number;
+    boxesPerPallet: number | null; sqcmPerBox: number;
+  }[];
+  /** مبلغِ قطعیِ خرید — فقط برای status='converted'، از snapshotِ لحظه‌ی تأیید (sales_request_item). */
+  purchaseValue: number | null;
+  /** برآوردِ «رزروهای من» برای status='active' با قیمتِ زنده — قطعی نیست، هنوز تأیید نشده. */
+  estimatedValue: number | null;
 };
 
 /**
@@ -75,8 +83,9 @@ export async function listReservations(params: {
 }): Promise<ReservationListItem[]> {
   const { tenantId, agentAccountId } = params;
   const staffView = !agentAccountId;
-  return withTenant(tenantId, (tx) =>
-    tx<ReservationListItem[]>`
+  const rawRows = await withTenant(tenantId, (tx) =>
+    // purchaseValue::bigint از postgres.js رشته برمی‌گردد (نه number) — پایینِ همین تابع Number می‌شود
+    tx<(Omit<ReservationListItem, "estimatedValue" | "purchaseValue"> & { purchaseValue: string | null })[]>`
       SELECT r.id,
         CASE WHEN r.status = 'active' AND r.expires_at <= now() THEN 'expired' ELSE r.status END AS status,
         r.expires_at AS "expiresAt", aa.legal_name AS "agentName",
@@ -84,12 +93,15 @@ export async function listReservations(params: {
         -- هم صفحه‌ی نماینده («این را چه کسی پیگیری می‌کند») از همین یک ستون می‌خوانند.
         su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone",
         COALESCE(json_agg(json_build_object(
-          'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes,
+          'variantId', pv.id, 'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes,
           -- برای پنلِ پشتیبان: معادلِ پالت/مترمربع کنارِ عددِ کارتن (spec تبدیلِ واحد).
           -- override رویِ خودِ Lot اگر باشد ارجح است، هم‌راستا با کوئریِ /api/lots.
           'boxesPerPallet', COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet),
           'sqcmPerBox', pv.sqcm_per_box
-        )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items
+        )) FILTER (WHERE ri.id IS NOT NULL), '[]') AS items,
+        -- v11 «مبلغِ خرید به حروف»: برای رزروِ تبدیل‌شده، همان مبلغِ قطعیِ سفارش (نه تخمین) —
+        -- snapshotِ sales_request_item، دقیقاً همان فرمولِ reports.ts (پله‌ی تخفیفِ حجمی کم شده).
+        sr_value."purchaseValue"
       FROM reservation r
       JOIN agent_account aa ON aa.id = r.agent_account_id
       LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
@@ -97,18 +109,38 @@ export async function listReservations(params: {
       LEFT JOIN inventory_lot l ON l.id = ri.lot_id
       LEFT JOIN product_variant pv ON pv.id = l.variant_id
       LEFT JOIN product p ON p.id = pv.product_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(sri.unit_price_applied * sri.requested_qty_boxes - COALESCE(sri.discount_amount, 0))::bigint AS "purchaseValue"
+        FROM sales_request sr
+        JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
+        WHERE sr.reservation_id = r.id AND sr.tenant_id = r.tenant_id
+      ) sr_value ON TRUE
       WHERE r.tenant_id = ${tenantId}
         AND ${staffView
             // صفِ تأیید: فقط رزروِ واقعاً زنده — منقضی نباید به‌عنوان «در انتظار تأیید» دیده شه
             ? tx`r.status = 'active' AND r.expires_at > now()`
             : tx`r.agent_account_id = ${agentAccountId}`}
-      GROUP BY r.id, aa.legal_name, su.full_name, su.phone
+      GROUP BY r.id, aa.legal_name, su.full_name, su.phone, sr_value."purchaseValue"
       -- صفِ تأیید یعنی صفِ کار: چیزی که زودتر منقضی می‌شود باید اول دیده شود،
       -- وگرنه رزروِ قدیمی زیرِ رزروهای تازه‌تر گم می‌شود و بدونِ تأیید منقضی می‌شود.
       -- «رزروهای من» (agent view) نیازی به این ترتیب ندارد چون صفِ کار نیست.
       ORDER BY ${staffView ? tx`r.expires_at ASC` : tx`r.created_at DESC`}
       LIMIT 50`,
   );
+  const rows = rawRows.map((r) => ({ ...r, purchaseValue: r.purchaseValue == null ? null : Number(r.purchaseValue) }));
+
+  // برآوردِ زنده فقط برای «رزروهای من» (نه صفِ staff) و فقط رزروهای هنوز active —
+  // بار اضافه ندارد چون تعدادِ active یک نماینده معمولاً کم است (سقفِ کلی هم ۵۰).
+  if (staffView) return rows.map((r) => ({ ...r, estimatedValue: null }));
+  return Promise.all(rows.map(async (r) => {
+    if (r.status !== "active") return { ...r, estimatedValue: null };
+    const qtyByVariant: Record<string, number> = {};
+    for (const it of r.items) qtyByVariant[it.variantId] = (qtyByVariant[it.variantId] ?? 0) + it.quantityBoxes;
+    const prices = await resolvePrices({ tenantId, agentAccountId: agentAccountId!, variantIds: Object.keys(qtyByVariant), qtyByVariant });
+    let estimatedValue = 0, anyPriced = false;
+    for (const p of prices.values()) { estimatedValue += p.lineTotal; anyPriced = true; }
+    return { ...r, estimatedValue: anyPriced ? estimatedValue : null };
+  }));
 }
 
 export type ReserveItem = { lotId: string; quantityBoxes: number };

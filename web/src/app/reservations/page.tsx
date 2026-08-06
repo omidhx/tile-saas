@@ -6,9 +6,13 @@ import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import { formatJalaliDateTime, remainingTime } from "@/lib/date";
+import { formatMoney, formatMoneyWords } from "@/lib/money";
 
 type Item = { name: string; code: string; quantityBoxes: number };
-type Resv = { id: string; status: string; expiresAt: string; items: Item[] };
+type Resv = {
+  id: string; status: string; expiresAt: string; items: Item[];
+  purchaseValue: number | null; estimatedValue: number | null;
+};
 
 const STATUS_FA: Record<string, string> = {
   active: "در انتظار تأیید پشتیبان", converted: "تأییدشده", expired: "منقضی", cancelled: "لغوشده",
@@ -95,6 +99,18 @@ export default function MyReservationsPage() {
         <div className="muted">
           {r.items.map((i) => `${i.name} (${i.code}) ×${n(i.quantityBoxes)}`).join("، ")}
         </div>
+        {r.purchaseValue != null && (
+          <div style={{ marginTop: "var(--sp-2)" }}>
+            <span className="metric">مبلغِ خرید: {formatMoney(r.purchaseValue, ctx.currencyUnit)}</span>
+            <div className="subtle">{formatMoneyWords(r.purchaseValue, ctx.currencyUnit)}</div>
+          </div>
+        )}
+        {r.status === "active" && r.estimatedValue != null && (
+          <div style={{ marginTop: "var(--sp-2)" }}>
+            <span className="subtle">جمعِ تقریبی: {formatMoney(r.estimatedValue, ctx.currencyUnit)}</span>
+            <div className="subtle">{formatMoneyWords(r.estimatedValue, ctx.currencyUnit)}</div>
+          </div>
+        )}
         {r.status === "active" && (
           <>
             <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>

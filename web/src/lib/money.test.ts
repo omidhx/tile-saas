@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatMoney, toDisplayAmount, currencyLabel } from "./money";
+import { formatMoney, toDisplayAmount, currencyLabel, formatMoneyWords } from "./money";
 
 test("پیش‌فرض (بدونِ واحد) یعنی ریال، بدونِ تبدیل", () => {
   assert.equal(formatMoney(1_250_000), (1_250_000).toLocaleString("fa-IR") + " ریال");
@@ -22,4 +22,10 @@ test("currencyLabel", () => {
   assert.equal(currencyLabel("rial"), "ریال");
   assert.equal(currencyLabel("toman"), "تومان");
   assert.equal(currencyLabel(), "ریال");
+});
+
+test("formatMoneyWords: تبدیل به واحدِ انتخابی، بعد به حروف — ترتیب مهم است", () => {
+  assert.equal(formatMoneyWords(4_200_000, "rial"), "چهار میلیون و دویست هزار ریال");
+  // همان ریال، وقتی واحد تومان است، اول تقسیم بر ۱۰ می‌شود (۴۲۰٬۰۰۰) و بعد به حروف
+  assert.equal(formatMoneyWords(4_200_000, "toman"), "چهارصد و بیست هزار تومان");
 });
