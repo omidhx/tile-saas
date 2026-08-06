@@ -8,6 +8,7 @@ import NavMenu from "../NavMenu";
 import QueueSection, { type Resv, type Req } from "./QueueSection";
 import DispatchSection, { type Disp } from "./DispatchSection";
 import BackorderSection, { type Agent, type Variant, type Backorder } from "./BackorderSection";
+import KpiSection, { type DashboardKpis } from "./KpiSection";
 
 /** ارقامِ فارسی، همه‌جا یکسان. */
 const num = (v: number) => v.toLocaleString("fa-IR");
@@ -77,6 +78,7 @@ export default function StaffPage() {
   const [actionErr, setActionErr] = useState("");
   const [note, setNote] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [kpis, setKpis] = useState<DashboardKpis | null>(null);
 
   /** حواله‌ها و backorderها append-only-اند و فقط بزرگ‌تر می‌شوند — صفحه‌بندی‌شده
    *  می‌آیند تا بعدِ چند ماه کار، تاریخچه‌ی قدیمی زیرِ LIMIT ثابت گم نشود. */
@@ -117,13 +119,14 @@ export default function StaffPage() {
   const load = useCallback(async (c: Ctx) => {
     const myDispsGen = ++dispsGen.current;
     const myBoGen = ++boGen.current;
-    const [rv, r, d, ag, cat, bo] = await Promise.all([
+    const [rv, r, d, ag, cat, bo, kp] = await Promise.all([
       getJson<{ reservations: Resv[] }>(`/api/reservations?tenantId=${c.tenantId}`), // staff view: active همه
       getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${c.tenantId}&status=approved`),
       fetchDispatches(c.tenantId, "", 0),
       getJson<{ agents: Agent[] }>(`/api/agents?tenantId=${c.tenantId}`),
       getJson<{ variants: Variant[] }>(`/api/catalog?tenantId=${c.tenantId}`),
       fetchBackorders(c.tenantId, "", 0),
+      getJson<DashboardKpis>(`/api/dashboard?tenantId=${c.tenantId}`),
     ]);
     if (rv.ok && r.ok) applyQueueResults(rv.data.reservations, r.data.requests, false);
     else { if (rv.ok) setPendingResvs(rv.data.reservations); if (r.ok) setReqs(r.data.requests); }
@@ -132,6 +135,8 @@ export default function StaffPage() {
     if (ag.ok) setAgents(ag.data.agents);
     if (cat.ok) setVariants(cat.data.variants);
     if (bo.ok && myBoGen === boGen.current) { setBackorders(bo.data.items); setBoHasMore(bo.data.hasMore); setBoListQ(""); }
+    // KPI صرفاً یک ویجتِ خلاصه است — شکستِ گرفتنش نباید کلِ صفحه را خطا نشان بدهد
+    if (kp.ok) setKpis(kp.data);
     // هر شکستی را صریح نشان بده — وگرنه صفحه «چیزی برای تأیید نیست» می‌گوید در حالی که نگرفته
     const failed = [rv, r, d, ag, cat, bo].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
@@ -316,6 +321,8 @@ export default function StaffPage() {
           <Icon name="check" /><span>{note}</span>
         </div>
       )}
+
+      <KpiSection kpis={kpis} />
 
       {/* دو ستون: راست = کارهایی که منتظرِ تصمیم‌اند، چپ = چیزهایی که پیگیری می‌شوند */}
       <div className="cols">

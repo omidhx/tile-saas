@@ -134,6 +134,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/volume-discounts` | staff | `POST`/`PATCH`/`DELETE`ِ پله‌های تخفیفِ حجمی (تا حالا فقط SQL؛ حتی خواندنش هم جایی نمایش داده نمی‌شد) — priceListId/variantId=null یعنی «همه» |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
 | `/api/settings/tenant` | admin | تنظیماتِ کارخانه: TTLِ پیش‌فرضِ رزرو + لوگو (تغییر در `audit_log`) |
+| `/api/dashboard` | staff | KPIِ سریعِ صفحه‌ی اول: حواله/کارتنِ امروز + کالای رو به اتمام |
 | `/api/substitutes` | staff | تعریفِ کالای جایگزین |
 | `/api/products` | staff | مدیریتِ محصول: فهرست (با قیمت/گالری/فیلدهای بیشتر/بسته‌بندی)، `POST` ساخت، `PATCH` ویرایشِ ویژگی‌ها + بسته‌بندیِ variant اول (`boxesPerPallet`/`sqcmPerBox`، برای فرمولِ تبدیلِ کارتن⇄پالت⇄مترمربع در `/reserve`؛ کد/sku قفل؛ عکس‌ها در `/api/product-images`). `POST` اختیاراً `initialStock: {warehouseId, quantityBoxes}` می‌گیرد — موجودیِ اولیه از همان مسیرِ لجرِ import/incoming (`transaction_type='initial_stock'`)، نه UPDATE مستقیم |
 | `/api/upload` | staff | آپلودِ عکس (multipart) → URL برمی‌گرداند |
