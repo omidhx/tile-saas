@@ -5,7 +5,7 @@ import type { SendResult } from "./sender";
  * (spec v10 «پنلِ پیامکیِ خودِ کارخانه»، دقیقاً مثلِ افزونه‌های SMS در وردپرس).
  *
  * دو مدلِ متفاوتِ پترن در پروایدرهای واقعی هست:
- *   - **موقعیتی** (کاوه‌نگار، IPPanel): توکن‌ها به ترتیب token/token2/… یا var1/var2/…
+ *   - **موقعیتی** (فقط کاوه‌نگار): توکن‌ها به ترتیب token/token2/token3 — حداکثر ۳ تا.
  *   - **نام‌دار** (بقیه): هر پترن روی پنلِ پروایدر پارامترهایی با نامِ دلخواه دارد
  *     (مثلاً %Code%) که ما نمی‌دانیم کاربر چه اسمی رویش گذاشته.
  * برای مدلِ نام‌دار، `paramNames` (نامِ پارامترها به ترتیبِ همان توکن‌ها، جدا با کاما)
@@ -36,7 +36,7 @@ export type SmsProviderMeta = {
 
 export const SMS_PROVIDERS: SmsProviderMeta[] = [
   { id: "kavenegar", label: "کاوه‌نگار", fields: ["apiKey"], needsParamNames: false },
-  { id: "ippanel", label: "آی‌پی‌پنل (IPPanel)", fields: ["apiKey"], needsParamNames: false },
+  { id: "ippanel", label: "آی‌پی‌پنل (IPPanel)", fields: ["apiKey"], needsParamNames: true },
   { id: "melipayamak", label: "ملی‌پیامک", fields: ["username", "password"], needsParamNames: false },
   { id: "smsir", label: "sms.ir", fields: ["apiKey"], needsParamNames: true },
   { id: "farazsms", label: "فراز اس‌ام‌اس", fields: ["apiKey"], needsParamNames: true },
@@ -63,26 +63,27 @@ async function sendKavenegar(
   return { ok: true };
 }
 
+// طبقِ مستنداتِ رسمیِ Edge API (ippanelcom.github.io/Edge-Document): یک endpoint واحد
+// (`/v1/api/send`) با `sending_type` که فرق می‌کند؛ موفقیت از `meta.status` خوانده می‌شود.
 async function sendIppanel(
   creds: SmsCredentials, to: string, text: string, patternCode: string | null,
   tokens: string[], paramNames: string[],
 ): Promise<SendResult> {
-  const url = patternCode
-    ? "https://api2.ippanel.com/api/v1/sms/pattern/normal/send"
-    : "https://api2.ippanel.com/api/v1/sms/send/webservice/single";
+  const url = "https://edge.ippanel.com/v1/api/send";
   const body = patternCode
     ? {
-        code: patternCode, sender: creds.senderNumber, recipient: to,
-        variable: Object.fromEntries(paramNames.map((name, i) => [name || `var${i + 1}`, tokens[i] ?? ""])),
+        sending_type: "pattern", from_number: creds.senderNumber, code: patternCode, recipients: [to],
+        params: Object.fromEntries(paramNames.map((name, i) => [name || `var${i + 1}`, tokens[i] ?? ""])),
       }
-    : { originator: creds.senderNumber, recipient: to, message: text };
+    : { sending_type: "webservice", from_number: creds.senderNumber, message: text, params: { recipients: [to] } };
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: creds.apiKey ?? "" },
     body: JSON.stringify(body),
   });
   const respBody = await res.json().catch(() => null);
-  if (!res.ok) return { ok: false, error: respBody?.error_message ?? respBody?.message ?? `IPPanel: HTTP ${res.status}` };
+  if (!res.ok || respBody?.meta?.status !== true)
+    return { ok: false, error: respBody?.meta?.message ?? `IPPanel: HTTP ${res.status}` };
   return { ok: true };
 }
 
@@ -125,25 +126,29 @@ async function sendSmsIr(
   return { ok: true };
 }
 
+// فراز اس‌ام‌اس = FarazSMS/IranPayamak — طبقِ docs.iranpayamak.com و کلاینتِ رسمیِ PHP
+// (github.com/ghaffari273/farazsms-php): بیسِ api.iranpayamak.com، هدرِ Api-Key،
+// و موفقیت از status==="success" خوانده می‌شود.
 async function sendFarazsms(
   creds: SmsCredentials, to: string, text: string, patternCode: string | null,
   tokens: string[], paramNames: string[],
 ): Promise<SendResult> {
-  const url = patternCode ? "https://api.farazsms.com/v1/sms/pattern/send" : "https://api.farazsms.com/v1/sms/send";
+  const base = "https://api.iranpayamak.com/ws/v1/sms";
+  const url = patternCode ? `${base}/pattern` : `${base}/simple`;
   const body = patternCode
     ? {
-        code: patternCode, sender: creds.senderNumber, recipient: to,
-        values: Object.fromEntries(paramNames.map((name, i) => [name || `param${i + 1}`, tokens[i] ?? ""])),
+        code: patternCode, recipient: to, line_number: creds.senderNumber, number_format: "english",
+        attributes: Object.fromEntries(paramNames.map((name, i) => [name || `param${i + 1}`, tokens[i] ?? ""])),
       }
-    : { sender: creds.senderNumber, recipient: to, message: text };
+    : { text, recipients: [to], line_number: creds.senderNumber, number_format: "english" };
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", apikey: creds.apiKey ?? "" },
+    headers: { "Content-Type": "application/json", "Api-Key": creds.apiKey ?? "" },
     body: JSON.stringify(body),
   });
   const respBody = await res.json().catch(() => null);
-  if (!res.ok || respBody?.status === "error")
-    return { ok: false, error: respBody?.message ?? `فراز اس‌ام‌اس: HTTP ${res.status}` };
+  if (!res.ok || respBody?.status !== "success")
+    return { ok: false, error: (Array.isArray(respBody?.messages) ? respBody.messages.join(", ") : respBody?.messages) ?? `فراز اس‌ام‌اس: HTTP ${res.status}` };
   return { ok: true };
 }
 
