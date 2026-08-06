@@ -11,6 +11,7 @@ import AgentsSection from "./AgentsSection";
 import WarehousesSection from "./WarehousesSection";
 import AutoApproveSection from "./AutoApproveSection";
 import SettingsSection from "./SettingsSection";
+import SmsSection from "./SmsSection";
 
 /**
  * v8: تیم/نمایندگی‌ها/انبارها/تأییدِ خودکار زیرِ یک هابِ تب‌دار — همه‌شان صفحاتِ
@@ -70,7 +71,7 @@ export default function SetupHubPage() {
       {activeTab === "agents" && <AgentsSection ctx={ctx} />}
       {activeTab === "warehouses" && <WarehousesSection ctx={ctx} />}
       {activeTab === "auto-approve" && <AutoApproveSection ctx={ctx} />}
-      {activeTab === "settings" && <SettingsSection ctx={ctx} />}
+      {activeTab === "settings" && <><SettingsSection ctx={ctx} /><SmsSection ctx={ctx} /></>}
     </main>
   );
 }

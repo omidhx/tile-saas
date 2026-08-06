@@ -21,6 +21,7 @@ const ACTION_FA: Record<string, string> = {
   "product.edit": "ویرایشِ محصول",
   "customer.edit": "ویرایشِ مشتری",
   "tenant_settings.edit": "تنظیماتِ کارخانه",
+  "sms_config.edit": "تنظیماتِ پیامک",
 };
 
 const FIELD_FA: Record<string, string> = {
@@ -29,6 +30,8 @@ const FIELD_FA: Record<string, string> = {
   boxesPerPallet: "کارتن در پالت", sqcmPerBox: "متراژِ کارتن",
   phone: "شماره تماس", note: "یادداشت", isActive: "فعال",
   ttlHours: "مدتِ اعتبارِ رزرو (ساعت)", logoUrl: "لوگو",
+  enabled: "فعال", provider: "پروایدرِ پیامک", senderNumber: "شماره‌ی ارسال‌کننده",
+  patterns: "پترن‌ها", credentials: "اطلاعاتِ ورود",
 };
 
 const fieldVal = (v: string | number | boolean | null) =>

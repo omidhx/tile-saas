@@ -19,12 +19,14 @@ const MAX_ATTEMPTS = 5;
 export async function sendPendingNotifications(limit = 50): Promise<{ sent: number; failed: number }> {
   let sent = 0, failed = 0;
 
-  const claimed = await sql<{ id: string; channel: Channel; recipient: string; payload: Record<string, unknown> }[]>`
-    SELECT * FROM claim_pending_notifications(${limit}, ${MAX_ATTEMPTS})`;
+  const claimed = await sql<{ id: string; tenantId: string; channel: Channel; recipient: string; payload: Record<string, unknown> }[]>`
+    SELECT id, tenant_id AS "tenantId", channel, recipient, payload, attempt_count
+    FROM claim_pending_notifications(${limit}, ${MAX_ATTEMPTS})`;
 
   for (const row of claimed) {
     const result = await send(row.channel, {
       to: row.recipient, text: renderMessage(row.payload), subject: renderSubject(row.payload),
+      tenantId: row.tenantId, payload: row.payload,
     });
     await sql`SELECT finish_notification(${row.id}, ${result.ok}, ${MAX_ATTEMPTS})`;
     if (result.ok) sent++; else failed++;

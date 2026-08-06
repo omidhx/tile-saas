@@ -93,6 +93,11 @@ CREATE TABLE tenant (
     -- v9 تنظیماتِ کارخانه: لوگو برای کاتالوگِ عمومیِ مشتری (spec ۷.۸، «لوگو»).
     -- NULL یعنی هنوز آپلود نشده — همان‌جا فقط نامِ کارخانه نشان داده می‌شود.
     logo_url                    TEXT,
+    -- v10 «پنلِ پیامکیِ خودِ کارخانه»: هر tenant پروایدرِ پیامکِ خودش را (که خریده) از
+    -- UI انتخاب و کانفیگ می‌کند، دیگر SMS_PROVIDER سراسری نیست. رازها (apiKey/password)
+    -- با secretBox.ts رمزنگاری‌شده ذخیره می‌شوند، هرگز خام. NULL/enabled=false یعنی
+    -- خاموش — worker حتی یک HTTP call هم برای این tenant نمی‌زند (سبک و بی‌مزاحمت).
+    sms_config                   JSONB,
     track_shade_caliber         TEXT NOT NULL DEFAULT 'optional'
         CHECK (track_shade_caliber IN ('off','optional','required')),  -- بخش ۷.۱ پیش‌فرض optional
     -- v2 «تأیید هیبریدی» (بخش ۹): سقفِ ارزشِ سفارش که زیرش رزرو خودکار تأیید می‌شود.
@@ -852,8 +857,10 @@ REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
 
 -- برداشتِ اتمیکِ پیام‌های آماده (claim): attempt_count++ و SKIP LOCKED تا دو worker
 -- هم‌زمان یک پیام را دوبار نفرستند.
+-- tenant_id هم برمی‌گردد: worker برای sms باید بداند کدام tenant تا کانفیگِ
+-- پیامکیِ همان tenant (sms_config) را برای انتخابِ پروایدر بخواند.
 CREATE FUNCTION claim_pending_notifications(p_limit INT, p_max_attempts INT)
-RETURNS TABLE (id UUID, channel TEXT, recipient TEXT, payload JSONB, attempt_count INT)
+RETURNS TABLE (id UUID, tenant_id UUID, channel TEXT, recipient TEXT, payload JSONB, attempt_count INT)
 LANGUAGE sql SECURITY DEFINER AS $$
     UPDATE notification_outbox SET attempt_count = notification_outbox.attempt_count + 1
     WHERE notification_outbox.id IN (
@@ -863,8 +870,8 @@ LANGUAGE sql SECURITY DEFINER AS $$
         LIMIT p_limit
         FOR UPDATE SKIP LOCKED
     )
-    RETURNING notification_outbox.id, notification_outbox.channel, notification_outbox.recipient,
-              notification_outbox.payload, notification_outbox.attempt_count;
+    RETURNING notification_outbox.id, notification_outbox.tenant_id, notification_outbox.channel,
+              notification_outbox.recipient, notification_outbox.payload, notification_outbox.attempt_count;
 $$;
 REVOKE EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) FROM PUBLIC;
 

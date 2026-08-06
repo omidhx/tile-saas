@@ -4,17 +4,19 @@
 // یعنی کاربر هیچ کدِ بازیابی/دعوتی نمی‌گیرد. email و بله همان کد را از مسیرِ دیگر
 // می‌برند؛ کاربر با هرکدام که کار می‌کند وارد می‌شود.
 //
-// ponytail: هیچ ارائه‌دهنده‌ای اینجا hardcode نشده چون اعتبارنامه/مستنداتش را نداریم.
-// پیش‌فرضِ هر سه `log` است: پیام را چاپ می‌کند و موفق برمی‌گرداند، تا کلِ زنجیره (صف →
-// worker → sent) بدون قرارداد با هیچ ارائه‌دهنده‌ای قابل اجرا و تست باشد.
-// برای پروداکشن: فقط همان یک تابعِ provider عوض می‌شود، بقیه‌ی سیستم دست نمی‌خورد.
-//   SMS_PROVIDER=kavenegar (یا هر پنل ایرانی)
+// v10: پیامک دیگر سراسری (env) نیست — هر tenant پروایدرِ خودش را از UI کانفیگ
+// می‌کند (`sms_config` روی tenant، رمزنگاری‌شده با secretBox.ts). `SMS_PROVIDER`
+// فقط fallback است برای وقتی tenant چیزی کانفیگ نکرده — عملاً یعنی `log`.
+// email/bale هنوز سراسری‌اند (کسی درخواستِ per-tenant برایشان نداده، YAGNI).
 //   EMAIL_PROVIDER=smtp (یا sendgrid/...)
 //   BALE_PROVIDER=bot   — نیازمندِ webhook عمومی برای اتصالِ حساب (فلوی جدا، هنوز نیست)
 
+import { getSmsConfigForSending } from "@/db/smsConfig";
+import { sendViaProvider } from "./smsProviders";
+
 export type SendResult = { ok: true } | { ok: false; error: string };
 export type Channel = "sms" | "email" | "bale";
-export type Notification = { to: string; text: string; subject?: string };
+export type Notification = { to: string; text: string; subject?: string; tenantId?: string; payload?: Record<string, unknown> };
 
 async function logSender(channel: Channel, n: Notification): Promise<SendResult> {
   // در production متنِ کامل چاپ نمی‌شود — همین پیام‌ها کدِ بازیابیِ رمز/رمزِ موقتِ
@@ -25,12 +27,36 @@ async function logSender(channel: Channel, n: Notification): Promise<SendResult>
   return { ok: true };
 }
 
-export async function sendSms(sms: Notification): Promise<SendResult> {
-  const provider = process.env.SMS_PROVIDER ?? "log";
-  switch (provider) {
-    case "log": return logSender("sms", sms);
-    default: return { ok: false, error: `SMS_PROVIDER ناشناخته: ${provider}` }; // fail-loud نه fail-silent
+/**
+ * توکن‌های موقعیتی از payload — همان ترتیبی که کاربر باید در پترنِ ساخته‌شده
+ * روی پنلِ پروایدرش استفاده کند (help-textِ UI هم همین ترتیب را می‌گوید).
+ */
+function tokensFor(payload: Record<string, unknown>): string[] {
+  const s = (v: unknown) => String(v ?? "");
+  switch (payload.type) {
+    case "restock": return [s(payload.product), s(payload.code)];
+    case "waitlist_offer": return [s(payload.product), s(payload.code), s(payload.qty), s(payload.ttlHours)];
+    case "password_reset": return [s(payload.code), s(payload.ttlMinutes)];
+    case "team_invite": return [s(payload.tenantName), s(payload.identifier), s(payload.tempPassword)];
+    case "agent_invite": return [s(payload.agentName), s(payload.tenantName), s(payload.identifier), s(payload.tempPassword)];
+    default: return [];
   }
+}
+
+export async function sendSms(sms: Notification): Promise<SendResult> {
+  const cfg = sms.tenantId ? await getSmsConfigForSending(sms.tenantId) : null;
+  // خاموش یا کانفیگ‌نشده → همان لحظه برمی‌گردد، بدونِ HTTP call — «سبک و بی‌مزاحمت».
+  if (!cfg || !cfg.enabled) {
+    if (sms.tenantId && cfg === null) return logSender("sms", sms); // کانفیگ نشده: fallback به log برای dev/تست
+    if (sms.tenantId) return { ok: true }; // صریحاً خاموش‌شده توسطِ tenant
+    const provider = process.env.SMS_PROVIDER ?? "log";
+    return provider === "log" ? logSender("sms", sms) : { ok: false, error: `SMS_PROVIDER ناشناخته: ${provider}` };
+  }
+  const type = sms.payload?.type as string | undefined;
+  const pattern = type ? cfg.patterns[type] : undefined;
+  const tokens = sms.payload ? tokensFor(sms.payload) : [];
+  const paramNames = (pattern?.paramNames ?? "").split(",").map((s) => s.trim());
+  return sendViaProvider(cfg.credentials, sms.to, sms.text, pattern?.patternCode ?? null, tokens, paramNames);
 }
 
 export async function sendEmail(email: Notification): Promise<SendResult> {
