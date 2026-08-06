@@ -16,16 +16,19 @@ export async function PATCH(req: Request) {
   const c = await adminCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { ttlHours, logoUrl } = body ?? {};
+  const { ttlHours, logoUrl, currencyUnit } = body ?? {};
   if (ttlHours !== undefined && (!Number.isInteger(ttlHours) || ttlHours <= 0))
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   if (logoUrl !== undefined && logoUrl !== null && typeof logoUrl !== "string")
+    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  if (currencyUnit !== undefined && currencyUnit !== "rial" && currencyUnit !== "toman")
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   await updateTenantSettings({
     tenantId: c.tenantId, actorUserId: c.userId,
     ttlHours: typeof ttlHours === "number" ? ttlHours : undefined,
     logoUrl,
+    currencyUnit,
   });
   return NextResponse.json({ ok: true });
 }

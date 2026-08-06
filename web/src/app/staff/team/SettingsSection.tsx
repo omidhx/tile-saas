@@ -5,8 +5,9 @@ import Icon from "../../Icon";
 import MessageBanner from "../../MessageBanner";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
+import { formatMoney, type CurrencyUnit } from "@/lib/money";
 
-type Settings = { ttlHours: number; logoUrl: string | null };
+type Settings = { ttlHours: number; logoUrl: string | null; currencyUnit: CurrencyUnit };
 
 export default function SettingsSection({ ctx }: { ctx: Ctx }) {
   const [s, setS] = useState<Settings | null>(null);
@@ -61,6 +62,15 @@ export default function SettingsSection({ ctx }: { ctx: Ctx }) {
     setSaving(false);
   }
 
+  async function setCurrencyUnit(unit: CurrencyUnit) {
+    if (unit === s?.currencyUnit) return;
+    setSaving(true); setMsg(null);
+    const res = await postJson("/api/settings/tenant", { tenantId: ctx.tenantId, currencyUnit: unit }, "PATCH");
+    if (res.ok) { setMsg({ kind: "ok", text: "ذخیره شد — همه‌جای سایت (پنلِ پشتیبان، نماینده، کاتالوگِ عمومی) از بارگذاریِ بعدی با این واحد نشان داده می‌شود." }); await load(ctx.tenantId); }
+    else setMsg({ kind: "err", text: actionError(res.status) });
+    setSaving(false);
+  }
+
   if (loadErr) return <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{loadErr}</span></div>;
   if (!s) return <p className="muted"><span className="spinner" /> در حال بارگذاری…</p>;
 
@@ -100,6 +110,29 @@ export default function SettingsSection({ ctx }: { ctx: Ctx }) {
         <input ref={fileRef} id="logo-file" type="file" accept="image/jpeg,image/png,image/webp"
           style={{ display: "none" }} disabled={uploading}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); }} />
+      </div>
+
+      <h2>واحدِ نمایشِ مبلغ</h2>
+      <div className="card">
+        <p className="muted" style={{ marginTop: 0 }}>
+          فقط نمایش عوض می‌شود — همه‌جای سایت (پنلِ پشتیبان، نماینده، کاتالوگِ عمومی، خروجیِ اکسل).
+          ذخیره‌سازی و محاسبات همیشه ریال می‌مانند؛ ورودی‌های فرم هم همیشه با ریال پر می‌شوند.
+        </p>
+        <div className="row row--start" style={{ gap: "var(--sp-3)" }}>
+          <label className="row row--start" style={{ gap: ".4rem", cursor: "pointer" }}>
+            <input type="radio" name="currency-unit" checked={s.currencyUnit === "rial"} disabled={saving}
+              onChange={() => setCurrencyUnit("rial")} />
+            ریال
+          </label>
+          <label className="row row--start" style={{ gap: ".4rem", cursor: "pointer" }}>
+            <input type="radio" name="currency-unit" checked={s.currencyUnit === "toman"} disabled={saving}
+              onChange={() => setCurrencyUnit("toman")} />
+            تومان
+          </label>
+        </div>
+        <div className="muted num" style={{ marginTop: "var(--sp-2)" }}>
+          نمونه: {formatMoney(1_250_000, s.currencyUnit)}
+        </div>
       </div>
     </>
   );

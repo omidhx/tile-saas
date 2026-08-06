@@ -17,10 +17,30 @@ before(async () => {
 });
 after(async () => { await sql.end(); });
 
-test("پیش‌فرض: TTLِ ۲۴ ساعت، بدونِ لوگو", async () => {
+test("پیش‌فرض: TTLِ ۲۴ ساعت، بدونِ لوگو، واحدِ نمایش ریال", async () => {
   const s = await getTenantSettings(T);
   assert.equal(s?.ttlHours, 24);
   assert.equal(s?.logoUrl, null);
+  assert.equal(s?.currencyUnit, "rial");
+});
+
+test("تغییرِ واحدِ نمایش به تومان ذخیره و ردپا می‌شود، بدونِ دست‌زدن به بقیه‌ی تنظیمات", async () => {
+  const before = await getTenantSettings(T);
+  await updateTenantSettings({ tenantId: T, actorUserId: U, currencyUnit: "toman" });
+  const s = await getTenantSettings(T);
+  assert.equal(s?.currencyUnit, "toman");
+  assert.equal(s?.ttlHours, before?.ttlHours, "دست‌نخورده ماند");
+  assert.equal(s?.logoUrl, before?.logoUrl, "دست‌نخورده ماند");
+
+  const [row] = await sql`
+    SELECT old_value AS "old", new_value AS "new" FROM audit_log
+    WHERE tenant_id = ${T} AND action = 'tenant_settings.edit' AND entity_id = ${T}
+    ORDER BY created_at DESC LIMIT 1`;
+  assert.equal(row.old.currencyUnit, "rial");
+  assert.equal(row.new.currencyUnit, "toman");
+  assert.equal("ttlHours" in row.new, false, "فیلدِ دست‌نخورده نباید در ردپا باشد");
+
+  await updateTenantSettings({ tenantId: T, actorUserId: U, currencyUnit: "rial" }); // برگرداندن برای تست‌های بعدی
 });
 
 test("تغییرِ TTL ذخیره و در audit_log ثبت می‌شود", async () => {

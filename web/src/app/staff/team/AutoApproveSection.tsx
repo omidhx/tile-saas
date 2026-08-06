@@ -4,11 +4,11 @@ import Icon from "../../Icon";
 import MessageBanner from "../../MessageBanner";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
+import { formatMoney } from "@/lib/money";
 
 type Agent = { id: string; name: string; limit: number | null };
 type Settings = { tenantLimit: number | null; agents: Agent[] };
 
-const n = (v: number) => v.toLocaleString("fa-IR");
 /** ورودی خالی → null (خاموش/ارث). عددِ نامعتبر → undefined یعنی «ذخیره نکن». */
 const parseLimit = (s: string): number | null | undefined => {
   const t = s.replace(/[،,\s]/g, "").replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
@@ -72,7 +72,7 @@ export default function AutoApproveSection({ ctx }: { ctx: Ctx }) {
             </div>
             <div className="muted num">
               {s.tenantLimit === null ? "اکنون: خاموش — همه‌ی سفارش‌ها دستی تأیید می‌شوند."
-                : `اکنون: سفارش تا ${n(s.tenantLimit)} ریال خودکار تأیید می‌شود.`}
+                : `اکنون: سفارش تا ${formatMoney(s.tenantLimit, ctx.currencyUnit)} خودکار تأیید می‌شود.`}
             </div>
           </div>
 
@@ -93,9 +93,9 @@ export default function AutoApproveSection({ ctx }: { ctx: Ctx }) {
                   </div>
                   <div className="muted num">
                     {a.limit === null
-                      ? (s.tenantLimit === null ? "ارث از کارخانه: خاموش" : `ارث از کارخانه: ${n(s.tenantLimit)} ریال`)
+                      ? (s.tenantLimit === null ? "ارث از کارخانه: خاموش" : `ارث از کارخانه: ${formatMoney(s.tenantLimit, ctx.currencyUnit)}`)
                       : a.limit === 0 ? "هرگز خودکار تأیید نمی‌شود"
-                      : `سقف اختصاصی: ${n(a.limit)} ریال`}
+                      : `سقف اختصاصی: ${formatMoney(a.limit, ctx.currencyUnit)}`}
                   </div>
                 </div>
               ))}

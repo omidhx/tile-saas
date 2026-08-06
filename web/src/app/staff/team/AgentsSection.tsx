@@ -4,6 +4,7 @@ import Icon from "../../Icon";
 import MessageBanner from "../../MessageBanner";
 import { getJson, postJson, loadError, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
+import { formatMoney } from "@/lib/money";
 import DeleteButton from "../../DeleteButton";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { toJalali, todayJalali, formatJalaliDate, jalaliToIsoDate, type Jalali } from "@/lib/date";
@@ -25,7 +26,6 @@ type Override = {
   id: string; variantId: string; price: string; validFrom: string | null; validTo: string | null;
   productName: string; productCode: string;
 };
-const money = (v: string | number) => Number(v).toLocaleString("fa-IR");
 const isoDate = jalaliToIsoDate;
 const OVERRIDE_ERR_FA: Record<string, string> = {
   invalid: "قیمت/بازه نامعتبر است.",
@@ -33,7 +33,6 @@ const OVERRIDE_ERR_FA: Record<string, string> = {
   not_found: "این استثنا دیگر وجود ندارد — فهرست به‌روز شد.",
 };
 
-const n = (v: number) => v.toLocaleString("fa-IR");
 const FA: Record<string, string> = {
   seat_limit: "سقفِ تعدادِ نمایندگی‌های این اشتراک پر شده — برای افزایش با پشتیبانی تماس بگیرید.",
   code_taken: "این کد قبلاً برای نمایندگیِ دیگری استفاده شده.",
@@ -321,8 +320,8 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
           </div>
           <div className="muted">
             {a.priceListName ?? "بدونِ لیستِ اختصاصی"}
-            {a.creditLimit != null && <> · سقفِ اعتبار: {n(a.creditLimit)} ریال</>}
-            {a.autoApproveLimit != null && <> · تأییدِ خودکارِ اختصاصی: {n(a.autoApproveLimit)} ریال</>}
+            {a.creditLimit != null && <> · سقفِ اعتبار: {formatMoney(a.creditLimit, ctx.currencyUnit)}</>}
+            {a.autoApproveLimit != null && <> · تأییدِ خودکارِ اختصاصی: {formatMoney(a.autoApproveLimit, ctx.currencyUnit)}</>}
           </div>
           <div style={{ marginTop: "var(--sp-2)" }}>
             {a.users.map((u) => (
@@ -414,7 +413,7 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
                     ) : (
                       <div className="row row--start row--stack-mobile" style={{ gap: "var(--sp-2)" }}>
                         <span>{o.productName} <span className="subtle">({o.productCode})</span></span>
-                        <span className="badge badge--ok">{money(o.price)} ریال</span>
+                        <span className="badge badge--ok">{formatMoney(Number(o.price), ctx.currencyUnit)}</span>
                         <span className="subtle">
                           {o.validFrom || o.validTo
                             ? `${o.validFrom ? formatJalaliDate(o.validFrom) : "ابتدا"} تا ${o.validTo ? formatJalaliDate(o.validTo) : "بی‌پایان"}`

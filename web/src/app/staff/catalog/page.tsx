@@ -19,6 +19,7 @@ import IncomingPanel from "./IncomingPanel";
 import SubsPanel from "./SubsPanel";
 import { AttrFields, MoreFields, parsePackInt, parsePackNum, type AttrKey } from "./productFields";
 import { money, sqm, type Product, type Sub, type Wh, type PriceList, type PriceItem, type IncomingItem } from "./types";
+import { formatMoney } from "@/lib/money";
 
 const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "", body: "", size: "", thickness: "", usageArea: "", description: "", imageUrl: "", boxesPerPallet: "", sqmPerBox: "", stockWarehouseId: "", stockQty: "" };
 
@@ -374,7 +375,7 @@ export default function CatalogPage() {
 
               <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
                 {p.basePrice !== null
-                  ? <>قیمتِ پایه: <span className="metric">{money(p.basePrice)}</span> ریال / کارتن</>
+                  ? <>قیمتِ پایه: <span className="metric">{formatMoney(p.basePrice, ctx.currencyUnit)}</span> / کارتن</>
                   : <span className="subtle">قیمتی ثبت نشده</span>}
               </div>
 

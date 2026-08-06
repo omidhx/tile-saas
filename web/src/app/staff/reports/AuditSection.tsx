@@ -4,6 +4,7 @@ import { usePaginatedSearch } from "@/lib/usePaginatedSearch";
 import Icon from "../../Icon";
 import type { Ctx } from "@/lib/useContexts";
 import { formatJalaliDateTime } from "@/lib/date";
+import { formatMoney, type CurrencyUnit } from "@/lib/money";
 
 type FieldDiff = Record<string, string | number | boolean | null>;
 type Entry = {
@@ -11,8 +12,6 @@ type Entry = {
   oldValue: number | FieldDiff | null; newValue: number | FieldDiff | null; createdAt: string;
   actorPhone: string | null; label: string | null;
 };
-
-const n = (v: number) => v.toLocaleString("fa-IR");
 
 const ACTION_FA: Record<string, string> = {
   "price.set": "تغییر قیمت",
@@ -29,19 +28,24 @@ const FIELD_FA: Record<string, string> = {
   size: "ابعاد", thickness: "ضخامت", usageArea: "کاربری", description: "توضیحات",
   boxesPerPallet: "کارتن در پالت", sqcmPerBox: "متراژِ کارتن",
   phone: "شماره تماس", note: "یادداشت", isActive: "فعال",
-  ttlHours: "مدتِ اعتبارِ رزرو (ساعت)", logoUrl: "لوگو",
+  ttlHours: "مدتِ اعتبارِ رزرو (ساعت)", logoUrl: "لوگو", currencyUnit: "واحدِ نمایشِ مبلغ",
   enabled: "فعال", provider: "پنلِ پیامکی", senderNumber: "شماره‌ی ارسال‌کننده",
   patterns: "پترن‌ها", credentials: "اطلاعاتِ ورود",
 };
 
-const fieldVal = (v: string | number | boolean | null) =>
-  v === null ? "—" : typeof v === "boolean" ? (v ? "بله" : "خیر") : String(v);
+const CURRENCY_UNIT_FA: Record<string, string> = { rial: "ریال", toman: "تومان" };
+
+const fieldVal = (v: string | number | boolean | null, key: string) =>
+  v === null ? "—"
+    : typeof v === "boolean" ? (v ? "بله" : "خیر")
+    : key === "currencyUnit" ? (CURRENCY_UNIT_FA[String(v)] ?? String(v))
+    : String(v);
 
 /** مقدارِ پولی، با «تعریف‌نشده» به‌جای عددِ خالی — چون NULL معنیِ خودش را دارد. */
-function money(v: number | null, action: string) {
+function money(v: number | null, action: string, unit: CurrencyUnit) {
   if (v === null) return action.startsWith("auto_approve_limit") ? "خاموش/ارث" : "بدون قیمت";
   if (v === 0 && action.startsWith("auto_approve_limit")) return "هرگز خودکار";
-  return `${n(v)} ریال`;
+  return formatMoney(v, unit);
 }
 
 const fetchEntries = (tenantId: string, query: string, offset: number) =>
@@ -98,18 +102,18 @@ export default function AuditSection({ ctx, onLedger }: { ctx: Ctx; onLedger: ()
                 {Object.keys((r.newValue as FieldDiff) ?? {}).map((key) => (
                   <div className="row row--start" key={key} style={{ gap: "var(--sp-2)" }}>
                     <span className="subtle">{FIELD_FA[key] ?? key}:</span>
-                    <span className="badge">{fieldVal((r.oldValue as FieldDiff)?.[key] ?? null)}</span>
+                    <span className="badge">{fieldVal((r.oldValue as FieldDiff)?.[key] ?? null, key)}</span>
                     <span className="subtle" aria-label="تبدیل شد به">←</span>
-                    <span className="badge badge--ok">{fieldVal((r.newValue as FieldDiff)?.[key] ?? null)}</span>
+                    <span className="badge badge--ok">{fieldVal((r.newValue as FieldDiff)?.[key] ?? null, key)}</span>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="row row--start" style={{ marginTop: "var(--sp-2)", gap: "var(--sp-2)" }}>
-                <span className="badge">{money(r.oldValue as number | null, r.action)}</span>
+                <span className="badge">{money(r.oldValue as number | null, r.action, ctx.currencyUnit)}</span>
                 <span className="subtle" aria-label="تبدیل شد به">←</span>
                 <span className={`badge ${rose ? "badge--warn" : "badge--ok"}`}>
-                  {money(r.newValue as number | null, r.action)}
+                  {money(r.newValue as number | null, r.action, ctx.currencyUnit)}
                 </span>
               </div>
             )}

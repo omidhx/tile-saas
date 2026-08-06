@@ -10,6 +10,7 @@ import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDate, jalaliToDate, todayJalali, toJalali, type Jalali } from "@/lib/date";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { exportXlsx } from "@/lib/exportXlsx";
+import { formatMoney, toDisplayAmount, currencyLabel } from "@/lib/money";
 
 type Customer = {
   id: string; name: string; phone: string | null; note: string | null;
@@ -183,7 +184,8 @@ export default function CustomersPage() {
         "پرخریدترین": rows.map((r) => ({
           "مشتری": r.name, "وصل به رکورد": r.linked ? "بله" : "خیر",
           "تعداد حواله": r.dispatches, "کارتن": r.boxes,
-          "ارزش (ریال)": r.value, "حواله‌ی بی‌ارزشِ معلوم": r.unknownValueDispatches,
+          [`ارزش (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(r.value, ctx.currencyUnit),
+          "حواله‌ی بی‌ارزشِ معلوم": r.unknownValueDispatches,
         })),
         "همه‌ی مشتریان": res.data.customers.map((c) => ({
           "نام": c.name, "شماره": c.phone ?? "", "نمایندگی": c.agentName ?? "مستقیمِ کارخانه",
@@ -255,7 +257,7 @@ export default function CustomersPage() {
 
       {!inverted && rows.length > 0 && (
         <div className="card">
-          <div className="metric num" style={{ fontSize: "1.05rem" }}>{n(totalValue)} ریال در این بازه</div>
+          <div className="metric num" style={{ fontSize: "1.05rem" }}>{formatMoney(totalValue, ctx.currencyUnit)} در این بازه</div>
           {/* حواله‌های قدیمیِ متنِ آزاد حذف نشده‌اند — ولی باید معلوم باشد که هستند */}
           {unlinked > 0 && (
             <div className="muted">
@@ -276,7 +278,7 @@ export default function CustomersPage() {
               <strong>{r.name}</strong>
               {!r.linked && <span className="badge badge--warn" style={{ marginInlineStart: "var(--sp-2)" }}>وصل‌نشده</span>}
             </span>
-            <span className="metric">{n(r.value)} ریال</span>
+            <span className="metric">{formatMoney(r.value, ctx.currencyUnit)}</span>
           </div>
           <div className="muted num">{n(r.dispatches)} حواله · {n(r.boxes)} کارتن بارگیری‌شده</div>
           {/* «نامعلوم» ≠ «صفر» — همان قاعده‌ی گزارشِ خط‌های بی‌قیمت */}

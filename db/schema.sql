@@ -98,6 +98,11 @@ CREATE TABLE tenant (
     -- با secretBox.ts رمزنگاری‌شده ذخیره می‌شوند، هرگز خام. NULL/enabled=false یعنی
     -- خاموش — worker حتی یک HTTP call هم برای این tenant نمی‌زند (سبک و بی‌مزاحمت).
     sms_config                   JSONB,
+    -- v11 «واحدِ نمایشِ مبلغ»: فقط لایه‌ی UI را عوض می‌کند — ذخیره‌سازی/محاسبات همیشه
+    -- ریال می‌مانند (spec ۱۴.۸: پول هیچ‌وقت float نیست). toman یعنی هرجا مبلغ نشان
+    -- داده می‌شود (پنلِ پشتیبان، نماینده، کاتالوگِ عمومی، اکسل) روی ۱۰ تقسیم می‌شود.
+    currency_unit                TEXT NOT NULL DEFAULT 'rial'
+        CHECK (currency_unit IN ('rial','toman')),
     track_shade_caliber         TEXT NOT NULL DEFAULT 'optional'
         CHECK (track_shade_caliber IN ('off','optional','required')),  -- بخش ۷.۱ پیش‌فرض optional
     -- v2 «تأیید هیبریدی» (بخش ۹): سقفِ ارزشِ سفارش که زیرش رزرو خودکار تأیید می‌شود.
@@ -803,10 +808,10 @@ FROM inventory_balance b;
 CREATE FUNCTION user_contexts(p_user_id UUID)
 RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT,
                can_manage_access BOOLEAN, allowed_pages TEXT[],
-               assigned_staff_name TEXT, assigned_staff_phone TEXT)
+               assigned_staff_name TEXT, assigned_staff_phone TEXT, currency_unit TEXT)
 LANGUAGE sql SECURITY DEFINER STABLE AS $$
     SELECT t.id, t.name, aa.id, aa.legal_name, tm.role, tm.can_manage_access, tm.allowed_pages,
-           su.full_name, su.phone
+           su.full_name, su.phone, t.currency_unit
     FROM tenant_membership tm
     JOIN tenant t              ON t.id = tm.tenant_id AND t.is_active
     LEFT JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id

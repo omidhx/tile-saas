@@ -4,11 +4,11 @@ import Image from "next/image";
 import type { PublicItem } from "@/db/sharedCatalog";
 import { hideOnError } from "@/lib/img";
 import { ImageGalleryModal } from "@/app/ImageGalleryModal";
+import { formatMoney, type CurrencyUnit } from "@/lib/money";
 
 // نمای کاتالوگِ مشتری: گرید + پاپ‌آپِ گالری/جزئیات. کلاینت چون کلیک و مودال لازم دارد.
-const money = (v: number) => v.toLocaleString("fa-IR");
 
-export default function CatalogView({ items }: { items: PublicItem[] }) {
+export default function CatalogView({ items, currencyUnit }: { items: PublicItem[]; currencyUnit: CurrencyUnit }) {
   const [open, setOpen] = useState<PublicItem | null>(null);
   const [idx, setIdx] = useState(0);
   const show = (it: PublicItem) => { setOpen(it); setIdx(0); };
@@ -34,7 +34,7 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
               {specs(it) && <div className="subtle" style={{ marginTop: "var(--sp-1)" }}>{specs(it)}</div>}
               {it.customerPrice != null && (
                 <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
-                  <span className="metric">{money(it.customerPrice)}</span> ریال / مترمربع
+                  <span className="metric">{formatMoney(it.customerPrice, currencyUnit)}</span> / مترمربع
                 </div>
               )}
             </div>
@@ -58,7 +58,7 @@ export default function CatalogView({ items }: { items: PublicItem[] }) {
             {open.usageArea && <div className="row"><span className="muted">کاربری</span><span>{open.usageArea}</span></div>}
             {open.customerPrice != null && (
               <div className="row"><span className="muted">قیمت</span>
-                <span className="metric">{money(open.customerPrice)} ریال / مترمربع</span></div>
+                <span className="metric">{formatMoney(open.customerPrice, currencyUnit)} / مترمربع</span></div>
             )}
           </div>
           {open.description && (

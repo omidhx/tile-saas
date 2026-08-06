@@ -133,7 +133,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/price-lists` | staff | `POST` ساختِ سبدِ قیمت‌گذاریِ تازه (تا حالا فقط SQL) |
 | `/api/volume-discounts` | staff | `POST`/`PATCH`/`DELETE`ِ پله‌های تخفیفِ حجمی (تا حالا فقط SQL؛ حتی خواندنش هم جایی نمایش داده نمی‌شد) — priceListId/variantId=null یعنی «همه» |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
-| `/api/settings/tenant` | admin | تنظیماتِ کارخانه: TTLِ پیش‌فرضِ رزرو + لوگو (تغییر در `audit_log`) |
+| `/api/settings/tenant` | admin | تنظیماتِ کارخانه: TTLِ پیش‌فرضِ رزرو + لوگو + واحدِ نمایشِ مبلغ (ریال/تومان، فقط UI) (تغییر در `audit_log`) |
 | `/api/settings/sms` | admin | پنلِ پیامکیِ کارخانه: انتخابِ پروایدر، اطلاعاتِ ورود (رمزنگاری‌شده)، شماره‌ی ارسال‌کننده، پترن‌های هر نوع اعلان، روشن/خاموش (تغییر در `audit_log`، بدونِ رازها) |
 | `/api/dashboard` | staff | KPIِ سریعِ صفحه‌ی اول: حواله/کارتنِ امروز + کالای رو به اتمام |
 | `/api/substitutes` | staff | تعریفِ کالای جایگزین |

@@ -43,7 +43,7 @@ export default async function PublicCatalogPage(
 
       {data.items.length === 0
         ? <p className="empty">این کاتالوگ فعلاً محصولی ندارد.</p>
-        : <CatalogView items={data.items} />}
+        : <CatalogView items={data.items} currencyUnit={data.currencyUnit} />}
 
       <p className="muted" style={{ marginTop: "var(--sp-5)", textAlign: "center" }}>
         برای ثبتِ سفارش با نماینده‌ی خود تماس بگیرید.

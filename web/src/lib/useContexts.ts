@@ -10,6 +10,8 @@ export type Ctx = {
   canManageAccess: boolean; allowedPages: string[];
   // v5: پشتیبانِ ثابتِ این نمایندگی — فقط وقتی agentAccountId پر است معنا دارد
   assignedStaffName: string | null; assignedStaffPhone: string | null;
+  // v11: واحدِ نمایشِ مبلغ — فقط لایه‌ی نمایش، ذخیره‌سازی همیشه ریال است (lib/money.ts)
+  currencyUnit: "rial" | "toman";
 };
 
 // انتخابِ کاربر بین جلسه‌ها می‌ماند. localStorage امن است چون **مرجعِ دسترسی نیست**:

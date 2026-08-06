@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
+import { formatMoney } from "@/lib/money";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
@@ -241,7 +242,7 @@ export default function ReservePage() {
         // به نماینده‌ای که سفارشش تأیید شده، او را بی‌دلیل منتظرِ تماسِ پشتیبان می‌گذارد.
         const { autoApproved } = await res.json().catch(() => ({ autoApproved: null }));
         setMsg(autoApproved
-          ? { kind: "ok", text: `سفارش شما تأیید شد و برای آماده‌سازی رفت — نیازی به تأیید پشتیبان نبود (${money(autoApproved.orderValue)} ریال).` }
+          ? { kind: "ok", text: `سفارش شما تأیید شد و برای آماده‌سازی رفت — نیازی به تأیید پشتیبان نبود (${formatMoney(autoApproved.orderValue, ctx.currencyUnit)}).` }
           : { kind: "ok", text: "رزرو ثبت شد و در انتظار تأیید پشتیبان است." });
         await loadLots(ctx); // همگام‌سازیِ نمایشی بعد از موفقیت
       } else if (res.status === 409) {
@@ -414,7 +415,7 @@ export default function ReservePage() {
                 </div>
                 <div className="muted">
                   {l.unitPrice !== null
-                    ? <>قیمت من: <span className="metric">{money(l.unitPrice)}</span> ریال / کارتن</>
+                    ? <>قیمت من: <span className="metric">{formatMoney(l.unitPrice, ctx.currencyUnit)}</span> / کارتن</>
                     : "قیمتی برای شما ثبت نشده"}
                 </div>
               </div>
@@ -431,13 +432,14 @@ export default function ReservePage() {
       {items.length > 0 && (
         <CartSummary itemCount={items.length} cartBoxes={cartBoxes} cartValue={cartValue} anyUnpriced={anyUnpriced}
           mixedShade={mixedShade} mixedWarehouse={mixedWarehouse} cartWarehouses={cartWarehouses}
-          pending={pending} onSubmit={submit} />
+          pending={pending} onSubmit={submit} currencyUnit={ctx.currencyUnit} />
       )}
 
       <OutOfStockSection outOfStock={outOfStock} subscribed={subscribed} queue={queue} queueQty={queueQty}
         alertPending={alertPending} queuePending={queuePending} subs={subs} arrivals={arrivals}
         onToggleAlert={toggleAlert} onJoinQueue={joinQueue} onLeaveQueue={leaveQueue}
-        onQueueQtyChange={(variantId, v) => setQueueQty((q) => ({ ...q, [variantId]: v }))} />
+        onQueueQtyChange={(variantId, v) => setQueueQty((q) => ({ ...q, [variantId]: v }))}
+        currencyUnit={ctx.currencyUnit} />
 
       {/* مودالِ جزئیاتِ محصول: گالری + ویژگی‌ها + توضیحات. کلیک روی پس‌زمینه یا Esc می‌بندد. */}
       {preview && (
@@ -463,7 +465,7 @@ export default function ReservePage() {
             {preview.unitPrice !== null && (
               <div className="row">
                 <span className="muted">قیمت من</span>
-                <span className="metric">{money(preview.unitPrice)} ریال / کارتن</span>
+                <span className="metric">{formatMoney(preview.unitPrice, ctx.currencyUnit)} / کارتن</span>
               </div>
             )}
           </div>

@@ -1,14 +1,15 @@
 import Icon from "../Icon";
+import { formatMoney, type CurrencyUnit } from "@/lib/money";
 
 const money = (v: number) => v.toLocaleString("fa-IR");
 
 /** کارتِ چسبانِ سبد: جمعِ زنده + هشدارهای نرم (شیدِ مخلوط/چندانباره) + دکمه‌ی ثبت. صرفاً presentational. */
 export default function CartSummary({
-  itemCount, cartBoxes, cartValue, anyUnpriced, mixedShade, mixedWarehouse, cartWarehouses, pending, onSubmit,
+  itemCount, cartBoxes, cartValue, anyUnpriced, mixedShade, mixedWarehouse, cartWarehouses, pending, onSubmit, currencyUnit,
 }: {
   itemCount: number; cartBoxes: number; cartValue: number; anyUnpriced: boolean;
   mixedShade: boolean; mixedWarehouse: boolean; cartWarehouses: Set<string | undefined>;
-  pending: boolean; onSubmit: () => void;
+  pending: boolean; onSubmit: () => void; currencyUnit: CurrencyUnit;
 }) {
   return (
     <div className="card card--raised" style={{ position: "sticky", bottom: "var(--sp-3)" }}>
@@ -21,7 +22,7 @@ export default function CartSummary({
       {cartValue > 0 && (
         <div className="row" style={{ marginTop: "var(--sp-2)" }}>
           <span className="muted">جمعِ تقریبی</span>
-          <span className="metric">{money(cartValue)} ریال</span>
+          <span className="metric">{formatMoney(cartValue, currencyUnit)}</span>
         </div>
       )}
       {anyUnpriced && (

@@ -1,5 +1,6 @@
 import Icon from "../Icon";
 import { formatJalaliDate } from "@/lib/date";
+import { formatMoney, type CurrencyUnit } from "@/lib/money";
 
 const money = (v: number) => v.toLocaleString("fa-IR");
 
@@ -18,14 +19,14 @@ export type OutOfStockItem = { variantId: string; name: string; code: string };
  */
 export default function OutOfStockSection({
   outOfStock, subscribed, queue, queueQty, alertPending, queuePending, subs, arrivals,
-  onToggleAlert, onJoinQueue, onLeaveQueue, onQueueQtyChange,
+  onToggleAlert, onJoinQueue, onLeaveQueue, onQueueQtyChange, currencyUnit,
 }: {
   outOfStock: OutOfStockItem[]; subscribed: string[]; queue: WaitlistEntry[];
   queueQty: Record<string, string>; alertPending: string | null; queuePending: string | null;
   subs: Record<string, Substitute[]>; arrivals: Record<string, Arrival[]>;
   onToggleAlert: (variantId: string, on: boolean) => void;
   onJoinQueue: (variantId: string) => void; onLeaveQueue: (variantId: string) => void;
-  onQueueQtyChange: (variantId: string, v: string) => void;
+  onQueueQtyChange: (variantId: string, v: string) => void; currencyUnit: CurrencyUnit;
 }) {
   if (outOfStock.length === 0) return null;
   return (
@@ -130,7 +131,7 @@ export default function OutOfStockSection({
                     <span style={{ textAlign: "start" }}>
                       <span className="metric">{money(s.available)}</span> <span className="muted">کارتن</span>
                       {s.unitPrice !== null && (
-                        <div className="subtle num">{money(s.unitPrice)} ریال / کارتن</div>
+                        <div className="subtle num">{formatMoney(s.unitPrice, currencyUnit)} / کارتن</div>
                       )}
                     </span>
                   </div>

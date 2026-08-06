@@ -10,6 +10,7 @@ import { useContexts } from "@/lib/useContexts";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { toJalali, jalaliToDate, todayJalali, type Jalali } from "@/lib/date";
 import { exportXlsx } from "@/lib/exportXlsx";
+import { formatMoney, toDisplayAmount, currencyLabel } from "@/lib/money";
 import LedgerSection from "./LedgerSection";
 import AuditSection from "./AuditSection";
 
@@ -139,11 +140,12 @@ export default function ReportsHubPage() {
   const totalBoxes = rep?.topProducts.reduce((s, p) => s + p.boxes, 0) ?? 0;
 
   function exportReports() {
-    if (!rep) return;
+    if (!rep || !ctx) return;
     exportXlsx(`گزارش-مدیریتی-${jstr(from)}-تا-${jstr(to)}.xlsx`, {
       "عملکرد نمایندگان": rep.agents.map((a) => ({
         "نمایندگی": a.agentName, "تعداد سفارش": a.requests, "کارتن": a.boxes,
-        "ارزش (ریال)": a.value, "خطِ بی‌قیمت": a.unpricedLines,
+        [`ارزش (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(a.value, ctx.currencyUnit),
+        "خطِ بی‌قیمت": a.unpricedLines,
       })),
       "پرفروش‌ها": rep.topProducts.map((p) => ({ "کالا": p.name, "کد": p.code, "کارتنِ بارگیری‌شده": p.boxes })),
       "به‌تفکیکِ انبار": rep.agentsByWarehouse.flatMap((r) => rep.warehouseBuckets.map((w, i) => ({
@@ -152,14 +154,17 @@ export default function ReportsHubPage() {
       "راکدها": rep.deadStock.map((d) => ({ "کالا": d.name, "کد": d.code, "موجودی (کارتن)": d.onHand })),
       "تخفیف به‌تفکیکِ نماینده": rep.discountsByAgent.map((d) => ({
         "نمایندگی": d.agentName, "خطِ تخفیف‌دار": d.discountedLines,
-        "مبلغِ تخفیف (ریال)": d.discountAmount, "مبلغِ ناخالص (ریال)": d.grossAmount,
+        [`مبلغِ تخفیف (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(d.discountAmount, ctx.currencyUnit),
+        [`مبلغِ ناخالص (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(d.grossAmount, ctx.currencyUnit),
       })),
       "تخفیف به‌تفکیکِ کالا": rep.discountsByProduct.map((d) => ({
-        "کالا": d.name, "کد": d.code, "خطِ تخفیف‌دار": d.discountedLines, "مبلغِ تخفیف (ریال)": d.discountAmount,
+        "کالا": d.name, "کد": d.code, "خطِ تخفیف‌دار": d.discountedLines,
+        [`مبلغِ تخفیف (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(d.discountAmount, ctx.currencyUnit),
       })),
       ...(monthly && monthly.rows.length > 0 ? {
         "ماه‌به‌ماه": monthly.rows.flatMap((r) => monthly.buckets.map((b, i) => ({
-          "نمایندگی": r.agentName, "ماه": b.label, "کارتن": r.months[i].boxes, "ارزش (ریال)": r.months[i].value,
+          "نمایندگی": r.agentName, "ماه": b.label, "کارتن": r.months[i].boxes,
+          [`ارزش (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(r.months[i].value, ctx.currencyUnit),
         }))),
       } : {}),
     });
@@ -242,7 +247,7 @@ export default function ReportsHubPage() {
                       {r.months.map((m, i) => (
                         <td key={i} style={{ padding: "var(--sp-2)" }}>
                           {m.boxes > 0
-                            ? <>{n(m.boxes)} کارتن<div className="subtle">{n(m.value)} ریال</div></>
+                            ? <>{n(m.boxes)} کارتن<div className="subtle">{formatMoney(m.value, ctx.currencyUnit)}</div></>
                             : <span className="subtle">—</span>}
                         </td>
                       ))}
@@ -261,7 +266,7 @@ export default function ReportsHubPage() {
               {/* screen-reader-summary: خلاصه‌ی متنیِ نکته‌ی اصلی، نه فقط جدولِ خام */}
               <div className="card">
                 <div className="metric num" style={{ fontSize: "1.1rem" }}>
-                  {n(totalValue)} ریال ارزشِ سفارش‌های تأییدشده · {n(totalBoxes)} کارتن بارگیری‌شده
+                  {formatMoney(totalValue, ctx.currencyUnit)} ارزشِ سفارش‌های تأییدشده · {n(totalBoxes)} کارتن بارگیری‌شده
                 </div>
                 <div className="muted">
                   «ارزش» از قیمتِ ثبت‌شده در لحظه‌ی تأیید است و «بارگیری» از دفتر حرکات —
@@ -276,7 +281,7 @@ export default function ReportsHubPage() {
                     <div className="card" key={a.agentId}>
                       <div className="row">
                         <strong>{a.agentName}</strong>
-                        <span className="metric num">{n(a.value)} ریال</span>
+                        <span className="metric num">{formatMoney(a.value, ctx.currencyUnit)}</span>
                       </div>
                       <div className="muted num">{n(a.requests)} سفارش · {n(a.boxes)} کارتن</div>
                       {a.unpricedLines > 0 && (
@@ -358,7 +363,7 @@ export default function ReportsHubPage() {
                     <div className="card" key={d.agentId}>
                       <div className="row">
                         <strong>{d.agentName}</strong>
-                        <span className="metric num">{n(d.discountAmount)} ریال</span>
+                        <span className="metric num">{formatMoney(d.discountAmount, ctx.currencyUnit)}</span>
                       </div>
                       <div className="muted num">
                         {n(d.discountedLines)} خطِ تخفیف‌دار
@@ -374,7 +379,7 @@ export default function ReportsHubPage() {
                     <div className="card" key={d.code}>
                       <div className="row">
                         <span>{d.name} <span className="muted">({d.code})</span></span>
-                        <span className="metric num">{n(d.discountAmount)} ریال</span>
+                        <span className="metric num">{formatMoney(d.discountAmount, ctx.currencyUnit)}</span>
                       </div>
                       <div className="muted num">{n(d.discountedLines)} خطِ تخفیف‌دار</div>
                     </div>
