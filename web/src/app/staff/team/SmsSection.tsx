@@ -63,7 +63,7 @@ export default function SmsSection({ ctx }: { ctx: Ctx }) {
   }
 
   async function save() {
-    if (!provider) { setMsg({ kind: "err", text: "یک پروایدر انتخاب کن." }); return; }
+    if (!provider) { setMsg({ kind: "err", text: "یک پنلِ پیامکی انتخاب کن." }); return; }
     setSaving(true); setMsg(null);
     const res = await postJson("/api/settings/sms", {
       tenantId: ctx.tenantId, provider, senderNumber,
@@ -81,6 +81,7 @@ export default function SmsSection({ ctx }: { ctx: Ctx }) {
   if (!cfg) return <p className="muted"><span className="spinner" /> در حال بارگذاری…</p>;
 
   const meta = providers.find((p) => p.id === provider);
+  const savedMeta = providers.find((p) => p.id === cfg.provider);
 
   return (
     <>
@@ -94,15 +95,15 @@ export default function SmsSection({ ctx }: { ctx: Ctx }) {
           فعال
         </label>
         <p className="muted" style={{ marginTop: "var(--sp-2)" }}>
-          {cfg.provider
-            ? "وقتی خاموش است، هیچ درخواستی به پروایدر زده نمی‌شود — نه کندی، نه مزاحمت."
-            : "اول یک پروایدر را کانفیگ و ذخیره کن، بعد می‌توانی فعالش کنی."}
+          {savedMeta
+            ? `وقتی خاموش است، هیچ درخواستی به ${savedMeta.label} زده نمی‌شود — نه کندی، نه مزاحمت.`
+            : "اول یک پنلِ پیامکی را کانفیگ و ذخیره کن، بعد می‌توانی فعالش کنی."}
         </p>
       </div>
 
-      <h2>پروایدر</h2>
+      <h2>انتخابِ پنلِ پیامکی</h2>
       <div className="card">
-        <label htmlFor="sms-provider">پروایدری که خریدی</label>
+        <label htmlFor="sms-provider">انتخابِ پنلِ پیامکی</label>
         <select id="sms-provider" value={provider} onChange={(e) => setProvider(e.target.value)}>
           <option value="">— انتخاب کن —</option>
           {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -144,7 +145,7 @@ export default function SmsSection({ ctx }: { ctx: Ctx }) {
         <>
           <h2>پترن‌ها</h2>
           <p className="muted">
-            برای هر بخش، کدِ پترنی که در پنلِ همان پروایدر ساخته‌ای را بگذار — تا فعال بشود، همان پترن با متنش استفاده می‌شود.
+            برای هر بخش، کدِ پترنی که در {meta.label} ساخته‌ای را بگذار — تا فعال بشود، همان پترن با متنش استفاده می‌شود.
             خالی بماند یعنی برای آن بخش با پیامکِ متنیِ ساده ارسال می‌شود.
           </p>
           {TYPES.map((t) => (
@@ -156,7 +157,7 @@ export default function SmsSection({ ctx }: { ctx: Ctx }) {
               {meta.needsParamNames && (
                 <>
                   <label htmlFor={`params-${t.key}`} style={{ marginTop: "var(--sp-2)" }}>
-                    نامِ پارامترها در پنلِ پروایدر (به همین ترتیب، با کاما جدا)
+                    نامِ پارامترها در {meta.label} (به همین ترتیب، با کاما جدا)
                   </label>
                   <input id={`params-${t.key}`} value={patterns[t.key]?.paramNames ?? ""}
                     onChange={(e) => setPatterns((s) => ({ ...s, [t.key]: { ...s[t.key], paramNames: e.target.value } }))} />

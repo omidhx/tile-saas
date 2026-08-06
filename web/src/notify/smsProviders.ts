@@ -17,7 +17,7 @@ import type { SendResult } from "./sender";
  * پیامِ خطا از همان provider در `error` برمی‌گردد تا کاربر سریع بفهمد.
  */
 
-export type SmsProviderId = "kavenegar" | "ippanel" | "melipayamak" | "smsir";
+export type SmsProviderId = "kavenegar" | "ippanel" | "melipayamak" | "smsir" | "farazsms";
 
 export type SmsCredentials = {
   provider: SmsProviderId;
@@ -39,6 +39,7 @@ export const SMS_PROVIDERS: SmsProviderMeta[] = [
   { id: "ippanel", label: "آی‌پی‌پنل (IPPanel)", fields: ["apiKey"], needsParamNames: false },
   { id: "melipayamak", label: "ملی‌پیامک", fields: ["username", "password"], needsParamNames: false },
   { id: "smsir", label: "sms.ir", fields: ["apiKey"], needsParamNames: true },
+  { id: "farazsms", label: "فراز اس‌ام‌اس", fields: ["apiKey"], needsParamNames: true },
 ];
 
 async function getJson(url: string, init?: RequestInit) {
@@ -124,7 +125,29 @@ async function sendSmsIr(
   return { ok: true };
 }
 
-/** یک پیام (متن یا پترن) را از طریقِ پروایدرِ tenant می‌فرستد. */
+async function sendFarazsms(
+  creds: SmsCredentials, to: string, text: string, patternCode: string | null,
+  tokens: string[], paramNames: string[],
+): Promise<SendResult> {
+  const url = patternCode ? "https://api.farazsms.com/v1/sms/pattern/send" : "https://api.farazsms.com/v1/sms/send";
+  const body = patternCode
+    ? {
+        code: patternCode, sender: creds.senderNumber, recipient: to,
+        values: Object.fromEntries(paramNames.map((name, i) => [name || `param${i + 1}`, tokens[i] ?? ""])),
+      }
+    : { sender: creds.senderNumber, recipient: to, message: text };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: creds.apiKey ?? "" },
+    body: JSON.stringify(body),
+  });
+  const respBody = await res.json().catch(() => null);
+  if (!res.ok || respBody?.status === "error")
+    return { ok: false, error: respBody?.message ?? `فراز اس‌ام‌اس: HTTP ${res.status}` };
+  return { ok: true };
+}
+
+/** یک پیام (متن یا پترن) را از طریقِ پنلِ پیامکیِ tenant می‌فرستد. */
 export function sendViaProvider(
   creds: SmsCredentials, to: string, text: string,
   patternCode: string | null, tokens: string[], paramNames: string[],
@@ -134,5 +157,6 @@ export function sendViaProvider(
     case "ippanel": return sendIppanel(creds, to, text, patternCode, tokens, paramNames);
     case "melipayamak": return sendMelipayamak(creds, to, text, patternCode, tokens);
     case "smsir": return sendSmsIr(creds, to, text, patternCode, tokens, paramNames);
+    case "farazsms": return sendFarazsms(creds, to, text, patternCode, tokens, paramNames);
   }
 }

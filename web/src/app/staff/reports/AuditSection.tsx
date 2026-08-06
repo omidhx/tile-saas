@@ -30,7 +30,7 @@ const FIELD_FA: Record<string, string> = {
   boxesPerPallet: "کارتن در پالت", sqcmPerBox: "متراژِ کارتن",
   phone: "شماره تماس", note: "یادداشت", isActive: "فعال",
   ttlHours: "مدتِ اعتبارِ رزرو (ساعت)", logoUrl: "لوگو",
-  enabled: "فعال", provider: "پروایدرِ پیامک", senderNumber: "شماره‌ی ارسال‌کننده",
+  enabled: "فعال", provider: "پنلِ پیامکی", senderNumber: "شماره‌ی ارسال‌کننده",
   patterns: "پترن‌ها", credentials: "اطلاعاتِ ورود",
 };
 
