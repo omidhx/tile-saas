@@ -5,6 +5,7 @@ import Icon from "../Icon";
 import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
+import PageShell from "../PageShell";
 import { formatJalaliDateTime, remainingTime } from "@/lib/date";
 import { formatMoney, formatMoneyWords } from "@/lib/money";
 
@@ -129,6 +130,7 @@ export default function MyReservationsPage() {
   };
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
@@ -176,5 +178,6 @@ export default function MyReservationsPage() {
         </>
       )}
     </main>
+    </PageShell>
   );
 }

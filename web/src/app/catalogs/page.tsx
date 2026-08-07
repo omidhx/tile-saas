@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import ContextSwitcher from "../ContextSwitcher";
 import LogoutButton from "../LogoutButton";
+import PageShell from "../PageShell";
 import Icon from "../Icon";
 import DeleteButton from "../DeleteButton";
 import MessageBanner from "../MessageBanner";
@@ -129,6 +129,7 @@ export default function CatalogsPage() {
   const visible = products.filter((p) => matches(query, [p.name, p.code]));
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
@@ -137,7 +138,6 @@ export default function CatalogsPage() {
         </div>
         <nav>
           <ContextSwitcher contexts={contexts} ctx={ctx} onSelect={select} mode="agent" />
-          <Link href="/reserve">← موجودی</Link>
           <LogoutButton />
         </nav>
       </div>
@@ -236,5 +236,6 @@ export default function CatalogsPage() {
         );
       })}
     </main>
+    </PageShell>
   );
 }
