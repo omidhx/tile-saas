@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Icon from "../../Icon";
 import { hasPageAccess } from "@/lib/staffPages";
-import NavMenu from "../../NavMenu";
+import PageShell from "../../PageShell";
 import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
 import { usePaginatedSearch } from "@/lib/usePaginatedSearch";
@@ -126,7 +126,7 @@ export default function CatalogPage() {
     [load, reloadProducts],
   );
 
-  // آدرسِ ورودی (مثلاً از NavMenu: ?tab=import) تبِ اولیه را تعیین می‌کند —
+  // آدرسِ ورودی (مثلاً از سایدبار یا لینکِ قدیمی: ?tab=import) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «catalog» است) ناسازگار نشود.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -219,7 +219,7 @@ export default function CatalogPage() {
   const canSee = (key: string) => canSeePage(ctx, key);
   const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
   if (tabs.length === 0)
-    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
+    return <PageShell ctx={ctx}><main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main></PageShell>;
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
 
   const withImage = products.filter((p) => p.imageUrl).length;
@@ -233,13 +233,14 @@ export default function CatalogPage() {
     [...new Set(products.map((p) => p[key]).filter((v): v is string => !!v))].sort();
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
           <h1>محصول و موجودی</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+        <nav><Link href="/staff">← پنل</Link></nav>
       </div>
 
       <TabBar tabs={tabs} active={activeTab} onChange={go} />
@@ -500,5 +501,6 @@ export default function CatalogPage() {
       </>
       )}
     </main>
+    </PageShell>
   );
 }

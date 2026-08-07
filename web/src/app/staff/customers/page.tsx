@@ -4,7 +4,7 @@ import Link from "next/link";
 import Icon from "../../Icon";
 import { hasPageAccess } from "@/lib/staffPages";
 import MessageBanner from "../../MessageBanner";
-import NavMenu from "../../NavMenu";
+import PageShell from "../../PageShell";
 import { getJson, postJson, actionError, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
 import { formatJalaliDate, jalaliToDate, todayJalali, toJalali, type Jalali } from "@/lib/date";
@@ -166,7 +166,7 @@ export default function CustomersPage() {
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
   if (ctx.role === "staff" && !hasPageAccess(ctx.allowedPages, "customers"))
-    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
+    return <PageShell ctx={ctx}><main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main></PageShell>;
 
   const totalValue = rows.reduce((s, r) => s + r.value, 0);
   const unlinked = rows.filter((r) => !r.linked).length;
@@ -196,13 +196,14 @@ export default function CustomersPage() {
   }
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
           <h1>مشتریان</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav className="no-print"><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+        <nav className="no-print"><Link href="/staff">← پنل</Link></nav>
       </div>
 
       <div className="row row--start no-print" style={{ gap: "var(--sp-2)" }}>
@@ -368,5 +369,6 @@ export default function CustomersPage() {
         </button>
       )}
     </main>
+    </PageShell>
   );
 }

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
 import { hasPageAccess } from "@/lib/staffPages";
-import NavMenu from "../../NavMenu";
+import PageShell from "../../PageShell";
 import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError } from "@/lib/api";
 import { useContexts } from "@/lib/useContexts";
@@ -61,7 +61,7 @@ export default function ReportsHubPage() {
   const [monthlyErr, setMonthlyErr] = useState("");
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
-  // آدرسِ ورودی (مثلاً از NavMenu: ?tab=ledger) تبِ اولیه را تعیین می‌کند —
+  // آدرسِ ورودی (مثلاً از سایدبار یا لینکِ قدیمی: ?tab=ledger) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «reports» است) ناسازگار نشود.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -133,7 +133,7 @@ export default function ReportsHubPage() {
   // فقط «گزارش‌ها» دارد نه «دفترِ تغییرات» را نبیند.
   const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
   if (tabs.length === 0)
-    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main>;
+    return <PageShell ctx={ctx}><main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main></PageShell>;
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
 
   const totalValue = rep?.agents.reduce((s, a) => s + a.value, 0) ?? 0;
@@ -171,13 +171,14 @@ export default function ReportsHubPage() {
   }
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
           <h1>گزارش‌ها</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav className="no-print"><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+        <nav className="no-print"><Link href="/staff">← پنل</Link></nav>
       </div>
 
       <div className="no-print"><TabBar tabs={tabs} active={activeTab} onChange={go} /></div>
@@ -392,5 +393,6 @@ export default function ReportsHubPage() {
       {activeTab === "ledger" && <LedgerSection ctx={ctx} />}
       {activeTab === "audit" && <AuditSection ctx={ctx} onLedger={() => go("ledger")} />}
     </main>
+    </PageShell>
   );
 }

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
-import NavMenu from "../../NavMenu";
+import PageShell from "../../PageShell";
 import { TabBar } from "../Tabs";
 import { hasPageAccess } from "@/lib/staffPages";
 import { useContexts, type Ctx } from "@/lib/useContexts";
@@ -35,7 +35,7 @@ export default function SetupHubPage() {
   const { ctx, state } = useContexts("staff");
   const [tab, setTab] = useState<TabKey>("team");
 
-  // آدرسِ ورودی (مثلاً از NavMenu: ?tab=agents) تبِ اولیه را تعیین می‌کند —
+  // آدرسِ ورودی (مثلاً از سایدبار یا لینکِ قدیمی: ?tab=agents) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «team» است) ناسازگار نشود.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -52,17 +52,18 @@ export default function SetupHubPage() {
 
   const tabs = ALL_TABS.filter((t) => t.visible(ctx));
   if (tabs.length === 0)
-    return <main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست.</span></div></main>;
+    return <PageShell ctx={ctx}><main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست.</span></div></main></PageShell>;
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
 
   return (
+    <PageShell ctx={ctx}>
     <main>
       <div className="topbar">
         <div>
           <h1>راه‌اندازی</h1>
           <p className="muted" style={{ margin: 0 }}>{ctx.tenantName}</p>
         </div>
-        <nav><Link href="/staff">← پنل</Link><NavMenu ctx={ctx} /></nav>
+        <nav><Link href="/staff">← پنل</Link></nav>
       </div>
 
       <TabBar tabs={tabs} active={activeTab} onChange={go} />
@@ -73,5 +74,6 @@ export default function SetupHubPage() {
       {activeTab === "auto-approve" && <AutoApproveSection ctx={ctx} />}
       {activeTab === "settings" && <><SettingsSection ctx={ctx} /><SmsSection ctx={ctx} /></>}
     </main>
+    </PageShell>
   );
 }
