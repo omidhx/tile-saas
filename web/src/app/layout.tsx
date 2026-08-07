@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 // وزیرمتن، **self-hosted** از node_modules — نه next/font/google و نه @import از CDN:
 // هر دو در build/اجرا به گوگل fetch می‌زنند که روی VPS ایران شکننده است (تحریم/قطعی).
 // این پکیج فایل‌های woff2 را همراه خودش دارد، پس build آفلاین هم کار می‌کند.
@@ -28,11 +29,19 @@ const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("tile.them
 // suppressHydrationWarning: THEME_INIT_SCRIPT بالا data-theme را قبل از هیدریتِ React
 // روی <html> می‌نشاند — سرور از localStorage خبر ندارد، پس این تفاوت همیشگی و
 // بی‌خطر است؛ بدونِ این پرچم React هر بار در کنسول هشدارِ mismatch می‌داد.
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+// nonceِ CSP از middleware می‌آید (هدرِ x-nonce، یک‌بارمصرف در هر request) — بدونش
+// این <script> با script-src 'nonce-…' مسدود می‌شد. خواندنش از headers() یعنی
+// RootLayout دیگر نمی‌تواند static باشد؛ برای این اپ (کاملاً دینامیک، پشتِ session) مشکلی نیست.
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* suppressHydrationWarning روی خودِ <script>: مرورگرها بعدِ اجرا مقدارِ
+            nonce را از DOM پاک می‌کنند (ضدِ خواندنش توسطِ اسکریپتِ دیگر) — یعنی
+            hydrationِ React همیشه nonceِ سرور را در برابرِ "" در کلاینت می‌بیند.
+            این یک mismatchِ امنیتیِ عمدیِ خودِ مرورگر است، نه باگِ این کد. */}
+        <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <PwaRegister />
         {children}
       </body>
