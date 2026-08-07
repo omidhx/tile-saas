@@ -3,12 +3,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Icon from "../Icon";
-import { MIN_PASSWORD } from "@/auth/passwordFlows.shared";
+import { MIN_PASSWORD, MAX_PASSWORD } from "@/auth/passwordFlows.shared";
 
 const FA: Record<string, string> = {
   invalid_code: "کد اشتباه است یا منقضی شده. کد تازه بگیرید.",
   too_many_attempts: "تلاش‌های بیش از حد روی این کد. کد تازه بگیرید.",
   too_short: `رمز جدید باید حداقل ${MIN_PASSWORD} کاراکتر باشد.`,
+  too_long: `رمز جدید نباید بیشتر از ${MAX_PASSWORD} کاراکتر باشد.`,
   too_many: "درخواست‌های بیش از حد. چند دقیقه صبر کنید.",
 };
 
@@ -113,7 +114,7 @@ export default function ResetPage() {
                      aria-invalid={err ? true : undefined} aria-describedby={err ? "reset-err" : undefined} required />
 
               <label htmlFor="np">رمز جدید</label>
-              <input id="np" type="password" autoComplete="new-password"
+              <input id="np" type="password" autoComplete="new-password" maxLength={MAX_PASSWORD}
                      value={next} onChange={(e) => setNext(e.target.value)}
                      aria-invalid={err ? true : undefined}
                      aria-describedby={err ? "h reset-err" : "h"} required />

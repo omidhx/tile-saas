@@ -30,14 +30,16 @@ export async function POST(req: Request) {
 /** PATCH /api/warehouses — تغییرِ نام/کد. admin-only. */
 export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { tenantId, warehouseId, name, code } = body ?? {};
+  const { tenantId, warehouseId } = body ?? {};
   if (typeof tenantId !== "string" || typeof warehouseId !== "string")
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   const auth = await adminCtx(tenantId);
   if ("err" in auth) return auth.err;
 
-  const r = await updateWarehouse({ tenantId, warehouseId, name, code });
+  // نوعِ غلط (مثلاً عدد) به‌جای بی‌صدا نوشتنِ داده‌ی غلط یا ترکیدنِ کوئری، نادیده گرفته می‌شود.
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const r = await updateWarehouse({ tenantId, warehouseId, name: str(body.name), code: str(body.code) });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

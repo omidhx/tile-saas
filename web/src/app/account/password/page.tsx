@@ -3,11 +3,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Icon from "../../Icon";
-import { MIN_PASSWORD } from "@/auth/passwordFlows.shared";
+import { MIN_PASSWORD, MAX_PASSWORD } from "@/auth/passwordFlows.shared";
 
 const FA: Record<string, string> = {
   wrong_current: "رمز عبور فعلی اشتباه است.",
   too_short: `رمز جدید باید حداقل ${MIN_PASSWORD} کاراکتر باشد.`,
+  too_long: `رمز جدید نباید بیشتر از ${MAX_PASSWORD} کاراکتر باشد.`,
   same_as_current: "رمز جدید با رمز فعلی یکی است — رمزِ متفاوتی انتخاب کنید.",
   too_many: "تلاش‌های بیش از حد. چند دقیقه صبر کنید.",
 };
@@ -91,14 +92,14 @@ export default function ChangePasswordPage() {
                  aria-invalid={err ? true : undefined} aria-describedby={err ? "pw-err" : undefined} required />
 
           <label htmlFor="new">رمز جدید</label>
-          <input id="new" type="password" autoComplete="new-password"
+          <input id="new" type="password" autoComplete="new-password" maxLength={MAX_PASSWORD}
                  value={next} onChange={(e) => setNext(e.target.value)}
                  aria-invalid={err ? true : undefined}
                  aria-describedby={err ? "pw-hint pw-err" : "pw-hint"} required />
           <div id="pw-hint" className="subtle">حداقل {MIN_PASSWORD.toLocaleString("fa-IR")} کاراکتر</div>
 
           <label htmlFor="rep">تکرار رمز جدید</label>
-          <input id="rep" type="password" autoComplete="new-password"
+          <input id="rep" type="password" autoComplete="new-password" maxLength={MAX_PASSWORD}
                  value={confirm} onChange={(e) => setConfirm(e.target.value)}
                  aria-invalid={mismatch || undefined}
                  aria-describedby={mismatch ? "rep-mismatch" : undefined} required />

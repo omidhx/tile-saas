@@ -76,10 +76,19 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true, created: r.created, tempPassword: r.tempPassword });
   }
 
-  const { legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId } = body;
+  // بدونِ این، مقدارِ نوعِ غلط (مثلاً عدد به‌جایِ رشته) مستقیم به UPDATEِ پارامتری‌شده
+  // می‌رسید — SQL injection نمی‌شد (postgres.js پارامتری می‌کند) ولی یا داده‌ی
+  // غلط می‌نوشت یا کوئری با خطای نوع می‌ترکید (۵۰۰ به‌جای ۴۰۰ی تمیز).
+  // نکته: priceListId/assignedStaffUserId سه‌حالته‌اند (نبودن=دست‌نزن، null=پاک‌کن،
+  // رشته=ست‌کن) — باید undefined را از null جدا نگه داشت، نه هر دو را یکی کرد.
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const bool = (v: unknown) => (typeof v === "boolean" ? v : undefined);
+  const strOrNull = (v: unknown) => (v === undefined ? undefined : v === null ? null : str(v));
   const r = await updateAgent({
     tenantId, agentAccountId, actorUserId: auth.userId,
-    legalName, code, priceListId, creditLimit, autoApproveLimit, isActive, assignedStaffUserId,
+    legalName: str(body.legalName), code: str(body.code), priceListId: strOrNull(body.priceListId),
+    creditLimit: body.creditLimit, autoApproveLimit: body.autoApproveLimit,
+    isActive: bool(body.isActive), assignedStaffUserId: strOrNull(body.assignedStaffUserId),
   });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "invalid_limit" ? 400 : 409 });
   return NextResponse.json({ ok: true });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { staffPageCtx } from "@/auth/httpCtx";
 import { listProducts, createProduct, updateProduct } from "@/db/products";
+import { isSafeImageUrl } from "@/lib/url";
 
 /** ویژگی‌های اختیاریِ متنی از بدنه؛ رشته یا null (خالی → null در لایه‌ی db). */
 const optStr = (v: unknown) => (v === undefined ? undefined : typeof v === "string" ? v : null);
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
     punch: optStr(punch) ?? null, body: optStr(bodyType) ?? null,
     size: optStr(body?.size) ?? null, thickness: optStr(body?.thickness) ?? null,
     usageArea: optStr(body?.usageArea) ?? null, description: optStr(body?.description) ?? null,
-    imageUrl: typeof body?.imageUrl === "string" ? body.imageUrl : null,
+    imageUrl: typeof body?.imageUrl === "string" && isSafeImageUrl(body.imageUrl) ? body.imageUrl : null,
     boxesPerPallet: bpp.value ?? null, sqcmPerBox: spb.value ?? null,
     initialStock,
   }, c.userId);

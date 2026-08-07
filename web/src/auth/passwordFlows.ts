@@ -14,14 +14,15 @@ import { invalidateSessionsIn } from "./session";
  *   ۳. کدِ بازیابی یک اعتبارنامه است، پس **hash** ذخیره می‌شود نه خودش.
  */
 
-import { MIN_PASSWORD } from "./passwordFlows.shared";
-export { MIN_PASSWORD };
+import { MIN_PASSWORD, MAX_PASSWORD } from "./passwordFlows.shared";
+export { MIN_PASSWORD, MAX_PASSWORD };
 const CODE_TTL_MIN = 10;
 const MAX_CODE_ATTEMPTS = 5;
 
 export type PasswordError =
   | "wrong_current"      // رمز فعلی غلط
   | "too_short"          // رمز جدید کوتاه
+  | "too_long"           // رمز جدید بلندتر از MAX_PASSWORD
   | "same_as_current"    // رمز جدید = رمز فعلی
   | "invalid_code"       // کد اشتباه/منقضی/مصرف‌شده
   | "too_many_attempts"; // تلاشِ بیش از حد روی همان کد
@@ -33,6 +34,7 @@ const hashCode = (code: string) => createHash("sha256").update(code).digest("hex
 
 function validateNew(newPassword: string): PasswordError | null {
   if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD) return "too_short";
+  if (newPassword.length > MAX_PASSWORD) return "too_long";
   return null;
 }
 

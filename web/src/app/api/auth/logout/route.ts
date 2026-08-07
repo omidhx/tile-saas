@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { clearSessionCookie } from "@/auth/session";
 
 /**
- * POST /api/auth/logout — پاک‌کردن کوکی نشست.
+ * POST /api/auth/logout — پاک‌کردن کوکی نشستِ همین دستگاه.
  * POST است نه GET، تا با یک <img>/لینکِ سایتِ دیگر نشود کاربر را خارج کرد (CSRF).
- * ponytail: نشست JWT بی‌حالت است، پس «خروج از همه‌ی دستگاه‌ها» (spec ۸) نیاز به
- * نسخه‌گذاریِ توکن (مثلاً session_version روی app_user) دارد — وقتی تغییر رمز اضافه شد.
+ * برای بی‌اعتبارکردنِ همه‌ی دستگاه‌ها به /api/auth/logout-all نگاه کن —
+ * نسخه‌گذاریِ session_epoch همان‌جا پیاده شده.
  */
 export async function POST() {
   await clearSessionCookie();

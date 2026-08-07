@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { staffPageCtx } from "@/auth/httpCtx";
 import { addProductImage, removeProductImage, setPrimaryImage } from "@/db/products";
+import { isSafeImageUrl } from "@/lib/url";
 
 // گالریِ تصاویرِ محصول را پشتیبان مدیریت می‌کند — staff-only.
 const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "catalog");
@@ -10,7 +11,8 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
-  if (typeof body?.productId !== "string" || typeof body?.url !== "string" || !body.url.trim())
+  if (typeof body?.productId !== "string" || typeof body?.url !== "string" || !body.url.trim()
+    || !isSafeImageUrl(body.url))
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   await addProductImage({ tenantId: c.tenantId, productId: body.productId, url: body.url });
   return NextResponse.json({ ok: true }, { status: 201 });

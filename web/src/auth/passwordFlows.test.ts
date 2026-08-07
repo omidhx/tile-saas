@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { sql } from "@/db/client";
 import { resetSchema } from "@/db/_testdb";
 import { hashPassword, verifyPassword } from "./password";
-import { changePassword, requestReset, confirmReset, MIN_PASSWORD } from "./passwordFlows";
+import { changePassword, requestReset, confirmReset, MIN_PASSWORD, MAX_PASSWORD } from "./passwordFlows";
 
 /**
  * مسیرِ اعتبارنامه. تست‌ها عمداً روی **راه‌های شکست** تمرکز دارند نه حالتِ خوش:
@@ -58,6 +58,11 @@ test("رمز فعلیِ غلط → رد، و رمز دست‌نخورده می�
 test("رمزِ کوتاه رد می‌شود — قبل از هر کارِ دیگری", async () => {
   const r = await changePassword({ userId: U, currentPassword: OLD, newPassword: "a".repeat(MIN_PASSWORD - 1) });
   assert.deepEqual(r, { ok: false, reason: "too_short" });
+});
+
+test("رمزِ خیلی‌بلند رد می‌شود — قبل از هش‌کردن (سقفِ bcrypt ۷۲ بایت)", async () => {
+  const r = await changePassword({ userId: U, currentPassword: OLD, newPassword: "a".repeat(MAX_PASSWORD + 1) });
+  assert.deepEqual(r, { ok: false, reason: "too_long" });
 });
 
 test("رمز جدید نباید همان رمز فعلی باشد", async () => {
