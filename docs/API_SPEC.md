@@ -86,10 +86,11 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 ساخت حواله از یک SalesRequestِ تأییدشده. اقلام in_stock از allocationها. auth: عضو tenant.
 ```jsonc
 // Request
-{ "tenantId": "…", "salesRequestId": "…", "dispatchCode": "D-001", "customerName": "…", "destination": "…" }
+{ "tenantId": "…", "salesRequestId": "…", "customerName": "…", "destination": "…", "customerId": "…", "referenceNumber": "…" }
 // 201 → { "dispatchId": "…" }
 // 404 request_not_found · 409 request_not_approved | no_allocations · 400 · 401 · 403
 ```
+- `destination`/`customerId`/`referenceNumber` اختیاری‌اند؛ رشته‌ی خالی بعدِ trim به `null` می‌شود. `customerId` تنها شناسه‌ی مشتریِ قابل‌اعتماد است؛ `customerName` فقط برای سازگاریِ عقب‌رو پذیرفته می‌شود. `dispatchCode` از کلاینت پذیرفته نمی‌شود — تولیدش همیشه مسئولیتِ سرور است.
 
 ## `POST /api/sales-dispatches/:id/status` (staff)
 گذارِ وضعیت. `loaded` → کم‌شدنِ اتمیکِ `on_hand`/`allocated` (spec ۱۴.۳)، idempotent و state-guarded.

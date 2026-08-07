@@ -5,6 +5,25 @@
 
 ## [Unreleased]
 
+### Added (v11 — بازطراحیِ بصری + تکمیلِ فیلدهای حواله)
+- **Shell/Sidebar/تمِ روشن‌وتیره روی همه‌ی صفحاتِ داخلی، در ۴ فاز.** تا حالا هر صفحه ناوبریِ خودش را جدا کنارِ `.topbar` می‌ساخت و تم فقط از `prefers-color-scheme` می‌آمد (بدونِ toggle/persistence). حالا `PageShell.tsx` یک Sidebarِ ثابت با فیلترِ `role`/`allowed_pages`ِ همان `NavMenu` (بدونِ کپیِ منطقِ دسترسی) و `ThemeToggle.tsx` یک تمِ قابلِ‌تغییر با `data-theme` + `localStorage` می‌دهند — با یک `<script>` خامِ no-flash در `layout.tsx` قبل از اولین paint. جدول‌ها/فرم‌های پراکنده به کلاس‌های تازه‌ی `.table`/`.field` تبدیل شدند، بدونِ افزودنِ Tailwind یا کتابخانه‌ی کامپوننت — همان توکن‌های `CSS Custom Properties`ِ `globals.css` گسترش یافتند. صفحه‌ی چاپِ حواله و کاتالوگِ عمومی عمداً بدونِ Sidebar ماندند. هیچ منطقِ کسب‌وکار/RLS/مجوزی تغییر نکرد.
+- **تکمیلِ فیلدهای ساختِ حواله: مقصد، مشتری، شماره‌ی مرجع.** `reference_number` در schema بود و برگه‌ی چاپ می‌توانست نشانش دهد، ولی هیچ مسیرِ ساختِ حواله مقدارش نمی‌داد. `CustomerPicker.tsx` (جست‌وجوی مشتری با `GET /api/customers`، نگهداریِ `customerId` نه فقط نام) + فرمِ ساختِ حواله در `QueueSection`/`BackorderSection`؛ `createDispatchFromRequest`/`createBackorderDispatch` حالا `destination`/`referenceNumber` را می‌گیرند و درج می‌کنند؛ `listDispatches` و برگه‌ی چاپ آن‌ها را برمی‌گردانند/نشان می‌دهند. کدِ حواله همچنان فقط سمتِ سرور ساخته می‌شود. رزروِ self-service نماینده عمداً این فیلدها را نگرفت — حواله در آن مرحله هنوز ساخته نشده.
+- **تنظیمِ واحدِ نمایشِ پول (ریال/تومان) + مبلغ به حروف.** مبلغِ رزرو/حواله حالا هم عددی هم به حروفِ فارسی نشان داده می‌شود؛ واحدِ نمایش از تنظیماتِ tenant می‌آید.
+
+### Added (v11 — سخت‌سازیِ امنیت، دورِ دوم — فازِ ۸C)
+- **گاردِ نوعِ محلی روی PATCHِ نمایندگی‌ها/انبارها** (`str`/`bool`/`strOrNull`) قبل از رسیدنِ فیلدها به UPDATEِ parameterized — بدونش یک فیلدِ اشتباه‌تایپ‌شده در JSON می‌توانست ستونی را با مقدارِ غیرمنتظره بازنویسی کند. `strOrNull` سه‌حالته (`undefined`=دست‌نزن / `null`=پاک‌کن / رشته=ست‌کن) چون `priceListId`/`assignedStaffUserId` باید صریح قابلِ پاک‌کردن بمانند.
+- **سقفِ طولِ رمزِ عبور (`MAX_PASSWORD=72`)، قبل از هرگونه کارِ DB/هش.** bcrypt رمز را در ۷۲ بایتِ اول بی‌صدا truncate می‌کند؛ بدونِ سقف، رمزِ چندمگابایتی کاملاً هش می‌شد قبل از آن truncation — یک DoSِ ارزانِ CPU/حافظه.
+- **`isSafeImageUrl` برای URLِ عکسِ paste‌شده** (نه آپلود) — فقط `http:`/`https:` یا مسیرِ نسبیِ هم‌مبدأ را می‌پذیرد، `javascript:`/`data:`/`vbscript:`/`file:` و آدرسِ protocol-relative را رد می‌کند. سه نقطه: `api/product-images`, `api/products` (`imageUrl`), `api/settings/tenant` (`logoUrl`).
+
+### Added (v11 — CSPِ script-src با nonce)
+- **`src/middleware.ts` (تازه):** هر request یک nonceِ تصادفی می‌سازد و آن را هم در هدرِ ریسپانس (CSP واقعی) هم در هدرِ درخواست (`x-nonce`) می‌گذارد؛ `layout.tsx` با `headers()` می‌خواندش و به `<script>`ِ no-flash می‌دهد — Next خودش هم اسکریپت‌های فریم‌ورکی (hydration/streaming) را با همین nonce امضا می‌کند، پس دیگر نیازی به `'unsafe-inline'` نیست. `'unsafe-eval'` فقط در dev اضافه می‌شود (React برای stack trace لازمش دارد). هدرِ استاتیکِ CSP از `next.config.ts` حذف شد چون nonce باید هر request تازه باشد. عارضه‌ی جانبیِ پذیرفته‌شده: خواندنِ `headers()` در ریشه‌ی layout همه‌ی صفحات را از استاتیک به دینامیکِ per-request می‌برد.
+
+### Fixed (v11 — رفعِ آسیب‌پذیریِ وابستگی‌ها)
+- **`xlsx` (prototype-pollution/ReDoS، بدونِ فیکسِ رسمی در npm registry):** SheetJS دیگر نسخه‌های patched را در npm منتشر نمی‌کند؛ نصب از CDNِ خودشان (`xlsx@0.20.3`، URLِ نسخه‌ی پین‌شده نه `-latest`) — `package-lock.json` هشِ tarball را پین کرده، نصب تکرارپذیر می‌ماند.
+- **`next` ارتقا به `^16.3.0`** (چند CVE با شدتِ بالا در بازه‌ی نسخه‌ی قبلی). تأیید در dev و production build.
+- **`fast-uri` روی `^3.1.5` قفل شد** با `overrides` در `package.json` — یک وابستگیِ تودرتوی چند لایه پایین‌تر (webpack/schema-utils/ajv/@sentry/nextjs)، بدونِ نیاز به آپدیتِ خودِ آن پکیج‌ها.
+- **رد شد عمداً:** `npm audit fix --force` برای زنجیره‌ی `esbuild`/`@esbuild-kit`/`drizzle-kit` پیشنهاد می‌داد `drizzle-kit` به `0.18.1` (رگرسیون) downgrade شود — ابزارِ فقط-dev، زنجیره‌ی narrow، منتظرِ فیکسِ upstream به‌جای downgradeِ اجباری.
+
 ### Added (v10 — مانیتورینگِ خطا و گسترشِ دفترِ تغییرات)
 - **`@sentry/nextjs` وصل شد** (`instrumentation.ts` + `onRequestError`) — خطاهای catch‌نشده در هر route handler/server component بدونِ دست‌زدن به تک‌تکشان گرفته می‌شوند. هر `authorize*` موفق برچسبِ `tenantId`/`userId` می‌زند (فقط شناسه) تا ردیابیِ نشتِ بین‌تننتی سریع‌تر شود. بدونِ `SENTRY_DSN`، بی‌اثر می‌ماند نه خطا.
 - **دفترِ تغییرات (`audit_log`) حالا ویرایشِ محصول/مشتری را هم پوشش می‌دهد**، نه فقط قیمت/سقفِ تأیید. `updateProduct`/`updateCustomer` قبل از UPDATE مقدارِ قبلی را در همان تراکنش می‌خوانند و فقط فیلدهای واقعاً تغییرکرده را ثبت می‌کنند (همان الگوی `price.set`). UI دفترِ تغییرات بین دیفِ عددی (قیمت/سقف) و دیفِ چندفیلدیِ آبجکتی تمایز می‌گذارد.

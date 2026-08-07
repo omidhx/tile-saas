@@ -93,11 +93,13 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 
 - **SQL Injection:** همه‌ی کوئری‌ها parameterized (postgres.js تگ‌ددتمپلیت). هیچ رشته‌ای با concatenation ساخته نمی‌شود. تنها `sql.unsafe` در `_testdb.ts` است که فقط در تست و روی متنِ ثابتِ خودمان اجرا می‌شود.
 - **XSS:** React به‌صورت پیش‌فرض escape می‌کند و هیچ‌جا `dangerouslySetInnerHTML` نداریم.
-- **آپلودِ اکسل:** هیچ فایلی به سرور نمی‌رسد. اکسل در **مرورگر** با SheetJS پارس می‌شود و فقط JSON ارسال می‌گردد — سقفِ ۵۰۰۰ ردیف روی JSON اعمال می‌شود، و قبل از parse سقفِ حجمِ فایل (۱۰MB) هم هست. `xlsx` یک آسیب‌پذیریِ prototype-pollution/ReDoS بدونِ فیکسِ رسمی دارد (`npm audit`) که چون parse سمتِ مرورگرِ کارمند است، ریسکش محدود به همان تبِ اوست، نه سرور.
+- **آپلودِ اکسل:** هیچ فایلی به سرور نمی‌رسد. اکسل در **مرورگر** با SheetJS پارس می‌شود و فقط JSON ارسال می‌گردد — سقفِ ۵۰۰۰ ردیف روی JSON اعمال می‌شود، و قبل از parse سقفِ حجمِ فایل (۱۰MB) هم هست. `xlsx` روی `0.20.3` پین است، نصب‌شده مستقیم از CDNِ خودِ SheetJS (`https://cdn.sheetjs.com/...`) نه npm — چون SheetJS دیگر نسخه‌های فیکس‌شده را در npm registry منتشر نمی‌کند؛ آسیب‌پذیریِ prototype-pollution/ReDoSِ قبلی با این نسخه رفع شده (`package-lock.json` هشِ tarball را پین کرده، پس نصب تکرارپذیر می‌ماند).
 - **آپلودِ عکسِ محصول:** فایل واقعاً به سرور می‌رسد (`api/upload`، staff-only). نامِ فایل همیشه `randomUUID()` است (بدونِ ریسکِ path traversal)؛ نوعِ فایل هم از `File.type` اعلامی **و هم** از امضای واقعیِ بایت‌ها (magic bytes) تأیید می‌شود — چون `File.type` را کلاینت پر می‌کند و به‌سادگی جعل‌پذیر است. سقفِ حجم ۳ مگابایت.
+- **URLِ عکسِ paste‌شده (نه آپلود):** محصول/تنظیماتِ لوگو اجازه می‌دهند به‌جای آپلود یک URL دلخواه وارد شود. `lib/url.ts::isSafeImageUrl` قبل از ذخیره فقط `http:`/`https:` یا مسیرِ نسبیِ هم‌مبدأ (`/...`) را می‌پذیرد و `javascript:`/`data:`/`vbscript:`/`file:` و آدرسِ protocol-relative (`//host`) را رد می‌کند — در سه نقطه اعمال می‌شود: `api/product-images`, `api/products` (`imageUrl`), `api/settings/tenant` (`logoUrl`).
+- **ورودی‌های PATCH نمایندگی‌ها/انبارها:** فیلدهای `body` قبل از رسیدن به UPDATEِ parameterized با گاردِ نوعِ محلی (`str`/`bool`/`strOrNull`) تأیید می‌شوند — بدونش یک فیلدِ اشتباه‌تایپ‌شده در JSON می‌توانست ستونی را با مقدارِ غیرمنتظره بازنویسی کند. `strOrNull` سه‌حالته است (`undefined`=دست‌نزن، `null`=پاک‌کن، رشته=ست‌کن) چون `priceListId`/`assignedStaffUserId` باید صریح قابلِ پاک‌کردن بمانند.
 - **Clickjacking:** `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`.
 - **سایر هدرها:** `nosniff`، `Referrer-Policy`، `Permissions-Policy`، حذف `X-Powered-By` (`next.config.ts`).
-- **CSP کاملِ `script-src` عمداً نیست:** Next برای hydration به inline نیاز دارد؛ بدون nonce یا اپ می‌شکند یا با `'unsafe-inline'` بی‌اثر است. CSPِ شکسته از نبودش بدتر است.
+- **CSP کاملِ `script-src` با nonce پیاده شده:** `src/middleware.ts` هر request یک nonceِ تصادفیِ تازه می‌سازد و در هدرِ ریسپانس (`Content-Security-Policy: script-src 'self' 'nonce-…' 'strict-dynamic'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`) می‌گذارد؛ همان nonce از هدرِ `x-nonce` به `layout.tsx` می‌رسد و به `<script>`ِ دستیِ آن اعمال می‌شود — Next خودش هم اسکریپت‌های فریم‌ورکی (hydration/streaming) را با همین nonce امضا می‌کند، پس `'unsafe-inline'` لازم نیست. در dev فقط `'unsafe-eval'` هم اضافه می‌شود (React برای stack trace لازمش دارد)، در production هرگز. هزینه: خواندنِ `headers()` در ریشه‌ی layout همه‌ی صفحات را از استاتیک به دینامیکِ per-request می‌برد — trade-off آگاهانه، نه رگرسیون.
 - **CSV/Excel formula injection:** فعلاً export نداریم. **اگر اضافه شد**، مقادیری که با `= + - @` شروع می‌شوند باید escape شوند (spec ۸).
 
 ---
@@ -148,8 +150,7 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 - 2FA / OTP پیامکی برای ورودِ روزمره (فقط بازیابیِ رمز کدِ پیامکی دارد).
 - تفکیکِ ریزترِ نقش‌ها (فعلاً `admin`/`staff`/`agent`؛ `agent_admin` در برابر `agent_operator` نداریم).
 - پایشِ خودکار و هشدار (spec عمداً Prometheus را در این مرحله رد کرده). Sentry خطاهای runtime را می‌گیرد (با برچسبِ tenant/user)؛ بررسیِ `notification_outbox`/`import_row` هنوز هفتگی و دستی است.
-- اسکنِ خودکارِ وابستگی‌ها در CI — چون **اصلاً CI نداریم**؛ `npm audit` هنوز فقط دستی اجرا می‌شود.
-- `xlsx` یک آسیب‌پذیریِ شناخته‌شده بدونِ فیکسِ رسمی دارد (بخشِ ۵) — ریسکِ پذیرفته‌شده، نه نادیده‌گرفته‌شده.
+- اسکنِ خودکارِ وابستگی‌ها در CI — چون **اصلاً CI نداریم**؛ `npm audit` هنوز فقط دستی اجرا می‌شود (آخرین دورِ دستی: `xlsx` با نصبِ CDN رفع شد، `next`/`fast-uri` آپدیت شدند — بخشِ ۵).
 
 ## ۱۰. قبل از هر دیپلوی
 

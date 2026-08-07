@@ -19,6 +19,9 @@ staff/انباردار ────────┘        │
 | `auth/*` | هش، نشست JWT، **chokepoint دسترسی** | [authz.ts](../web/src/auth/authz.ts) |
 | `app/api/*` | route handlerها: auth/login, me, lots, reservations | [api/](../web/src/app/api/) |
 | `app/{login,reserve}` | UI نماینده (pending-state، بدون optimistic) | [reserve/page.tsx](../web/src/app/reserve/page.tsx) |
+| `app/PageShell` | Shell/Sidebarِ مشترکِ صفحاتِ داخلی (staff+agent)؛ فیلترِ `role`/`allowed_pages` را از `NavMenu` می‌گیرد، خودش کپی نمی‌کند؛ برای چاپ/auth غیرفعال‌پذیر | [PageShell.tsx](../web/src/app/PageShell.tsx) |
+| `app/ThemeToggle` | تمِ روشن/تیره؛ `data-theme` + `localStorage`، no-flash script در `layout.tsx` قبل از اولین paint | [ThemeToggle.tsx](../web/src/app/ThemeToggle.tsx) |
+| `middleware` | CSPِ `script-src` با nonceِ تصادفیِ per-request (الگوی رسمیِ Next برای App Router) | [middleware.ts](../web/src/middleware.ts) |
 
 ## Data Flow — رزرو (مسیر بحرانی)
 1. کلاینت `POST /api/reservations` (بدون refetch-before-submit، pending-state).
@@ -66,3 +69,5 @@ VPS ایران + Docker/PM2 + Nginx/Caddy (HTTPS با Let's Encrypt). Postgres �
 - `partially_converted` حذف شد (ناسازگار با held) — spec ۱۴.۱.
 - idempotency = `UNIQUE(tenant_id,key)` + payload-hash — spec ۱۴.۴.
 - font سیستمی به‌جای `next/font/google` (تاب‌آوری VPS ایران).
+- بازطراحیِ بصری (Shell/Sidebar/تمِ تیره‌روشن روی همه‌ی صفحاتِ داخلی، ۴ فاز) بدونِ افزودنِ Tailwind/کتابخانه‌ی کامپوننت — همان توکن‌های `CSS Custom Properties`ِ `globals.css` گسترش یافتند، منطقِ کسب‌وکار/RLS/مجوزها دست‌نخورده ماند.
+- CSPِ nonce-based در `middleware.ts` به‌جای هدرِ استاتیک در `next.config.ts` — nonce باید هر request تازه باشد؛ عوارضِ جانبیِ پذیرفته‌شده: root layout دیگر نمی‌تواند static prerender شود.
