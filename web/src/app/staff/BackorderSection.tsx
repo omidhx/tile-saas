@@ -1,3 +1,5 @@
+import CustomerPicker, { type CustomerOption } from "./CustomerPicker";
+
 const num = (v: number) => v.toLocaleString("fa-IR");
 
 export type Agent = { id: string; legalName: string };
@@ -16,12 +18,17 @@ const BO_FA: Record<string, string> = {
 
 /** ثبت + لیستِ backorder (محصولِ ناموجود). صرفاً presentational. */
 export default function BackorderSection({
-  agents, variants, boAgent, boVariant, boQty, onAgentChange, onVariantChange, onQtyChange, onCreate,
+  tenantId, agents, variants, boAgent, boVariant, boQty, boDestination, boCustomer, boReferenceNumber,
+  onAgentChange, onVariantChange, onQtyChange, onDestinationChange, onCustomerChange, onReferenceNumberChange, onCreate,
   backorders, boListQ, boHasMore, boBusy, onSearch, onLoadMore, onAdvance, pending, loaded, loadErr,
 }: {
+  tenantId: string;
   agents: Agent[]; variants: Variant[];
   boAgent: string; boVariant: string; boQty: string;
+  boDestination: string; boCustomer: CustomerOption | null; boReferenceNumber: string;
   onAgentChange: (v: string) => void; onVariantChange: (v: string) => void; onQtyChange: (v: string) => void;
+  onDestinationChange: (v: string) => void; onCustomerChange: (c: CustomerOption | null) => void;
+  onReferenceNumberChange: (v: string) => void;
   onCreate: () => void;
   backorders: Backorder[]; boListQ: string; boHasMore: boolean; boBusy: boolean;
   onSearch: (v: string) => void; onLoadMore: () => void;
@@ -57,6 +64,20 @@ export default function BackorderSection({
             disabled={pending === "bo-create" || !boAgent || !boVariant || Number(boQty) <= 0}>
             {pending === "bo-create" && <span className="spinner" aria-hidden="true" />}ثبت
           </button>
+        </div>
+        {/* مقصد/مشتری/مرجع اختیاری‌اند — ردیفِ جدا تا فرمِ اصلی (نمایندگی/کالا/کارتن) شلوغ نشود */}
+        <div className="row row--start row--stack-mobile" style={{ gap: "var(--sp-2)", marginTop: "var(--sp-2)" }}>
+          <div className="field" style={{ margin: 0, maxWidth: 200 }}>
+            <label htmlFor="bo-destination">مقصد (اختیاری)</label>
+            <input id="bo-destination" value={boDestination} onChange={(e) => onDestinationChange(e.target.value)}
+              placeholder="مثلاً: انبارِ مشتری، تهران" />
+          </div>
+          <CustomerPicker tenantId={tenantId} value={boCustomer} onChange={onCustomerChange} />
+          <div className="field" style={{ margin: 0, maxWidth: 200 }}>
+            <label htmlFor="bo-reference">شماره مرجع (اختیاری)</label>
+            <input id="bo-reference" value={boReferenceNumber} onChange={(e) => onReferenceNumberChange(e.target.value)}
+              placeholder="شماره‌ی دفتر یا مرجعِ داخلی" />
+          </div>
         </div>
       </div>
       <input type="search" aria-label="جستجوی backorder" placeholder="جستجو: کالا، کد، نمایندگی، کدِ حواله…"

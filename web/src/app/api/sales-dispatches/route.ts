@@ -23,14 +23,21 @@ export async function POST(req: Request) {
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { salesRequestId, agentAccountId, items, customerName, destination, customerId } = body ?? {};
+  const { salesRequestId, agentAccountId, items } = body ?? {};
   // dispatchCode دیگر از کلاینت نمی‌آید — سرور خودش D-1404-003 می‌سازد (schema: «auto-generated سمت اپ»)
   const dispatchCode = typeof body?.dispatchCode === "string" ? body.dispatchCode : undefined;
+  // customerId تنها شناسه‌ی قابل‌اعتماد است؛ customerName فقط برای caller قدیمی می‌ماند.
+  // نوع نامعتبر (مثلاً عدد) اینجا رد می‌شود، نه اینکه بی‌صدا به DB برسد.
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const customerName = str(body?.customerName);
+  const destination = str(body?.destination);
+  const customerId = str(body?.customerId);
+  const referenceNumber = str(body?.referenceNumber);
 
   const result = Array.isArray(items)
-    ? await createBackorderDispatch({ tenantId: c.tenantId, agentAccountId, createdByUserId: c.userId, dispatchCode, customerName, destination, items, customerId })
+    ? await createBackorderDispatch({ tenantId: c.tenantId, agentAccountId, createdByUserId: c.userId, dispatchCode, customerName, destination, items, customerId, referenceNumber })
     : typeof salesRequestId === "string"
-      ? await createDispatchFromRequest({ tenantId: c.tenantId, salesRequestId, createdByUserId: c.userId, dispatchCode, customerName, destination, customerId })
+      ? await createDispatchFromRequest({ tenantId: c.tenantId, salesRequestId, createdByUserId: c.userId, dispatchCode, customerName, destination, customerId, referenceNumber })
       : null;
   if (!result) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   if (!result.ok) {

@@ -5,7 +5,7 @@ import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
-import { createDispatchFromRequest, setDispatchStatus, listDispatches } from "./dispatches";
+import { createDispatchFromRequest, createBackorderDispatch, setDispatchStatus, listDispatches } from "./dispatches";
 
 const AG = "a5555555-5555-5555-5555-555555555555";
 const VAR = "a2222222-2222-2222-2222-222222222222";
@@ -133,4 +133,78 @@ test("listDispatches: صفحه‌بندی با limit+1 (hasMore درست) + جس
   const found = await listDispatches({ tenantId: T, q: "PAGE-2" });
   assert.equal(found.items.length, 1);
   assert.equal(found.items[0].dispatchCode, "D-PAGE-2");
+});
+
+// فاز ۳: تکمیلِ فیلدهای ساختِ حواله — مقصد/شماره‌ی مرجع (spec §3.9)
+test("createDispatchFromRequest: destination و referenceNumber ذخیره و در listDispatches دیده می‌شوند", async () => {
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "ref1", items: [{ lotId: LOT, quantityBoxes: 1 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const d = await createDispatchFromRequest({
+    tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-REF-1",
+    destination: "انبارِ مشتری، تهران", referenceNumber: "دفتر-۱۲",
+  });
+  assert.equal(d.ok, true);
+
+  const found = await listDispatches({ tenantId: T, q: "D-REF-1" });
+  assert.equal(found.items.length, 1);
+  assert.equal(found.items[0].destination, "انبارِ مشتری، تهران");
+  assert.equal(found.items[0].referenceNumber, "دفتر-۱۲");
+});
+
+test("createDispatchFromRequest: caller قدیمی بدونِ referenceNumber همچنان کار می‌کند (backward compat)", async () => {
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "ref2", items: [{ lotId: LOT, quantityBoxes: 1 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-REF-2" });
+  assert.equal(d.ok, true);
+
+  const found = await listDispatches({ tenantId: T, q: "D-REF-2" });
+  assert.equal(found.items[0].destination, null);
+  assert.equal(found.items[0].referenceNumber, null);
+});
+
+test("createDispatchFromRequest: destination/referenceِ فقط‌فاصله به null نرمال می‌شود", async () => {
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "ref3", items: [{ lotId: LOT, quantityBoxes: 1 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  const d = await createDispatchFromRequest({
+    tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-REF-3",
+    destination: "   ", referenceNumber: "",
+  });
+  assert.equal(d.ok, true);
+
+  const found = await listDispatches({ tenantId: T, q: "D-REF-3" });
+  assert.equal(found.items[0].destination, null);
+  assert.equal(found.items[0].referenceNumber, null);
+});
+
+test("createDispatchFromRequest: customerId از tenantِ دیگر رد می‌شود (FK ترکیبی، نه چک اپ)", async () => {
+  const OTHER_TENANT = "b0000000-0000-0000-0000-000000000001";
+  const OTHER_CUSTOMER = "b0000000-0000-0000-0000-000000000002";
+  await sql.unsafe(`
+    INSERT INTO tenant (id,name,slug) VALUES ('${OTHER_TENANT}','B','b');
+    INSERT INTO customer (id,tenant_id,name) VALUES ('${OTHER_CUSTOMER}','${OTHER_TENANT}','Foreign Co');
+  `);
+
+  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "ref4", items: [{ lotId: LOT, quantityBoxes: 1 }] });
+  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
+  await assert.rejects(
+    () => createDispatchFromRequest({
+      tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-REF-4",
+      customerId: OTHER_CUSTOMER,
+    }),
+    "customerIdِ tenantِ دیگر باید با نقضِ FKِ ترکیبی (tenant_id, customer_id) رد شود، نه بی‌صدا bind شود",
+  );
+});
+
+test("createBackorderDispatch: referenceNumber و destination ذخیره می‌شوند", async () => {
+  const d = await createBackorderDispatch({
+    tenantId: T, agentAccountId: AG, createdByUserId: U, dispatchCode: "BO-REF-1",
+    destination: "انبارِ یزد", referenceNumber: "دفتر-۹",
+    items: [{ variantId: VAR, quantityBoxes: 3 }],
+  });
+  assert.equal(d.ok, true);
+
+  const found = await listDispatches({ tenantId: T, q: "BO-REF-1" });
+  assert.equal(found.items.length, 1);
+  assert.equal(found.items[0].destination, "انبارِ یزد");
+  assert.equal(found.items[0].referenceNumber, "دفتر-۹");
 });

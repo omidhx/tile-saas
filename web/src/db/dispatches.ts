@@ -11,9 +11,13 @@ export type CreateDispatchResult =
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
 
+/** رشته‌ی خالی/فقط‌فاصله یا نبودِ فیلد → null، نه ""‌ در ستون. */
+const norm = (s?: string | null) => s?.trim() || null;
+
 export type DispatchListItem = {
   id: string; dispatchCode: string; status: DispatchStatus;
-  customerName: string | null; items: number; warehouseName: string | null;
+  customerName: string | null; destination: string | null; referenceNumber: string | null;
+  items: number; warehouseName: string | null;
 };
 
 /**
@@ -32,8 +36,8 @@ export async function listDispatches(p: {
   const rows = await withTenant(p.tenantId, (tx) =>
     tx<DispatchListItem[]>`
       SELECT sd.id, sd.dispatch_code AS "dispatchCode", sd.status,
-             sd.customer_name AS "customerName", count(sdi.id)::int AS items,
-             w.name AS "warehouseName"
+             sd.customer_name AS "customerName", sd.destination, sd.reference_number AS "referenceNumber",
+             count(sdi.id)::int AS items, w.name AS "warehouseName"
       FROM sales_dispatch sd
       LEFT JOIN sales_dispatch_item sdi ON sdi.dispatch_id = sd.id
       LEFT JOIN warehouse w ON w.id = sd.warehouse_id
@@ -90,8 +94,10 @@ export async function createDispatchFromRequest(params: {
   dispatchCode?: string; customerName?: string; destination?: string;
   /** v2: مشتری Entity شد. customerName همچنان snapshotِ نام است. */
   customerId?: string;
+  /** v10: شماره‌ی دفتر/مرجعِ داخلیِ پشتیبان — فقط ذخیره و روی چاپ نمایش داده می‌شود. */
+  referenceNumber?: string | null;
 }): Promise<CreateDispatchResult> {
-  const { tenantId, salesRequestId, createdByUserId, customerName, destination, customerId } = params;
+  const { tenantId, salesRequestId, createdByUserId, customerName, destination, customerId, referenceNumber } = params;
   return withTenant(tenantId, async (tx) => {
     const [req] = await tx<{ agent_account_id: string; status: string }[]>`
       SELECT agent_account_id, status FROM sales_request
@@ -138,9 +144,10 @@ export async function createDispatchFromRequest(params: {
       const [d] = await tx<{ id: string }[]>`
         INSERT INTO sales_dispatch
           (tenant_id, sales_request_id, agent_account_id, dispatch_code, warehouse_id,
-           customer_name, customer_id, destination, status, created_by_user_id)
+           customer_name, customer_id, destination, reference_number, status, created_by_user_id)
         VALUES (${tenantId}, ${salesRequestId}, ${req.agent_account_id}, ${code}, ${warehouseId},
-                ${customerName ?? null}, ${customerId ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
+                ${customerName ?? null}, ${norm(customerId)}, ${norm(destination)}, ${norm(referenceNumber)},
+                'registered', ${createdByUserId})
         RETURNING id`;
       for (const a of group)
         await tx`
@@ -316,17 +323,21 @@ export async function createBackorderDispatch(params: {
   tenantId: string; agentAccountId: string; createdByUserId: string;
   /** ندهید تا خودکار ساخته شود (BO-1404-001). */
   dispatchCode?: string; customerName?: string; destination?: string; customerId?: string;
+  /** v10: شماره‌ی دفتر/مرجعِ داخلیِ پشتیبان — فقط ذخیره و روی چاپ نمایش داده می‌شود. */
+  referenceNumber?: string | null;
   items: { variantId: string; quantityBoxes: number }[];
 }): Promise<{ ok: true; dispatchId: string } | { ok: false; reason: "no_items" | "bad_qty" }> {
-  const { tenantId, agentAccountId, createdByUserId, customerName, destination, items, customerId } = params;
+  const { tenantId, agentAccountId, createdByUserId, customerName, destination, items, customerId, referenceNumber } = params;
   if (items.length === 0) return { ok: false, reason: "no_items" };
   if (items.some((i) => !Number.isInteger(i.quantityBoxes) || i.quantityBoxes <= 0)) return { ok: false, reason: "bad_qty" };
   return withTenant(tenantId, async (tx) => {
     const dispatchCode = params.dispatchCode ?? await nextDispatchCode(tx, tenantId, "BO");
     const [d] = await tx<{ id: string }[]>`
       INSERT INTO sales_dispatch
-        (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, customer_id, destination, status, created_by_user_id)
-      VALUES (${tenantId}, NULL, ${agentAccountId}, ${dispatchCode}, ${customerName ?? null}, ${customerId ?? null}, ${destination ?? null}, 'registered', ${createdByUserId})
+        (tenant_id, sales_request_id, agent_account_id, dispatch_code, customer_name, customer_id,
+         destination, reference_number, status, created_by_user_id)
+      VALUES (${tenantId}, NULL, ${agentAccountId}, ${dispatchCode}, ${customerName ?? null}, ${norm(customerId)},
+              ${norm(destination)}, ${norm(referenceNumber)}, 'registered', ${createdByUserId})
       RETURNING id`;
     for (const it of items)
       await tx`

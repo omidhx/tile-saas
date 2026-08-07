@@ -5,7 +5,8 @@ const num = (v: number) => v.toLocaleString("fa-IR");
 
 export type Disp = {
   id: string; dispatchCode: string; status: string;
-  customerName: string | null; items: number; warehouseName: string | null;
+  customerName: string | null; destination: string | null; referenceNumber: string | null;
+  items: number; warehouseName: string | null;
 };
 
 const NEXT: Record<string, string[]> = {
@@ -49,6 +50,13 @@ export default function DispatchSection({
             </span>
           </div>
           {d.customerName && <div className="muted">{d.customerName}</div>}
+          {(d.destination || d.referenceNumber) && (
+            <div className="subtle">
+              {d.destination && <span>مقصد: {d.destination}</span>}
+              {d.destination && d.referenceNumber && " · "}
+              {d.referenceNumber && <span>مرجع: <span className="num">{d.referenceNumber}</span></span>}
+            </div>
+          )}
           <div className="row row--start row--stack-mobile" style={{ marginTop: "var(--sp-3)" }}>
             {(NEXT[d.status] ?? []).map((s) => (
               <button key={s} className={s === "cancelled" ? "danger" : s === "loaded" ? "primary" : undefined}

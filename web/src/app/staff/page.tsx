@@ -5,9 +5,10 @@ import { useContexts, type Ctx } from "@/lib/useContexts";
 import LogoutButton from "../LogoutButton";
 import Icon from "../Icon";
 import PageShell from "../PageShell";
-import QueueSection, { type Resv, type Req } from "./QueueSection";
+import QueueSection, { type Resv, type Req, type DispatchExtra } from "./QueueSection";
 import DispatchSection, { type Disp } from "./DispatchSection";
 import BackorderSection, { type Agent, type Variant, type Backorder } from "./BackorderSection";
+import { type CustomerOption } from "./CustomerPicker";
 import KpiSection, { type DashboardKpis } from "./KpiSection";
 
 /** ارقامِ فارسی، همه‌جا یکسان. */
@@ -73,6 +74,9 @@ export default function StaffPage() {
   const [boAgent, setBoAgent] = useState("");
   const [boVariant, setBoVariant] = useState("");
   const [boQty, setBoQty] = useState("");
+  const [boDestination, setBoDestination] = useState("");
+  const [boCustomer, setBoCustomer] = useState<CustomerOption | null>(null);
+  const [boReferenceNumber, setBoReferenceNumber] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [actionErr, setActionErr] = useState("");
@@ -209,8 +213,9 @@ export default function StaffPage() {
     const ok = await act("bo-create", "/api/sales-dispatches", {
       tenantId: ctx.tenantId, agentAccountId: boAgent,
       items: [{ variantId: boVariant, quantityBoxes: Number(boQty) }],
+      destination: boDestination, customerId: boCustomer?.id, referenceNumber: boReferenceNumber,
     });
-    if (ok) setBoQty("");
+    if (ok) { setBoQty(""); setBoDestination(""); setBoCustomer(null); setBoReferenceNumber(""); }
   }
 
   const advanceBackorder = (itemId: string, toStatus: string) =>
@@ -248,12 +253,14 @@ export default function StaffPage() {
     return () => clearInterval(iv);
   }, [ctx, pollQueues]);
 
-  async function makeDispatch(requestId: string) {
+  async function makeDispatch(requestId: string, extra: DispatchExtra) {
     if (!ctx) return;
     setPending(requestId); setActionErr(""); setNote("");
     try {
-      const res = await postJson("/api/sales-dispatches",
-        { tenantId: ctx.tenantId, salesRequestId: requestId });
+      const res = await postJson("/api/sales-dispatches", {
+        tenantId: ctx.tenantId, salesRequestId: requestId,
+        destination: extra.destination, customerId: extra.customerId, referenceNumber: extra.referenceNumber,
+      });
       if (!res.ok) setActionErr(actionError(res.status));
       else {
         // سفارشِ دوانباره دو حواله می‌سازد — پشتیبان باید بداند، وگرنه دنبالِ حواله‌ی
@@ -326,7 +333,8 @@ export default function StaffPage() {
       {/* دو ستون: راست = کارهایی که منتظرِ تصمیم‌اند، چپ = چیزهایی که پیگیری می‌شوند */}
       <div className="cols">
       <div className="col">
-        <QueueSection pendingResvs={pendingResvs} reqs={reqs} highlightResv={highlightResv} highlightReq={highlightReq}
+        <QueueSection tenantId={ctx.tenantId} pendingResvs={pendingResvs} reqs={reqs}
+          highlightResv={highlightResv} highlightReq={highlightReq}
           pending={pending} onApprove={approve} onCancel={cancelResv} onMakeDispatch={makeDispatch}
           loaded={loaded} loadErr={loadErr} />
       </div>{/* /col — کارهای در انتظار تصمیم */}
@@ -334,8 +342,12 @@ export default function StaffPage() {
         <DispatchSection disps={disps} dispsQ={dispsQ} dispsHasMore={dispsHasMore} dispsBusy={dispsBusy}
           onSearch={searchDispatches} onLoadMore={loadMoreDispatches} onAdvance={advance}
           pending={pending} loaded={loaded} loadErr={loadErr} />
-        <BackorderSection agents={agents} variants={variants} boAgent={boAgent} boVariant={boVariant} boQty={boQty}
-          onAgentChange={setBoAgent} onVariantChange={setBoVariant} onQtyChange={setBoQty} onCreate={createBackorder}
+        <BackorderSection tenantId={ctx.tenantId} agents={agents} variants={variants}
+          boAgent={boAgent} boVariant={boVariant} boQty={boQty}
+          boDestination={boDestination} boCustomer={boCustomer} boReferenceNumber={boReferenceNumber}
+          onAgentChange={setBoAgent} onVariantChange={setBoVariant} onQtyChange={setBoQty}
+          onDestinationChange={setBoDestination} onCustomerChange={setBoCustomer} onReferenceNumberChange={setBoReferenceNumber}
+          onCreate={createBackorder}
           backorders={backorders} boListQ={boListQ} boHasMore={boHasMore} boBusy={boBusy}
           onSearch={searchBackorders} onLoadMore={loadMoreBackorders} onAdvance={advanceBackorder}
           pending={pending} loaded={loaded} loadErr={loadErr} />
