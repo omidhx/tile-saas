@@ -1,0 +1,19 @@
+# بکاپ‌های محلیِ کلِ پروژه (دستی، با robocopy) — هرگز وارد git نمی‌شوند:
+# حجیم‌اند، تاریخچه‌ی .git را تودرتو تکرار می‌کنند، و web/.env رازدار داخلشان است.
+_backups/
+
+# خروجی‌های قابلِ بازتولید
+node_modules/
+.next/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# فایل‌های محیطی (تکرارِ محافظتِ web/.gitignore برای هرچه بیرونِ web/ ساخته می‌شود)
+.env
+.env.*
+!.env.test
+
+# سیستمی
+.DS_Store
+Thumbs.db

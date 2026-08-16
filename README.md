@@ -10,6 +10,7 @@ Vertical SaaS چندمستأجری برای کارخانه‌های کاشی/س�
 | قوانین رفتاریِ کدنویسی برای AI | [CLAUDE.md](CLAUDE.md) |
 | اسکیمای دیتابیس (منبع حقیقت) | [db/schema.sql](db/schema.sql) |
 | اسناد این پوشه | [docs/](docs/) — PRD، ARCHITECTURE، API_SPEC، DATABASE_SCHEMA، CODING_STANDARDS، AI_CONTEXT، KNOWN_ISSUES، ux-wireframes |
+| **بکاپ‌های محلی (کجا هستند، چطور برگردانیم)** | [docs/BACKUPS.md](docs/BACKUPS.md) |
 
 ## Stack
 - **Next.js** (App Router, TypeScript, src-dir) + **postgres.js** + **Drizzle** (فقط introspect؛ اسکیمای SQL منبع حقیقت می‌مونه)
