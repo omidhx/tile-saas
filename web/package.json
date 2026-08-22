@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
+    "test:ci": "find src -name '*.test.ts' -print0 | xargs -0 node --env-file=.env.test --import tsx --test --test-concurrency=1",
     "test:e2e": "playwright test",
     "db:pull": "drizzle-kit pull",
     "seed:dev": "node --env-file=.env --import tsx scripts/seed-dev.ts",
