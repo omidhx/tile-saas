@@ -109,16 +109,9 @@ jobs:
         # dev را دارد (localhost:55433/devpw) که با PostgreSQL داکریِ CI (localhost:5432/pw)
         # هم‌خوان نیست. پس قبل از تست، .env.test را با مقادیر CI بازنویسی می‌کنیم.
         run: |
-          # backup .env.test
           cp .env.test .env.test.backup
-          # write CI-specific values
-          cat > .env.test << 'ENVEOF'
-DATABASE_URL=postgres://postgres:pw@localhost:5432/tile_test
-AUTH_SECRET=ci-secret-must-be-at-least-32-characters-long-for-tests-only
-ENVEOF
-          # run tests
+          printf 'DATABASE_URL=postgres://postgres:pw@localhost:5432/tile_test\nAUTH_SECRET=ci-secret-must-be-at-least-32-characters-long-for-tests-only\n' > .env.test
           npm test
-          # restore (for artifacts if needed)
           mv .env.test.backup .env.test
 
       - name: Build
