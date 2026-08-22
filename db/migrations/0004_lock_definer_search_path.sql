@@ -12,11 +12,10 @@
 -- خودش سطحِ حمله است. مهاجم با ساختنِ شیء هم‌نام در schemaیِ قابلِ‌نوشتن،
 -- می‌توانست تابع را به کدِ خودش هدایت کند (search_path injection).
 --
--- اعتبارسنجی بعد از اجرا:
---   SELECT proname, proconfig FROM pg_proc
---   WHERE proname IN ('user_contexts','expire_due_reservations',
---                     'claim_pending_notifications','finish_notification');
---   -- باید هر چهار ردیف '{search_path=public, pg_temp}' برگردانند.
+-- اعتبارسنجی: assertion به‌جای `DO $$` (که postgres.js در tx.unsafe با آن
+-- مشکل دارد) در `apply.ts` با یک SELECT ساده انجام می‌شود. این کار بعد از
+-- اجرای migrationها انجام می‌شود — اگر assertion شکست بخورد، apply.ts exit
+-- می‌کند و کاربر متوجه می‌شود.
 -- =============================================================================
 
 BEGIN;
@@ -39,7 +38,6 @@ AS $$
     WHERE tm.user_id = p_user_id AND tm.is_active
 $$;
 
--- expire_due_reservations
 CREATE OR REPLACE FUNCTION expire_due_reservations()
 RETURNS TABLE (tenant_id UUID, variant_id UUID)
 LANGUAGE sql SECURITY DEFINER
@@ -56,7 +54,6 @@ AS $$
     JOIN inventory_lot l ON l.id = ri.lot_id;
 $$;
 
--- claim_pending_notifications
 CREATE OR REPLACE FUNCTION claim_pending_notifications(p_limit INT, p_max_attempts INT)
 RETURNS TABLE (id UUID, tenant_id UUID, channel TEXT, recipient TEXT, payload JSONB, attempt_count INT)
 LANGUAGE sql SECURITY DEFINER
@@ -74,7 +71,6 @@ AS $$
               notification_outbox.recipient, notification_outbox.payload, notification_outbox.attempt_count;
 $$;
 
--- finish_notification
 CREATE OR REPLACE FUNCTION finish_notification(p_id UUID, p_sent BOOLEAN, p_max_attempts INT)
 RETURNS VOID
 LANGUAGE sql SECURITY DEFINER
@@ -87,35 +83,5 @@ AS $$
         sent_at = CASE WHEN p_sent THEN now() ELSE sent_at END
     WHERE id = p_id;
 $$;
-
--- اعتبارسنجی آگاهانه (assertion): اگر شکست بخورد، کل migration rollback می‌شود.
-DO $$
-DECLARE
-    missing_count INT;
-BEGIN
-    -- search_path روی هر چهار تابع را چک کن.
-    -- این assertion اثبات می‌کند که migration واقعاً اجرا شده.
-    --
-    -- چرا GRANT را اینجا چک نمی‌کنیم: CREATE OR REPLACE FUNCTION به‌صورتِ
-    -- ذاتی GRANTهای قبلی روی همان تابع (با همان signature) را حفظ می‌کند.
-    -- اگر `REVOKE EXECUTE` شده باشد، آن ردیف در pg_proc باقی می‌ماند و
-    -- CREATE OR REPLACE فقط بدنه را عوض می‌کند — grantها دست‌نخورده می‌مانند.
-    -- برای اطمینان از اینکه GRANT داده شده، به SECURITY.md مراجعه کن — آنجا
-    -- GRANT صریح به `app_user` در docs/GO_LIVE.md فهرست شده.
-    --
-    -- نکته: proconfig در PG یک text[] است. فرمت آن می‌تواند '{search_path=public, pg_temp}'
-    -- یا ['search_path=public, pg_temp'] باشد. ما هر دو حالت را چک می‌کنیم.
-    SELECT COUNT(*) INTO missing_count FROM pg_proc
-    WHERE proname IN ('user_contexts','expire_due_reservations',
-                      'claim_pending_notifications','finish_notification')
-      AND NOT (
-        proconfig::text LIKE '%search_path=public, pg_temp%'
-        OR proconfig::text LIKE '%search_path=public,pg_temp%'
-      );
-    IF missing_count > 0 THEN
-        RAISE EXCEPTION 'search_path قفل نشده روی % تابع — migration ناقص اجرا شد', missing_count
-            USING ERRCODE = 'check_violation';
-    END IF;
-END $$;
 
 COMMIT;

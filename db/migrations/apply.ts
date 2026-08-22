@@ -271,6 +271,31 @@ async function main() {
     }
 
     console.log(`\n✓ ${pending.length} migration با موفقیت اعمال شد.`);
+
+    // ۶. اعتبارسنجیِ آگاهانه — اگر migration 0004 اجرا شده، search_path را چک کن.
+    //    این کار به‌جای `DO $$ ... END $$;` در خود migration انجام می‌شود چون
+    //    postgres.js در `tx.unsafe` با `DO $$` مشکل دارد.
+    const ran0004 = pending.some((m) => m.id === 4);
+    if (ran0004) {
+      console.log("→ اعتبارسنجیِ search_path روی توابعِ SECURITY DEFINER…");
+      const missing = await sql<{ count: string }[]>`
+        SELECT COUNT(*)::text AS count FROM pg_proc
+        WHERE proname IN ('user_contexts','expire_due_reservations',
+                          'claim_pending_notifications','finish_notification')
+          AND NOT (
+            proconfig::text LIKE '%search_path=public, pg_temp%'
+            OR proconfig::text LIKE '%search_path=public,pg_temp%'
+          )`;
+      const missingCount = parseInt(missing[0].count, 10);
+      if (missingCount > 0) {
+        console.error(
+          `✗ شکست در اعتبارسنجی: ${missingCount} تابعِ SECURITY DEFINER ` +
+          `search_path ندارند. migration 0004 ناقص اجرا شده.`,
+        );
+        process.exit(1);
+      }
+      console.log("✓ همه‌ی توابعِ SECURITY DEFINER search_path دارند.");
+    }
   } catch (err) {
     console.error("\n✗ شکست در migration:", err);
     process.exit(1);
