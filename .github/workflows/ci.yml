@@ -81,11 +81,19 @@ jobs:
         # مهم: اینجا apply.ts را تست می‌کنیم، نه schema.sql را.
         # اگر apply.ts کار کند، یعنی migration system از ابتدا تا انتها سالم است.
         # schema.sql هم درونِ خودش شاملِ همه‌ی migrationها است (همگام‌سازی شده).
+        #
+        # نکته: apply.ts در `db/migrations/` است ولی node_modules در `web/` است.
+        # پس NODE_PATH را ست می‌کنیم تا `import postgres from "postgres"` کار کند.
+        # یا بهتر، از web/ اجرا می‌کنیم تا مسیر node_modules به‌صورت پیش‌فرض پیدا شود.
+        working-directory: web
+        env:
+          DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
+          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
         run: |
           # ابتدا schema.sql را اجرا می‌کنیم (نصبِ اولیه)
-          PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -f db/schema.sql
-          # بعد migrationها را (با POINT به DATABASE_URL از .env.test)
-          cd web && node --env-file=.env.test --import tsx ../db/migrations/apply.ts
+          PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -f ../db/schema.sql
+          # بعد migrationها را — از web/ اجرا می‌کنیم تا node_modules در دسترس باشد
+          node --env-file=.env.test --import tsx ../db/migrations/apply.ts
 
       - name: Run tests
         working-directory: web
