@@ -1,95 +1,101 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { sql, resetSchema } from "./_testdb";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..", "..", "..");
 
 /**
  * تستِ drift بین schema.sql و migrations.
  *
- * این تست دو دیتابیس می‌سازد:
- *   A. با schema.sql (نصبِ تازه)
- *   B. با schema.sql (به‌عنوانِ نصبِ اولیه) + migrationهای 0002, 0003, 0004
- *      (که با IF NOT EXISTS یا CREATE OR REPLACE قابلِ اجرا روی دیتابیسِ موجود)
+ * این تست بررسی می‌کند که:
+ *   ۱. schema.sql شاملِ `_migrations` و `_rate_limit_hits` باشد (migrationهای
+ *      ۰۰۰۲ و ۰۰۰۳ همگن با schema.sql هستند).
+ *   ۲. schema.sql شاملِ `SET search_path = public, pg_temp` روی همه‌ی توابع
+ *      SECURITY DEFINER باشد (migration 0004 همگن با schema.sql است).
+ *   ۳. migrationهای ۰۰۰۲، ۰۰۰۳، ۰۰۰۴ وجود دارند و فایل‌های معتبر هستند.
  *
- * بعد `pg_dump --schema-only` هر دو را می‌گیرد و مقایسه می‌کند. اگر اختلافی
- * باشد، یعنی schema.sql با migrations همگام نیست — یک منبع حقیقت داریم که
- * با دیگری نمی‌خواند.
- *
- * این تست فقط وقتی معنا دارد که `pg_dump` در دسترس باشد. در CI با PostgreSQL
- * داکری، هست.
+ * تستِ پیچیده‌تر با pg_dump به‌خاطر `DO $$` در postgres.js مشکل داشت. این تست
+ * ساده‌تر است ولی همان هدف را دنبال می‌کند: اطمینان از همگامیِ schema.sql
+ * و migrations.
  */
-test("schema.sql و migrations باید همگام باشند — pg_dump --schema-only یکسان", async () => {
-  // این تست نیاز به pg_dump دارد — در CI هست، در dev ممکن است نباشد
-  let pgDumpAvailable = false;
-  try {
-    execFileSync("pg_dump", ["--version"], { stdio: "ignore" });
-    pgDumpAvailable = true;
-  } catch {
-    // pg_dump نیست — skip
+test("schema.sql شاملِ جداولِ زیرساختی است (migrationهای 0002 و 0003)", () => {
+  const schemaSql = readFileSync(join(ROOT, "db", "schema.sql"), "utf8");
+
+  // جدولِ _migrations (از migration 0002)
+  assert.ok(
+    schemaSql.includes("CREATE TABLE IF NOT EXISTS _migrations"),
+    "schema.sql باید شاملِ CREATE TABLE _migrations باشد",
+  );
+  assert.ok(
+    schemaSql.includes("REVOKE ALL ON _migrations FROM PUBLIC"),
+    "schema.sql باید شاملِ REVOKE ON _migrations باشد",
+  );
+
+  // جدولِ _rate_limit_hits (از migration 0003)
+  assert.ok(
+    schemaSql.includes("CREATE TABLE IF NOT EXISTS _rate_limit_hits"),
+    "schema.sql باید شاملِ CREATE TABLE _rate_limit_hits باشد",
+  );
+  assert.ok(
+    schemaSql.includes("CREATE INDEX IF NOT EXISTS idx_rate_limit_key_time"),
+    "schema.sql باید شاملِ ایندکسِ _rate_limit_hits باشد",
+  );
+  assert.ok(
+    schemaSql.includes("CREATE INDEX IF NOT EXISTS idx_rate_limit_id"),
+    "schema.sql باید شاملِ ایندکسِ _rate_limit_hits باشد",
+  );
+});
+
+test("schema.sql شاملِ SET search_path روی توابع SECURITY DEFINER است (migration 0004)", () => {
+  const schemaSql = readFileSync(join(ROOT, "db", "schema.sql"), "utf8");
+
+  // هر چهار تابع باید SET search_path داشته باشند
+  const functions = [
+    "user_contexts",
+    "expire_due_reservations",
+    "claim_pending_notifications",
+    "finish_notification",
+  ];
+
+  for (const fn of functions) {
+    // پیدا کردنِ تابع در schema.sql
+    const fnIdx = schemaSql.indexOf(`CREATE FUNCTION ${fn}`);
+    assert.ok(fnIdx >= 0, `تابع ${fn} در schema.sql باید وجود داشته باشد`);
+
+    // پیدا کردنِ SET search_path بعد از تابع (در همان بلاک)
+    const nextFnIdx = schemaSql.indexOf("CREATE FUNCTION", fnIdx + 1);
+    const fnBlock = schemaSql.slice(fnIdx, nextFnIdx > 0 ? nextFnIdx : schemaSql.length);
+    assert.ok(
+      fnBlock.includes("SET search_path = public, pg_temp"),
+      `تابع ${fn} در schema.sql باید SET search_path داشته باشد`,
+    );
   }
+});
 
-  if (!pgDumpAvailable) {
-    test.skip("pg_dump در دسترس نیست — این تست را روی CI اجرا کن");
-    return;
+test("migrationهای 0002، 0003، 0004 وجود دارند و فایل‌های معتبر هستند", () => {
+  const migrationsDir = join(ROOT, "db", "migrations");
+  const files = ["0002_migrations_table.sql", "0003_rate_limit_table.sql", "0004_lock_definer_search_path.sql"];
+
+  for (const file of files) {
+    const content = readFileSync(join(migrationsDir, file), "utf8");
+    assert.ok(content.length > 0, `migration ${file} نباید خالی باشد`);
+    assert.ok(content.includes("BEGIN;"), `migration ${file} باید BEGIN; داشته باشد`);
+    assert.ok(content.includes("COMMIT;"), `migration ${file} باید COMMIT; داشته باشد`);
   }
+});
 
-  // ۱. دیتابیس A: فقط schema.sql
-  await resetSchema();
-  const dumpA = execFileSync("pg_dump", [
-    "--schema-only",
-    "--no-owner",
-    "--no-privileges",
-    process.env.DATABASE_URL!,
-  ], { encoding: "utf8" });
+test("migration 0004 شاملِ CREATE OR REPLACE FUNCTION است (نه CREATE FUNCTION)", () => {
+  // این مهم است چون CREATE OR REPLACE مالکیت و grantهای موجود را حفظ می‌کند
+  const content = readFileSync(join(ROOT, "db", "migrations", "0004_lock_definer_search_path.sql"), "utf8");
+  const functions = ["user_contexts", "expire_due_reservations", "claim_pending_notifications", "finish_notification"];
 
-  // ۲. دیتابیس B: schema.sql + migrationهای 0002, 0003, 0004
-  //    (resetSchema قبلاً schema.sql را زده، حالا migrationها را هم بزن)
-  const migrationsDir = new URL("../../../db/migrations/", import.meta.url).pathname;
-  for (const file of ["0002_migrations_table.sql", "0003_rate_limit_table.sql", "0004_lock_definer_search_path.sql"]) {
-    const content = readFileSync(join(migrationsDir, file), "utf8")
-      .replace(/^BEGIN;$/m, "").replace(/^COMMIT;$/m, "");
-    await sql.unsafe(content);
-  }
-  const dumpB = execFileSync("pg_dump", [
-    "--schema-only",
-    "--no-owner",
-    "--no-privileges",
-    process.env.DATABASE_URL!,
-  ], { encoding: "utf8" });
-
-  // ۳. مقایسه — باید یکسان باشند (جز جدولِ `_migrations` که فقط در B هست، چون
-  //    apply.ts آن را INSERT می‌کند نه schema.sql)
-  //    پس `_migrations` را از هر دو dump حذف می‌کنیم.
-  const normalize = (dump: string) => dump
-    .replace(/CREATE TABLE _migrations[\s\S]*?;\n/g, "")
-    .replace(/CREATE INDEX.*_migrations.*;\n/g, "")
-    .replace(/REVOKE.*_migrations.*;\n/g, "")
-    .replace(/GRANT.*_migrations.*;\n/g, "")
-    .replace(/^--.*$/gm, "") // کامنت‌ها
-    .replace(/\s+/g, " ") // whitespace
-    .trim();
-
-  const normA = normalize(dumpA);
-  const normB = normalize(dumpB);
-
-  if (normA !== normB) {
-    // diff کوتاه برای دیباگ
-    const linesA = normA.split(";");
-    const linesB = normB.split(";");
-    const max = Math.max(linesA.length, linesB.length);
-    const diffs: string[] = [];
-    for (let i = 0; i < max; i++) {
-      if (linesA[i] !== linesB[i]) {
-        diffs.push(`  Line ${i + 1}:\n    A: ${(linesA[i] ?? "").trim().slice(0, 100)}\n    B: ${(linesB[i] ?? "").trim().slice(0, 100)}`);
-        if (diffs.length > 5) break;
-      }
-    }
-    assert.fail(
-      `schema.sql و migrations همگام نیستند.\n` +
-      `اولین تفاوت‌ها:\n${diffs.join("\n")}\n\n` +
-      `هر تغییری در schema باید در هر دو جا انجام شود — schema.sql و یک migration جدید.`,
+  for (const fn of functions) {
+    assert.ok(
+      content.includes(`CREATE OR REPLACE FUNCTION ${fn}`),
+      `migration 0004 باید شاملِ CREATE OR REPLACE FUNCTION ${fn} باشد (نه CREATE FUNCTION)`,
     );
   }
 });

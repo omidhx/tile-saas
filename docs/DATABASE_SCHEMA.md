@@ -30,6 +30,13 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
                             (صفحه‌ی مشتری نشست ندارد). is_active=false = لینکِ باطل، بدونِ حذف.
 ```
 
+### جداولِ زیرساختی (نه tenant-scoped، نه RLS)
+
+این جداول در `schema.sql` و `db/migrations/` همگن‌اند:
+
+- `_migrations` (migration 0002) — ردیابیِ migrationهای اجرا شده با checksum. فقط نقشِ `app_user` حقِ SELECT دارد.
+- `_rate_limit_hits` (migration 0003) — شمارنده‌ی rate limit برای multi-instance (`RATE_LIMIT_BACKEND=postgres`).
+
 ## قواعدی که در DDL کد شده‌اند (نه فقط قرارداد)
 | قاعده | کجای schema |
 |---|---|
