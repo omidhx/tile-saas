@@ -5,6 +5,44 @@
 
 ## [Unreleased]
 
+### Added (حسابرسیِ فاز ۱۰–پسین — رفعِ ایراداتِ بازبینیِ امنیتی)
+
+> **وضعیت: «اضافه شد، اجرا نشده»** — تا اولین push روی GitHub، CI سبز نشده و
+> migration 0004 روی دیتابیسِ موجود اعمال نشده. این موارد را به‌عنوانِ «نیت
+> پیاده‌شده» ببینید، نه «رفع‌شده». اگر اولین CI قرمز شد، گزارش اصلاح می‌شود.
+
+- **قفلِ `search_path` روی هر چهار تابع `SECURITY DEFINER`** (`user_contexts`, `expire_due_reservations`, `claim_pending_notifications`, `finish_notification`). بدون این، SECURITY DEFINER خودش سطحِ حمله است: مهاجم با ساختنِ شیء هم‌نام در schemaیِ قابلِ‌نوشتن، می‌توانست تابع را به کدِ خودش هدایت کند. `SET search_path = public, pg_temp` این پنجره را می‌بندد.
+  - در `db/schema.sql` (برای نصبِ تازه)
+  - در `db/migrations/0004_lock_definer_search_path.sql` (برای دیتابیسِ موجود با `CREATE OR REPLACE FUNCTION` + assertion)
+- **ساختارِ `db/migrations/`** — قبلاً فقط `schema.sql` برای نصبِ تازه بود؛ هر تغییری در production باید دستی می‌شد. حالا:
+  - `0002_migrations_table.sql`: جدول `_migrations` برای ردیابیِ migrationها با checksum + GRANT صریح به `app_user`.
+  - `0003_rate_limit_table.sql`: جدول `_rate_limit_hits` برای multi-instance rate limiter + GRANT صریح به `app_user`.
+  - `0004_lock_definer_search_path.sql`: قفلِ search_path با `CREATE OR REPLACE` + assertion.
+  - `apply.ts`: اسکریپتِ idempotent با checksum validation.
+  - **همگام‌سازی:** `schema.sql` حالا شاملِ `_migrations` و `_rate_limit_hits` هم هست — دو منبع حقیقت نیست.
+- **حذفِ فایلِ فیزیکی در `removeProductImage`** — قبلاً فقط رکورد DB حذف می‌شد و فایل روی دیسک می‌ماند (orphan). حالا `deleteUploadFile` فایل را هم حذف می‌کند (بعد از COMMIT تا اگر rollback شد، فایل از بین نرود). `deleteUploadFile` شاملِ اعتبارسنجیِ path traversal است — اگر کسی در DB مسیر `/uploads/../../.env` گذاشته باشد، رد می‌کند و با Sentry لاگ می‌کند.
+  - `removeAllProductImages` برای حذفِ همه‌ی عکس‌های یک محصول (آماده برای حذفِ محصول در آینده).
+  - اسکریپتِ `scripts/cleanup-orphan-uploads.ts` با dry-run، `--max-days`، و بررسیِ فایل‌های روی دیسک که در DB reference ندارند.
+- **Rate limiter با backend قابلِ انتخاب** — `RATE_LIMIT_BACKEND=memory` (پیش‌فرض، تک-instance) یا `RATE_LIMIT_BACKEND=postgres` (multi-instance، با جدول `_rate_limit_hits`).
+  - **fail policy هوشمند:** برای auth مسیرها (login/password/reset) **fail-closed** — اگر DB پایین باشد، fallback به in-memory می‌زند و سقف را برنمی‌دارد. برای بقیه fail-open.
+  - مسیرهای `login`, `password`, `reset`, `reservations`, `imports` همگی به `checkRateAsync` رفتند.
+  - worker housekeeping برای پاکسازیِ ردیف‌های قدیمیِ `_rate_limit_hits`.
+- **CSRF سبک** (`assertSameOrigin`) — چکِ Origin/Host روی state-changing endpoints. `SameSite=lax` روی مرورگرهای مدرن کافی است، ولی این چک subdomain و WebView را هم می‌پوشاند. حدود ۱۰ خط، blocker نیست ولی درِ اضافی است.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) — هر push و PR: PostgreSQL داکری + migration + typecheck + test + build + smoke test `/api/health`.
+- **`/api/health` endpoint** — بررسیِ واقعیِ DB با `SELECT 1`. برای Docker healthcheck و reverse proxy.
+- **Dockerfile multi-stage + docker-compose** — production-ready با non-root کاربر، volume ماندگار برای آپلودها، workerها به‌عنوان سرویس جدا، worker housekeeping، healthcheck واقعی به `/api/health`.
+- **`.env.example`** در ریشه — نمونه‌ی کاملِ متغیرهای محیطی با توضیحات.
+- **`.dockerignore`** — جلوگیری از وارد شدنِ `node_modules`, `.env`, `_backups/`, و غیره در image.
+- **`npm run migrate`** و **`npm run cleanup:uploads`** در `web/package.json`.
+
+### Tests Added (برای جلوگیری از regression)
+- `web/src/db/securityDefiner.test.ts` — اعتبارسنجیِ search_path روی هر چهار تابع + سناریوی migration 0004 روی دیتابیسِ موجود.
+- `web/src/auth/rateLimitPostgres.test.ts` — تستِ موازی، isolation، و sliding window در حالتِ postgres.
+- `web/src/lib/fileCleanup.test.ts` — تستِ path traversal، فایلِ غیرموجود، فایل موجود، و batch delete.
+### Changed
+- **رفعِ bug در `.gitignore`** — `.env.example` به‌اشتباه ignore می‌شد (به‌خاطر `.env*` بدون استثنا). حالا `!.env.example` در ریشه و `web/` هر دو اضافه شد.
+- **`docs/GO_LIVE.md`** — چک‌لیست به‌روزرسانی شد: `RATE_LIMIT_BACKEND`، migration via `apply.ts`، و فهرستِ رفع‌های اخیر.
+
 ### Added (v11 — بازطراحیِ بصری + تکمیلِ فیلدهای حواله)
 - **Shell/Sidebar/تمِ روشن‌وتیره روی همه‌ی صفحاتِ داخلی، در ۴ فاز.** تا حالا هر صفحه ناوبریِ خودش را جدا کنارِ `.topbar` می‌ساخت و تم فقط از `prefers-color-scheme` می‌آمد (بدونِ toggle/persistence). حالا `PageShell.tsx` یک Sidebarِ ثابت با فیلترِ `role`/`allowed_pages`ِ همان `NavMenu` (بدونِ کپیِ منطقِ دسترسی) و `ThemeToggle.tsx` یک تمِ قابلِ‌تغییر با `data-theme` + `localStorage` می‌دهند — با یک `<script>` خامِ no-flash در `layout.tsx` قبل از اولین paint. جدول‌ها/فرم‌های پراکنده به کلاس‌های تازه‌ی `.table`/`.field` تبدیل شدند، بدونِ افزودنِ Tailwind یا کتابخانه‌ی کامپوننت — همان توکن‌های `CSS Custom Properties`ِ `globals.css` گسترش یافتند. صفحه‌ی چاپِ حواله و کاتالوگِ عمومی عمداً بدونِ Sidebar ماندند. هیچ منطقِ کسب‌وکار/RLS/مجوزی تغییر نکرد.
 - **تکمیلِ فیلدهای ساختِ حواله: مقصد، مشتری، شماره‌ی مرجع.** `reference_number` در schema بود و برگه‌ی چاپ می‌توانست نشانش دهد، ولی هیچ مسیرِ ساختِ حواله مقدارش نمی‌داد. `CustomerPicker.tsx` (جست‌وجوی مشتری با `GET /api/customers`، نگهداریِ `customerId` نه فقط نام) + فرمِ ساختِ حواله در `QueueSection`/`BackorderSection`؛ `createDispatchFromRequest`/`createBackorderDispatch` حالا `destination`/`referenceNumber` را می‌گیرند و درج می‌کنند؛ `listDispatches` و برگه‌ی چاپ آن‌ها را برمی‌گردانند/نشان می‌دهند. کدِ حواله همچنان فقط سمتِ سرور ساخته می‌شود. رزروِ self-service نماینده عمداً این فیلدها را نگرفت — حواله در آن مرحله هنوز ساخته نشده.

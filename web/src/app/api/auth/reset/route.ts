@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requestReset, confirmReset } from "@/auth/passwordFlows";
-import { checkRate } from "@/auth/rateLimit";
+import { checkRateAsync } from "@/auth/rateLimit";
+import { assertSameOrigin } from "@/auth/csrf";
 
 /**
  * POST /api/auth/reset — بازیابیِ رمز با کدی که به همه‌ی کانال‌های موجودِ کاربر می‌رود.
@@ -12,6 +13,9 @@ import { checkRate } from "@/auth/rateLimit";
  * شماره‌ها/ایمیل‌های نمایندگان می‌شد.
  */
 export async function POST(req: Request) {
+  const csrfFail = assertSameOrigin(req);
+  if (csrfFail) return csrfFail;
+
   const body = await req.json().catch(() => ({}));
   const { identifier, code, newPassword } = body ?? {};
   if (typeof identifier !== "string" || !identifier.trim())
@@ -19,8 +23,13 @@ export async function POST(req: Request) {
 
   // کلید بر اساس شناسه: مهاجم نباید بتواند با درخواستِ پیاپی هم صف را پر کند
   // هم کد را بارها عوض کند. (spec ۸: rate limit روی مسیرهای احراز هویت.)
+  // failPolicy=closed: اگر DB در دسترس نباشد، fallback به in-memory می‌زند.
   const isConfirm = typeof code === "string";
-  const rl = checkRate(`reset:${isConfirm ? "c" : "r"}:${identifier}`, isConfirm ? 10 : 3, 15 * 60_000);
+  const rl = await checkRateAsync(
+    `reset:${isConfirm ? "c" : "r"}:${identifier}`,
+    isConfirm ? 10 : 3, 15 * 60_000,
+    { failPolicy: "closed" },
+  );
   if (!rl.ok)
     return NextResponse.json({ error: "too_many" }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
 

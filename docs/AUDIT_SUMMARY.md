@@ -161,3 +161,42 @@ PATCHِ agents/warehouses، سقفِ طولِ رمزِ عبور برایِ DoSِ
 Phase ۱۰ (Executive Summary، جدولِ بهبودها، چک‌لیستِ پیش‌از‌لانچ، توصیه‌های
 پسا‌لانچ) در تاریخچه‌ی گفت‌وگویِ همین نشست است، نه در این فایل — این‌جا فقط
 خلاصه‌ی قابلِ‌ارجاع است.
+
+---
+
+## دورِ سوم — Phase 10-post (حسابرسیِ خارجیِ بر اساسِ مدل AI دیگر)
+
+> این بخش الحاقیه‌ی دورِ **سوم** است — بعد ازِ بازبینیِ تحلیلِ یک مدل AI دیگر
+> بر اساسِ گزارشِ جامعِ این پروژه. شش مورد از هشت ایرادِ مدل تأیید شدند و رفعِ شدند؛
+> دو مورد رد شدند (TanStack Query و CSRF token — هر دو YAGNI در این مقیاس).
+
+### چه چیزی این دور بسته شد
+
+| # | رفع | فایل | شدت |
+|---|---|---|---|
+| ۱ | `SET search_path = public, pg_temp` روی هر چهار تابع `SECURITY DEFINER` | `db/schema.sql` | Critical — search_path injection |
+| ۲ | ساختارِ `db/migrations/` با `apply.ts` و جدول `_migrations` (checksum) | `db/migrations/` | High — هرگز schema.sql روی prodِ داده‌دار |
+| ۳ | حذفِ فایل فیزیکی در `removeProductImage` + اسکریپتِ cleanup | `web/src/db/products.ts`, `web/src/lib/fileCleanup.ts`, `web/scripts/cleanup-orphan-uploads.ts` | Medium — جلوی انباشتِ فایل‌های یتیم |
+| ۴ | Rate limiter دو-حالته (`RATE_LIMIT_BACKEND=memory\|postgres`) | `web/src/auth/rateLimit.ts`, `db/migrations/0003_rate_limit_table.sql` | Medium — multi-instance |
+| ۵ | GitHub Actions CI با PostgreSQL داکری، typecheck، test، build | `.github/workflows/ci.yml` | High — جلوی مرجِ کدِ تست‌نشکسته |
+| ۶ | Dockerfile multi-stage + docker-compose با workerها به‌عنوان سرویس | `Dockerfile`, `docker-compose.yml` | High — production-ready |
+| ۷ | رفعِ bug در `.gitignore` (`!.env.example`) | `.gitignore`, `web/.gitignore` | Low — `.env.example` به‌اشتباه ignore می‌شد |
+| ۸ | اسکریپت‌های `npm run migrate` و `npm run cleanup:uploads` | `web/package.json` | Low — دسترسی آسان‌تر |
+
+### چه چیزی رد شد (با استدلال)
+
+| ایرادِ ادعا‌شده | چرا رد شد |
+|---|---|
+| نیاز به TanStack Query/SWR | اپ فعلی fetch ساده + 60s polling دارد. برای مقیاس چند ده نماینده over-engineering است (همان قانون ponytail). React Query را وقتی چند صفحه‌ی server-state داریم اضافه می‌کنیم. |
+| نیاز به CSRF token اضافی | کوکی `SameSite=lax` در عملِ CSRF روی POST را متوقف می‌کند. logout هم POST است. این برای این اپ کافی است. |
+| «دوپلیکیشنِ کامپوننت‌ها» | بررسی شد: کامپوننت‌ها Section-based هستند که در `Tabs` ادغام می‌شوند. این الگوی صحیح MVP است نه duplication. |
+
+### شواهدِ این دور
+- `tsc --noEmit` تمیز.
+- Syntax check همه‌ی فایل‌های جدید: بدون خطا.
+- سازگاریِ عقب‌رو: `checkRate` (sync) همچنان برای تست‌های موجود کار می‌کند.
+- Migration 0002 با `IF NOT EXISTS` روی دیتابیس‌های موجود هم امن است.
+
+### Verdict: **Conditionally Ready** (همچنان — ولی دامنه‌ی شرط تنگ‌تر)
+همان verdict، ولی حالا فقط **عملیاتی** است (نقشِ DB، HTTPS، Provider پیامک، volume آپلود).
+هیچ مسدودکننده‌ی کدی باقی نمانده است.

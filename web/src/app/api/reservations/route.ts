@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { staffCtx, agentCtx } from "@/auth/httpCtx";
-import { checkRate, tooMany } from "@/auth/rateLimit";
+import { checkRateAsync, tooMany } from "@/auth/rateLimit";
 import { reserve, listReservations, type ReserveItem } from "@/db/reservations";
 
 /**
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   if ("err" in c) return c.err;
 
   // rate limit روی رزرو (spec ۸): جلوی hammer کردنِ مسیر پول/موجودی توسط یک کاربر
-  const rl = checkRate(`reserve:${c.userId}`, 30, 60_000);
+  const rl = await checkRateAsync(`reserve:${c.userId}`, 30, 60_000);
   if (!rl.ok) return tooMany(rl.retryAfterSec);
 
   const result = await reserve({

@@ -28,3 +28,7 @@ export async function resetSchema() {
   await sql.unsafe("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   await sql.unsafe(schema);
 }
+
+// صادر کردنِ sql برای تست‌هایی که نیاز به کوئریِ مستقیم دارند (مثل securityDefiner.test.ts)
+export { sql };
+

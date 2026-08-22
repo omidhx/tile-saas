@@ -42,13 +42,14 @@
 | نمایشِ واحدِ پول (ریال/تومان) + مبلغِ به حروف | ✅ v11 — تنظیمِ tenant برای واحدِ نمایش؛ مبلغِ رزرو/حواله هم به عدد هم به حروف نشان داده می‌شود | — |
 
 ## باز — واقعاً کم است، نه تصمیم
-- **CI نداریم.** تست‌ها فقط با `npm test` دستی معتبرند؛ هیچ‌چیز جلوی مرجِ کدِ تست‌نشکسته را نمی‌گیرد. (حسابرسیِ v10)
+- ~~**CI نداریم.** تست‌ها فقط با `npm test` دستی معتبرند؛ هیچ‌چیز جلوی مرجِ کدِ تست‌نشکسته را نمی‌گیرد.~~ ✅ رفع شد (Phase 10-post): `.github/workflows/ci.yml` با PostgreSQL داکری، typecheck، test، build.
 
 ## تصمیم‌های آگاهانه (نه باگ)
 - **رزرو lot-based** (نماینده Lot را می‌بیند). auto-pickِ FIFO مقیدِ شید = v2. (spec ۱۴.۱۱)
-- **بدون `db/migrations/`** — چون prod نداریم؛ `schema.sql` نصب مرجع است. اولین دیپلوی = ساخت پوشه‌ی migration. (spec ۱۴.۹)
+- ~~**بدون `db/migrations/`** — چون prod نداریم؛ `schema.sql` نصب مرجع است. اولین دیپلوی = ساخت پوشه‌ی migration. (spec ۱۴.۹)~~ ✅ رفع شد (Phase 10-post): `db/migrations/` با `apply.ts` و دو migration (`0002_migrations_table.sql`, `0003_rate_limit_table.sql`) ساخته شد. `schema.sql` همچنان منبع حقیقت برای نصبِ تازه است.
 - **بدون آرشیو/پارتیشن رزرو** — مقیاس این پروژه لازمش ندارد؛ index جزئی کافی است. trigger بازبینی: هزاران رزرو فعالِ هم‌زمان. (spec ۱۴.۱۱)
 - **بدون Tailwind/React Query/Zustand** — YAGNI تا وقتی چند صفحه/چند-route شد.
+- **Rate limiter در حالتِ `memory` همچنان درون‌پروسه‌ای است** — ولی حالا `RATE_LIMIT_BACKEND=postgres` هم برای multi-instance موجود است. ponytail: برای تک-instance همون `memory` کافی است.
 
 ## اسنادِ ساخته‌نشده (به‌محض نیاز ساخته می‌شوند)
 `DEPLOYMENT_RUNBOOK.md`, `TESTING_STRATEGY.md`, `DESIGN_SYSTEM.md`, `SEO_PERFORMANCE.md`, `IMPLEMENTATION_PLAN.md`, `openapi.yaml`.

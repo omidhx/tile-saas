@@ -28,9 +28,12 @@
   ```
   DATABASE_URL=postgres://app_user:<pw>@localhost:5432/tile   # نقشِ non-superuser
   AUTH_SECRET=<openssl rand -base64 32>    # حداقل ۳۲ کاراکتر — نبودش boot را می‌شکند (fail-loud)
+  RATE_LIMIT_BACKEND=memory               # memory=تک-instance (پیش‌فرض) / postgres=multi-instance
   SMS_PROVIDER=<ارائه‌دهنده>            # پیش‌فرض log = فقط چاپ می‌کند (و در production متن سانسور می‌شود)
   SENTRY_DSN=<اختیاری>                  # نبودش یعنی فقط مانیتورینگِ خطا خاموش است، نه کلِ اپ
   ```
+  > نمونه‌ی کامل: `.env.example` در ریشه. در Docker: متغیرها از `docker-compose.yml`
+  > خوانده می‌شوند — `web/.env` لازم نیست.
 - [ ] **HTTPS اجباری.** کوکی نشست در production `Secure` است؛ **روی HTTP لاگین اصلاً کار نمی‌کند.** Caddy/Nginx + Let's Encrypt.
 - [ ] **کاربر و کارخانه‌ی اولیه.** هیچ فرم ثبت‌نامی وجود ندارد (عمدی — B2B). اولین tenant/کاربر با SQL ساخته می‌شود: بخش ۶ پایین.
 
@@ -45,15 +48,50 @@
 
 ## ۲. اجرای اپ
 
-- [ ] `npm ci && npm run build && npm run start` پشت PM2/systemd.
+### ۲.۱. دو مسیرِ دیپلوی — فقط یکی را انتخاب کن
+
+**مسیرِ A — Docker Compose (توصیه‌شده):**
+```bash
+cp .env.example .env      # مقادیر واقعی پر کن
+docker compose up -d      # postgres + web + worker-expire + worker-outbox + worker-housekeeping
+```
+این مسیر خودش همه‌چیز را مدیریت می‌کند — volume، workerها، healthcheck. فقط Caddy/Nginx
+جدا برای HTTPS لازم است.
+
+**مسیرِ B — نصبِ مستقیم روی VPS:**
+```bash
+npm ci && npm run build && npm run start   # پشت PM2/systemd
+```
+در این مسیر، workerها را با cron اجرا کن (پایین).
+
+### ۲.۲. نکاتِ مشترک
+
 - [ ] ⚠️ **عکس‌های کاتالوگ در `web/public/uploads/` روی دیسک ذخیره می‌شوند** (کاتالوگ تصویری). این پوشه باید روی یک **volume جدا از کدِ دیپلوی‌شونده** باشد (symlink یا bind-mount)، وگرنه هر `npm run build`/دیپلوی عکس‌ها را پاک می‌کند. در git هم ignore شده. اگر عکس‌ها فقط با URLِ خارجی می‌آیند (ستونِ عکسِ اکسل)، این مورد بی‌اثر است.
-- [ ] ⚠️ **rate limiter در حافظه‌ی همان پروسه است.** با PM2 cluster یا چند instance، سقف در تعداد پروسه‌ها ضرب می‌شود. یا **تک-instance** اجرا کن، یا limiter را به Postgres/Redis منتقل کن (`src/auth/rateLimit.ts`، upgrade path داخلش نوشته شده).
-- [ ] دو cron:
-  ```
-  */10 * * * *  cd /srv/tile/web && npm run worker:expire  >> /var/log/tile-expire.log 2>&1
-  */2  * * * *  cd /srv/tile/web && npm run worker:outbox  >> /var/log/tile-outbox.log 2>&1
-  ```
-  worker انقضا **غیرحیاتی** است (درستیِ `available` به آن وابسته نیست)؛ worker پیامک اگر نایستد، اعلان‌ها فقط عقب می‌افتند.
+- [ ] ⚠️ **rate limiter — دو حالت:**
+  - `RATE_LIMIT_BACKEND=memory` (پیش‌فرض): سقف در تعداد پروسه‌ها ضرب می‌شود. فقط برای تک-instance.
+  - `RATE_LIMIT_BACKEND=postgres`: سقفِ واقعاً global، multi-instance. نیاز به migration `0003_rate_limit_table.sql`. در Docker Compose، پیش‌فرض `postgres` است.
+  - **fail policy:** برای auth مسیرها (login/password/reset) fail-closed است — اگر DB پایین باشد، fallback به in-memory می‌زند و سقف را برنمی‌دارد. برای بقیه fail-open است.
+- [ ] ⚠️ **تک منبعِ زمان‌بندی** — یا Docker workerها یا cron، نه هر دو. اگر Docker Compose را انتخاب کردی، cronهای پایین را روشن نکن. اگر cron را انتخاب کردی، `worker-expire`/`worker-outbox` سرویس‌های Docker را روشن نکن.
+
+### ۲.۳. cron (فقط اگر مسیرِ B را انتخاب کردی)
+```
+*/10  * * * *  cd /srv/tile/web && npm run worker:expire  >> /var/log/tile-expire.log 2>&1
+*/2   * * * *  cd /srv/tile/web && npm run worker:outbox  >> /var/log/tile-outbox.log 2>&1
+0 */6 * * *    psql "$DATABASE_URL" -c "DELETE FROM _rate_limit_hits WHERE hit_at < now() - interval '24 hours';"
+```
+worker انقضا **غیرحیاتی** است (درستیِ `available` به آن وابسته نیست)؛ worker پیامک اگر نایستد، اعلان‌ها فقط عقب می‌افتند. housekeeping برای جلوگیری از رشدِ بی‌نهایتِ جدولِ rate limit.
+
+### ۲.۴. migration قبل از اولین اجرا
+اگر مسیرِ A (Docker) را انتخاب کردی، schema.sql در `docker-entrypoint-initdb.d` خودکار
+اجرا می‌شود. بعد `apply.ts` را اجرا کن تا migrationهای جدید (مثل 0004) اعمال شوند:
+```bash
+docker compose exec web node --import tsx ../db/migrations/apply.ts
+```
+اگر مسیرِ B را انتخاب کردی:
+```bash
+psql "$DATABASE_URL" -f db/schema.sql        # فقط برای دیتابیسِ تازه
+cd web && npm run migrate                     # اعمالِ migrationهای اجرا‌نشده
+```
 
 ## ۳. پیامک (موردِ بازِ اصلی در کد — بقیه در بخشِ ۹)
 
@@ -71,7 +109,15 @@
 ## ۵. مهاجرت schema
 
 - [ ] `db/schema.sql` فقط برای **نصب تازه** است. **هرگز روی prodِ داده‌دار دوباره اجرا نکن.**
-- [ ] از اولین تغییرِ بعد از go-live: migrationهای forward نسخه‌دار در `db/migrations/`.
+- [ ] برای نصبِ تازه، می‌توانی `schema.sql` را اجرا کنی یا از `db/migrations/apply.ts` استفاده کنی.
+- [ ] **برای تغییرِ بعد از go-live:** migrationهای forward-only در `db/migrations/`.
+  ```bash
+  # اجرای idempotentِ همه‌ی migrationهای اجرا‌نشده:
+  node --env-file=web/.env --import tsx db/migrations/apply.ts
+  ```
+  این اسکریپت: migrationهای اجرا‌شده را در جدول `_migrations` ردیابی می‌کند،
+  checksum فایل را برای تشخیصِ دستکاری ذخیره می‌کند، و در صورت شکستِ یک migration
+  mid-way، آن migration rollback می‌شود ولی migrationهای قبلی سرجایشان می‌مانند.
 
 ## ۶. راه‌اندازی داده‌ی اولیه (bootstrap)
 
@@ -116,8 +162,26 @@ VALUES (gen_random_uuid(),'<موبایلِ اپراتورِ SaaS>','<hash>',true
 - تبدیل backorder به موجودیِ واقعی دستی است (وقتی تولید شد، از مسیر import می‌آید و backorder دستی `fulfilled` می‌شود).
 - import فقط snapshot؛ `delta` در schema هست ولی منطق ندارد.
 - تصاویر محصول: روی Object Storage **داخل ایران** (آروان/چابکان) — `next/image` را به هاست خارجی وصل نکن (spec ۱۴.۱۰). فعلاً `<img>` خام است، نه `next/image`.
-- **CI نداریم.** تست‌ها فقط با اجرای دستیِ `npm test` معتبرند؛ هیچ‌چیز جلوی مرجِ کدِ تست‌نشکسته را نمی‌گیرد.
+- ~~**CI نداریم.**~~ ✅ رفع شد — `.github/workflows/ci.yml` اضافه شد. هر push و pull request
+  PostgreSQL داکری را بالا می‌آورد، migration را اجرا می‌کند، `npm test` و `npm run build` می‌زند.
 - تغییر/بازیابیِ رمز و «خروج از همه‌ی دستگاه‌ها» **ساخته شده‌اند** (`auth/passwordFlows.ts`, `session_epoch`) — این دو دیگر شکاف نیستند؛ اگر جای دیگری (مثلاً یک PRDِ قدیمی) هنوز «وجود ندارد» گفته، آن سند کهنه است.
+
+## ۹.۱. رفع‌های اخیر (حسابرسیِ فاز ۱۰–پسین)
+
+این موارد رفع شدند (نگاه کنید به CHANGELOG برای جزئیات):
+
+- ✅ **SECURITY DEFINER search_path** — هر چهار تابع (`user_contexts`, `expire_due_reservations`,
+  `claim_pending_notifications`, `finish_notification`) حالا `SET search_path = public, pg_temp`
+  دارند. این جلوی search_path injection را می‌گیرد.
+- ✅ **`db/migrations/`** — ساختارِ migration با جدول `_migrations` و اسکریپتِ `apply.ts`.
+  Migration اول: `0002_migrations_table.sql`، Migration دوم: `0003_rate_limit_table.sql`.
+- ✅ **Orphan file cleanup** — `removeProductImage` حالا فایل فیزیکی را هم حذف می‌کند.
+  اسکریپتِ `scripts/cleanup-orphan-uploads.ts` برای پاک‌کردنِ فایل‌های یتیمِ قبلی.
+- ✅ **Rate limiter multi-instance** — `RATE_LIMIT_BACKEND=postgres` با جدول `_rate_limit_hits`.
+  مسیرهای `login`, `password`, `reset`, `reservations`, `imports` همگی به `checkRateAsync` رفتند.
+- ✅ **CI/CD** — GitHub Actions با PostgreSQL داکری، typecheck، test، build.
+- ✅ **Dockerfile + docker-compose** — production-ready با multi-stage، non-root، volume آپلود،
+  workerها به‌عنوان سرویس جدا.
 
 ## ۱۰. تست دود بعد از هر دیپلوی
 

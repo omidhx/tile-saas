@@ -53,6 +53,10 @@ v1 و v2 کامل‌اند (spec بخش ۹). برای اینکه **چه چیزی
 دو مسدودکننده‌ی go-live که به کد ربط ندارند: پنلِ پیامکِ واقعی، و کلیدِ طبیعیِ Lot
 برای import (هر دو در `docs/GO_LIVE.md`).
 
+**Phase 10-post (حسابرسیِ خارجی):** شش مورد از هشت ایرادِ یک مدل AI دیگر رفع شد:
+SECURITY DEFINER `search_path`، `db/migrations/`، orphan cleanup، rate limiter
+multi-instance، CI/CD، Dockerfile. جزئیات در `docs/AUDIT_SUMMARY.md` بخشِ دورِ سوم.
+
 **بکاپ داریم.** اسنپ‌شاتِ کاملِ پروژه (همراه `.git`) در `_backups/` نگه داشته می‌شود —
 فهرست، روشِ گرفتن و روشِ بازگرداندن در `docs/BACKUPS.md`. قبل از تغییرِ بزرگ/ریسکی
 یک بکاپِ تازه بگیر و ردیفش را همان‌جا اضافه کن. `_backups/` هرگز کامیت نمی‌شود
@@ -73,26 +77,46 @@ v1 و v2 کامل‌اند (spec بخش ۹). برای اینکه **چه چیزی
 ## ساختار و دستورها
 
 - `db/schema.sql` — اسکیمای Postgres، **منبع حقیقت**. RLS/composite FK اینجاست، نه در ORM.
+  هر چهار تابع `SECURITY DEFINER` با `SET search_path = public, pg_temp` قفل شده‌اند (Phase 10-post).
+- `db/migrations/` — migrationهای forward-only با checksum validation. `apply.ts` اجرای idempotent.
 - `db/test_schema.sql` — تست دود schema (روی Postgres واقعی سبز).
 - `web/` — اپ Next.js (App Router, TS, src-dir) + Drizzle (introspect، نه بازتعریف).
 - `web/src/db/client.ts` — `withTenant()` که `app.tenant_id` را SET می‌کنه (RLS فعال).
 - `web/src/db/reservations.ts` — **الگوریتم رزرو**، پیاده‌سازی مرجعِ بخش ۶ spec.
+- `web/src/auth/rateLimit.ts` — rate limiter دو-حالته (`RATE_LIMIT_BACKEND=memory|postgres`).
+- `web/src/lib/fileCleanup.ts` — حذفِ امنِ فایل‌های آپلودشده از دیسک.
 - `docs/ux-wireframes.md` — قرارداد رفتاریِ صفحه‌های نماینده.
+- `MEMORY.md` — حافظه‌ی کاریِ پروژه (چه کاری انجام شده، کجا ایستاده‌ایم).
 
 ```bash
 # schema روی یه Postgres محلی/تازه (نصب مرجع). هرگز روی prodِ داده‌دار دوباره اجرا نکن —
 # تغییرات prod فقط با migration نسخه‌دار در db/migrations/ (بخش ۱۴.۹ spec).
 psql "$DATABASE_URL" -f db/schema.sql
 
+# اجرای idempotentِ migrationهای اجرا‌نشده:
+node --env-file=web/.env --import tsx db/migrations/apply.ts
+# یا: cd web && npm run migrate
+
 cd web
 npm run dev        # سرور توسعه
-npm run build      # بیلد پروडاکشن
+npm run build      # بیلد پروڈاکشن
 npm test           # تست یکپارچه‌ی رزرو (نیازمند DATABASE_URL به Postgres تازه)
 npm run db:pull    # introspect اسکیمای typed از دیتابیس → src/db/generated/
+npm run migrate    # اجرای migrationها
+npm run cleanup:uploads  # حذف فایل‌های یتیم (dry-run؛ --commit برای حذف واقعی)
 ```
 
 اپ باید با نقشِ **non-superuser** به Postgres وصل شه، وگرنه RLS بایپس می‌شه.
-`DATABASE_URL` در `web/.env` (gitignored)؛ نمونه در `web/.env.example`.
+`DATABASE_URL` در `web/.env` (gitignored)؛ نمونه در `.env.example` (ریشه‌ی پروژه).
+
+### Docker (production-ready)
+```bash
+cp .env.example .env  # مقادیر واقعی پر کن
+docker compose up -d  # postgres + web + worker-expire + worker-outbox
+```
+
+### CI/CD
+`.github/workflows/ci.yml` — هر push/PR: PostgreSQL داکری + migration + typecheck + test + build.`.
 
 ## مرجع کامل
 

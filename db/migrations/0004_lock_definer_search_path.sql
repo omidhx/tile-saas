@@ -1,0 +1,121 @@
+-- =============================================================================
+-- 0004_lock_definer_search_path.sql — قفلِ search_path روی توابع SECURITY DEFINER
+-- =============================================================================
+-- این migration همان تغییری است که در schema.sql برای نصبِ تازه داده شد، ولی
+-- برای دیتابیس‌های موجود (که با schema.sql قدیمی ساخته شده‌اند) لازم است.
+--
+-- چرا CREATE OR REPLACE نه DROP+CREATE: GRANTهای موجود روی توابع حفظ می‌شوند
+-- (DROP+CREATE می‌شد از نو GRANT زد). CREATE OR REPLACE فقط بدنه و config را
+-- عوض می‌کند، نه مالکیت و grant را.
+--
+-- چرا این migration حیاتی است: بدون `SET search_path`، هر تابع SECURITY DEFINER
+-- خودش سطحِ حمله است. مهاجم با ساختنِ شیء هم‌نام در schemaیِ قابلِ‌نوشتن،
+-- می‌توانست تابع را به کدِ خودش هدایت کند (search_path injection).
+--
+-- اعتبارسنجی بعد از اجرا:
+--   SELECT proname, proconfig FROM pg_proc
+--   WHERE proname IN ('user_contexts','expire_due_reservations',
+--                     'claim_pending_notifications','finish_notification');
+--   -- باید هر چهار ردیف '{search_path=public, pg_temp}' برگردانند.
+-- =============================================================================
+
+BEGIN;
+
+-- user_contexts — STABLE است؛ هنگام replace باید حفظ شود.
+CREATE OR REPLACE FUNCTION user_contexts(p_user_id UUID)
+RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT,
+               can_manage_access BOOLEAN, allowed_pages TEXT[],
+               assigned_staff_name TEXT, assigned_staff_phone TEXT, currency_unit TEXT)
+LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp
+AS $$
+    SELECT t.id, t.name, aa.id, aa.legal_name, tm.role, tm.can_manage_access, tm.allowed_pages,
+           su.full_name, su.phone, t.currency_unit
+    FROM tenant_membership tm
+    JOIN tenant t              ON t.id = tm.tenant_id AND t.is_active
+    LEFT JOIN agent_account_user aau ON aau.user_id = tm.user_id AND aau.tenant_id = tm.tenant_id
+    LEFT JOIN agent_account aa ON aa.id = aau.agent_account_id AND aa.is_active
+    LEFT JOIN app_user su ON su.id = aa.assigned_staff_user_id
+    WHERE tm.user_id = p_user_id AND tm.is_active
+$$;
+
+-- expire_due_reservations
+CREATE OR REPLACE FUNCTION expire_due_reservations()
+RETURNS TABLE (tenant_id UUID, variant_id UUID)
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    WITH done AS (
+        UPDATE reservation SET status = 'expired'
+        WHERE status = 'active' AND expires_at <= now()
+        RETURNING id, reservation.tenant_id
+    )
+    SELECT DISTINCT d.tenant_id, l.variant_id
+    FROM done d
+    JOIN reservation_item ri ON ri.reservation_id = d.id
+    JOIN inventory_lot l ON l.id = ri.lot_id;
+$$;
+
+-- claim_pending_notifications
+CREATE OR REPLACE FUNCTION claim_pending_notifications(p_limit INT, p_max_attempts INT)
+RETURNS TABLE (id UUID, tenant_id UUID, channel TEXT, recipient TEXT, payload JSONB, attempt_count INT)
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    UPDATE notification_outbox SET attempt_count = notification_outbox.attempt_count + 1
+    WHERE notification_outbox.id IN (
+        SELECT o.id FROM notification_outbox o
+        WHERE o.status = 'pending' AND o.attempt_count < p_max_attempts
+        ORDER BY o.created_at
+        LIMIT p_limit
+        FOR UPDATE SKIP LOCKED
+    )
+    RETURNING notification_outbox.id, notification_outbox.tenant_id, notification_outbox.channel,
+              notification_outbox.recipient, notification_outbox.payload, notification_outbox.attempt_count;
+$$;
+
+-- finish_notification
+CREATE OR REPLACE FUNCTION finish_notification(p_id UUID, p_sent BOOLEAN, p_max_attempts INT)
+RETURNS VOID
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    UPDATE notification_outbox
+    SET status = CASE WHEN p_sent THEN 'sent'
+                      WHEN attempt_count >= p_max_attempts THEN 'failed'
+                      ELSE 'pending' END,
+        sent_at = CASE WHEN p_sent THEN now() ELSE sent_at END
+    WHERE id = p_id;
+$$;
+
+-- اعتبارسنجی آگاهانه (assertion): اگر شکست بخورد، کل migration rollback می‌شود.
+DO $$
+DECLARE
+    missing_count INT;
+BEGIN
+    -- search_path روی هر چهار تابع را چک کن.
+    -- این assertion اثبات می‌کند که migration واقعاً اجرا شده.
+    --
+    -- چرا GRANT را اینجا چک نمی‌کنیم: CREATE OR REPLACE FUNCTION به‌صورتِ
+    -- ذاتی GRANTهای قبلی روی همان تابع (با همان signature) را حفظ می‌کند.
+    -- اگر `REVOKE EXECUTE` شده باشد، آن ردیف در pg_proc باقی می‌ماند و
+    -- CREATE OR REPLACE فقط بدنه را عوض می‌کند — grantها دست‌نخورده می‌مانند.
+    -- برای اطمینان از اینکه GRANT داده شده، به SECURITY.md مراجعه کن — آنجا
+    -- GRANT صریح به `app_user` در docs/GO_LIVE.md فهرست شده.
+    --
+    -- نکته: proconfig در PG یک text[] است. فرمت آن می‌تواند '{search_path=public, pg_temp}'
+    -- یا ['search_path=public, pg_temp'] باشد. ما هر دو حالت را چک می‌کنیم.
+    SELECT COUNT(*) INTO missing_count FROM pg_proc
+    WHERE proname IN ('user_contexts','expire_due_reservations',
+                      'claim_pending_notifications','finish_notification')
+      AND NOT (
+        proconfig::text LIKE '%search_path=public, pg_temp%'
+        OR proconfig::text LIKE '%search_path=public,pg_temp%'
+      );
+    IF missing_count > 0 THEN
+        RAISE EXCEPTION 'search_path قفل نشده روی % تابع — migration ناقص اجرا شد', missing_count
+            USING ERRCODE = 'check_violation';
+    END IF;
+END $$;
+
+COMMIT;

@@ -1,0 +1,47 @@
+# =============================================================================
+# .dockerignore — چیزی که نباید وارد Docker image شود
+# =============================================================================
+
+# git
+.git
+.gitignore
+.gitattributes
+
+# وابستگی‌ها — درونِ image نصب می‌شوند
+web/node_modules
+
+# خروجی‌های build — داخلِ image تولید می‌شوند
+web/.next
+web/out
+web/build
+
+# فایل‌های محیطی — رازها نباید وارد image شوند
+web/.env
+web/.env.local
+web/.env.production
+.env
+.env.local
+.env.production
+
+# بکاپ‌های محلی
+_backups
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# تست‌ها و لاگ‌ها
+web/test-results
+web/playwright-report
+web/coverage
+*.log
+
+# اسناد — نیازی به آن‌ها در image نیست
+docs
+*.md
+!web/README.md
+
+# CI/CD — نیازی به آن‌ها در runtime نیست
+.github

@@ -11,7 +11,10 @@
     "db:pull": "drizzle-kit pull",
     "seed:dev": "node --env-file=.env --import tsx scripts/seed-dev.ts",
     "worker:expire": "node --env-file-if-exists=.env --import tsx scripts/expire.ts",
-    "worker:outbox": "node --env-file-if-exists=.env --import tsx scripts/outbox.ts"
+    "worker:outbox": "node --env-file-if-exists=.env --import tsx scripts/outbox.ts",
+    "cleanup:uploads": "node --env-file-if-exists=.env --import tsx scripts/cleanup-orphan-uploads.ts",
+    "migrate": "node --env-file-if-exists=.env --import tsx ../db/migrations/apply.ts",
+    "test:migration": "node --import tsx scripts/test-migration-0004.ts"
   },
   "dependencies": {
     "@fontsource-variable/vazirmatn": "^5.3.0",
@@ -26,6 +29,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
     "@playwright/test": "^1.62.1",
     "@types/node": "^20",
     "@types/react": "^19",

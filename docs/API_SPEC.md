@@ -158,6 +158,14 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 پیاده‌شده روی: `login`، `reservations` (۳۰/دقیقه per user)، `auth/password` (۵/۱۵دقیقه)،
 `auth/reset` (درخواست ۳ و تأیید ۱۰ در ۱۵ دقیقه، per phone). spec ۸/۱۴.۶.
 
+**Backend دو-حالته (Phase 10-post):**
+- `RATE_LIMIT_BACKEND=memory` (پیش‌فرض) — شمارنده درون‌پروسه‌ای، فقط برای تک-instance.
+- `RATE_LIMIT_BACKEND=postgres` — از جدول `_rate_limit_hits` استفاده می‌کند، برای multi-instance.
+  fail-open: اگر DB در دسترس نباشد، درخواست رد نمی‌شود (در دسترس بودن > rate limit).
+
+مسیرهای migrate‌شده به `checkRateAsync` (از `checkRate` sync): `login`, `password`, `reset`,
+`reservations`, `imports`.
+
 ## Assumptions
 - کلاینت `idempotencyKey` را UUIDv4 تولید می‌کند و برای retryِ همان عملیات همان را می‌فرستد.
 

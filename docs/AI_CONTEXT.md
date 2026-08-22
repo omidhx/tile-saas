@@ -25,6 +25,9 @@ Vertical SaaS چندمستأجری برای موجودی/رزرو نمایندگ
 - بازتعریف اسکیما در ORM (schema.sql منبع حقیقت).
 - `bin_location`/قیمتِ دیگران در پاسخِ API نماینده.
 - ساده‌کردنِ validation مرز اعتماد، error handlingِ جلوگیرِ از دست‌رفتن داده، یا امنیت.
+- **تابع `SECURITY DEFINER` بدونِ `SET search_path`** (Phase 10-post) — سطحِ حمله است.
+- **تغییرِ schema با ویرایشِ `schema.sql` در prodِ داده‌دار** — از `db/migrations/` استفاده کن.
+- **آپلود بدونِ حذفِ فایل فیزیکی هنگامِ حذفِ رکورد DB** — فایل‌های یتیم انباشته می‌شوند. از `lib/fileCleanup.ts` استفاده کن.
 
 ## Output Expectation
 - کد اول، توضیح کوتاه بعد. دیفِ کوچک و متمرکز.
@@ -34,3 +37,12 @@ Vertical SaaS چندمستأجری برای موجودی/رزرو نمایندگ
 
 ## Decision Log / Open Questions
 منبع واحد: spec بخش ۷ (سؤال‌های باز) و ۱۴ (تصمیم‌های v7.1). این‌جا کپی نمی‌کنیم تا واگرا نشود.
+
+### رفع‌های Phase 10-post (حسابرسیِ خارجی)
+این موارد پس از بازبینیِ یک مدل AI دیگر اضافه شدند:
+- `SET search_path = public, pg_temp` روی هر چهار تابع `SECURITY DEFINER`.
+- ساختارِ `db/migrations/` با `apply.ts` و جدول `_migrations`.
+- `lib/fileCleanup.ts` + `removeProductImage` فایل فیزیکی را هم حذف می‌کند.
+- Rate limiter دو-حالته: `RATE_LIMIT_BACKEND=memory|postgres`.
+- GitHub Actions CI در `.github/workflows/ci.yml`.
+- `Dockerfile` + `docker-compose.yml`.

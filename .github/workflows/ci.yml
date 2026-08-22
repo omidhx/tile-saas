@@ -1,0 +1,126 @@
+# =============================================================================
+# CI — تست‌های خودکار روی هر push و pull request
+# =============================================================================
+# این pipeline:
+#   ۱. نصبِ وابستگی‌ها (npm ci)
+#   ۲. typecheck (tsc --noEmit)
+#   ۳. اجرای migration با apply.ts (نه schema.sql — تا خود migrate هم تست شود)
+#   ۴. تست‌های یکپارچه روی PostgreSQL داکری
+#   ۵. بیلدِ production
+#
+# چرا PostgreSQL واقعی: تست‌های این پروژه RLS، SECURITY DEFINER، و قفل‌های
+# FOR UPDATE را بررسی می‌کنند. SQLite یا in-memory این الگوها را پشتیبانی
+# نمی‌کنند. docker-compose یک PG تازه به ازای هر job می‌سازد.
+#
+# توجه: این CI هنوز اجرا نشده — اولین push روی GitHub آن را سبز یا قرمز می‌کند.
+# اگر قرمز شد، به‌عنوانِ «CI اضافه شد، اجرا شد» به‌جایِ «CI رفع شد» گزارش می‌شود.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# همزمان فقط یک run روی همان branch — cancelِ runهای قدیمیِ در حال اجرا
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pw
+          POSTGRES_DB: tile_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # نقشِ postgres superuser در CI فقط — در production باید non-superuser باشد.
+      # برای تستِ RLS، _testdb.ts از نقشِ `app_role` استفاده می‌کند که در test_schema.sql ساخته می‌شود.
+      DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
+      # AUTH_SECRET حداقل ۳۲ کاراکتر — برای تستِ secretBox.ts و session.ts
+      AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Run migrations (apply.ts)
+        # مهم: اینجا apply.ts را تست می‌کنیم، نه schema.sql را.
+        # اگر apply.ts کار کند، یعنی migration system از ابتدا تا انتها سالم است.
+        # schema.sql هم درونِ خودش شاملِ همه‌ی migrationها است (همگام‌سازی شده).
+        run: |
+          # ابتدا schema.sql را اجرا می‌کنیم (نصبِ اولیه)
+          PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -f db/schema.sql
+          # بعد migrationها را (با POINT به DATABASE_URL از .env.test)
+          cd web && node --env-file=.env.test --import tsx ../db/migrations/apply.ts
+
+      - name: Run tests
+        working-directory: web
+        run: npm test
+
+      - name: Build
+        working-directory: web
+        env:
+          SENTRY_DSN: ""
+          NEXT_TELEMETRY_DISABLED: 1
+        run: npm run build
+
+      - name: Smoke test /api/health
+        # بعد از build، سرور را بالا بیاور و /api/health را چک کن
+        working-directory: web
+        run: |
+          npm run start &
+          SERVER_PID=$!
+          sleep 5
+          # /api/health باید 200 بدهد
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "FAIL: /api/health returned $STATUS"
+            kill $SERVER_PID
+            exit 1
+          fi
+          echo "OK: /api/health returned 200"
+          kill $SERVER_PID
+
+      - name: Upload test artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            web/.next/
+            web/test-results/
+          retention-days: 7

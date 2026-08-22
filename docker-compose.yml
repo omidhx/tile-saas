@@ -1,0 +1,152 @@
+# =============================================================================
+# docker-compose.yml — محیطِ development و production تک‌نود
+# =============================================================================
+# شامل:
+#   - postgres: دیتابیس
+#   - web: اپ Next.js (port 3000)
+#   - worker-expire: انقضای رزروها (هر ۱۰ دقیقه)
+#   - worker-outbox: ارسال پیامک (هر ۲ دقیقه)
+#   - worker-housekeeping: پاکسازیِ ردیف‌های قدیمیِ _rate_limit_hits (هر ۶ ساعت)
+#
+# **تک منبعِ زمان‌بندی:** این compose file زمان‌بندیِ workerها را برعهده دارد.
+# اگر این compose file را استفاده می‌کنید، cronهای جدا در `docs/GO_LIVE.md`
+# را روشن نکنید — هر دو را هم‌زمان اجرا نکنید. (دو worker با `SKIP LOCKED` و
+# `idempotent` معمولاً تحمل می‌کنند، ولی مواردِ لبه‌ای مثل دو بار `expire` ممکن
+# است در N+1 حالت راکتور بزند.)
+#
+# استفاده:
+#   dev:        docker compose up
+#   production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# در production، فایل .env با متغیرهای واقعی لازم است (نگاه کنید به .env.example).
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tile_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-prod}
+      POSTGRES_DB: ${POSTGRES_DB:-tile_saas}
+    volumes:
+      # داده‌ی دیتابیس روی volume ماندگار — با rebuild از بین نمی‌رود
+      - pgdata:/var/lib/postgresql/data
+      # اسکیمای اولیه (فقط هنگام initialization اجرا می‌شود)
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    # در production این پورت را expose نکنید — دیتابیس نباید بیرون از container
+    # قابل دسترس باشد. این خط فقط برای dev است.
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tile_app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, min 32 chars}
+      NODE_ENV: production
+      # rate limit: postgres برای multi-instance، memory برای تک-instance.
+      # پیش‌فرض postgres چون این compose چند سرویس داره (web + 3 worker) — اگرچه
+      # همه‌ی workerها در یک instance هستند، ولی web + worker باید سقفِ مشترک ببینند.
+      RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-postgres}
+      # Sentry: خالی = غیرفعال
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      # آپلودها روی volume ماندگار — با redeploy از بین نمی‌رود
+      - uploads:/app/web/public/uploads
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  # worker انقضای رزرو — هر ۱۰ دقیقه
+  worker-expire:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, min 32 chars}
+      NODE_ENV: production
+    entrypoint: []
+    command: >
+      /bin/sh -c "
+        echo 'Starting expire worker — runs every 10 minutes';
+        while true; do
+          node --import tsx scripts/expire.ts || true;
+          sleep 600;
+        done
+      "
+    working_dir: /app/web
+
+  # worker outbox (پیامک) — هر ۲ دقیقه
+  worker-outbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, min 32 chars}
+      NODE_ENV: production
+    entrypoint: []
+    command: >
+      /bin/sh -c "
+        echo 'Starting outbox worker — runs every 2 minutes';
+        while true; do
+          node --import tsx scripts/outbox.ts || true;
+          sleep 120;
+        done
+      "
+    working_dir: /app/web
+
+  # worker housekeeping — هر ۶ ساعت، ردیف‌های قدیمیِ _rate_limit_hits را پاک می‌کند
+  # بدون این، جدول rate limit با گذشتِ زمان بزرگ می‌شود و کوئری‌ها کند می‌شوند.
+  worker-housekeeping:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
+      NODE_ENV: production
+    entrypoint: []
+    command: >
+      /bin/sh -c "
+        echo 'Starting housekeeping worker — runs every 6 hours';
+        while true; do
+          node -e \"
+            const postgres = require('postgres');
+            const sql = postgres(process.env.DATABASE_URL, { max: 1 });
+            sql\`DELETE FROM _rate_limit_hits WHERE hit_at < now() - interval '24 hours'\`
+              .then(r => { console.log('housekeeping: deleted', r.count, 'rows'); return sql.end(); })
+              .catch(e => { console.error('housekeeping failed:', e); });
+          \" || true;
+          sleep 21600;
+        done
+      "
+    working_dir: /app/web
+
+volumes:
+  pgdata:
+  uploads:
+

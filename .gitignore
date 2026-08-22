@@ -13,6 +13,7 @@ playwright-report/
 .env
 .env.*
 !.env.test
+!.env.example
 
 # سیستمی
 .DS_Store

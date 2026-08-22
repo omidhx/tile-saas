@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
 import { currentUserId, setSessionCookie } from "@/auth/session";
 import { changePassword } from "@/auth/passwordFlows";
-import { checkRate } from "@/auth/rateLimit";
+import { checkRateAsync } from "@/auth/rateLimit";
+import { assertSameOrigin } from "@/auth/csrf";
 
 /** POST /api/auth/password — تغییر رمز توسط کاربرِ واردشده. */
 export async function POST(req: Request) {
+  const csrfFail = assertSameOrigin(req);
+  if (csrfFail) return csrfFail;
+
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
-  // rate limit روی حدسِ «رمز فعلی» — این endpoint هم یک اوراکلِ رمز است
-  const rl = checkRate(`pwchange:${userId}`, 5, 15 * 60_000);
+  // rate limit روی حدسِ «رمز فعلی» — این endpoint هم یک اوراکلِ رمز است.
+  // failPolicy=closed: اگر DB در دسترس نباشد، fallback به in-memory می‌زند.
+  const rl = await checkRateAsync(`pwchange:${userId}`, 5, 15 * 60_000, { failPolicy: "closed" });
   if (!rl.ok)
     return NextResponse.json({ error: "too_many" }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
 

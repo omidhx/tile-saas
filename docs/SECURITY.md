@@ -84,8 +84,9 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 **چرا دولایه:** فقط per-IP جلوی brute-force روی یک حساب از IPهای چرخان را نمی‌گیرد؛ فقط per-phone جلوی اسپری روی کاربران مختلف را نمی‌گیرد.
 
 **نقاط ضعفِ پذیرفته‌شده (هنوز واقعی):**
-- **rate limiter در حافظه‌ی پروسه است.** با چند instance سقف ضرب می‌شود و با ری‌استارت صفر. spec عمداً Redis را در این مقیاس رد کرده. → اگر multi-instance شدی، به Postgres منتقلش کن. (سرریزِ نقشه دیگر همه‌ی شمارنده‌ها را یک‌جا پاک نمی‌کند — فقط کلیدهای واقعاً راکد را هرس می‌کند.)
+- ~~**rate limiter در حافظه‌ی پروسه است.** با چند instance سقف ضرب می‌شود و با ری‌استارت صفر. spec عمداً Redis را در این مقیاس رد کرده. → اگر multi-instance شدی، به Postgres منتقلش کن. (سرریزِ نقشه دیگر همه‌ی شمارنده‌ها را یک‌جا پاک نمی‌کند — فقط کلیدهای واقعاً راکد را هرس می‌کند.)~~ ✅ رفع شد (Phase 10-post): `RATE_LIMIT_BACKEND=postgres` حالا از جدول `_rate_limit_hits` استفاده می‌کند. در `memory` همچنان تک-instance است (سقف ضرب می‌شود ولی برای تک-instance کافی).
 - **2FA/OTP برای ورودِ روزمره نداریم** (کدِ پیامکی فقط برای بازیابیِ رمز است).
+- **fail-open در Postgres backend:** اگر DB در دسترس نباشد، rate limiter در حالتِ `postgres` درخواست را رد نمی‌کند (در دسترس بودن > rate limit). این یک تصمیم آگاهانه است، نه باگ.
 
 ---
 
@@ -116,6 +117,16 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 | `finish_notification()` | همان | فقط وضعیتِ یک پیام را ثبت می‌کند |
 
 همه با `REVOKE EXECUTE ... FROM PUBLIC` و GRANT صریح به نقشِ اپ.
+
+### ۶.۱ `SET search_path` — قفلِ حیاتی (Phase 10-post)
+
+هر چهار تابع حالا `SET search_path = public, pg_temp` دارند. بدون این، `SECURITY DEFINER`
+خودش سطحِ حمله است: مهاجم با ساختنِ شیء هم‌نام در schemaیِ قابلِ‌نوشتن، می‌توانست
+تابع را به کدِ خودش هدایت کند (search_path injection). `pg_temp` در این فهرست امن است
+چون Postgres خودش مدیریتش می‌کند، نه قابلِ کاشتِ مخرب.
+
+> **قانون:** هر تابع `SECURITY DEFINER` که ساخته می‌شود، باید `SET search_path` داشته باشد.
+> بدون آن، تابع در برابرِ مهاجمی که روی schemaیِ قابلِ‌نوشتن دسترسی دارد، آسیب‌پذیر است.
 
 > **این بخش را سرسری نگیر:** هر تابع `SECURITY DEFINER` که ورودیِ tenant/id از کلاینت بگیرد و بر اساسش داده برگرداند، یک دور زدنِ کاملِ RLS است. قانون: **هرگز شناسه‌ای که کلاینت داده را به این توابع پاس نده.**
 
@@ -150,7 +161,20 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 - 2FA / OTP پیامکی برای ورودِ روزمره (فقط بازیابیِ رمز کدِ پیامکی دارد).
 - تفکیکِ ریزترِ نقش‌ها (فعلاً `admin`/`staff`/`agent`؛ `agent_admin` در برابر `agent_operator` نداریم).
 - پایشِ خودکار و هشدار (spec عمداً Prometheus را در این مرحله رد کرده). Sentry خطاهای runtime را می‌گیرد (با برچسبِ tenant/user)؛ بررسیِ `notification_outbox`/`import_row` هنوز هفتگی و دستی است.
-- اسکنِ خودکارِ وابستگی‌ها در CI — چون **اصلاً CI نداریم**؛ `npm audit` هنوز فقط دستی اجرا می‌شود (آخرین دورِ دستی: `xlsx` با نصبِ CDN رفع شد، `next`/`fast-uri` آپدیت شدند — بخشِ ۵).
+- ~~اسکنِ خودکارِ وابستگی‌ها در CI — چون **اصلاً CI نداریم**؛ `npm audit` هنوز فقط دستی اجرا می‌شود~~ ✅ رفع شد (Phase 10-post): `.github/workflows/ci.yml` با PostgreSQL داکری، typecheck، test، build. `npm audit` همچنان دستی است ولی `npm ci` در CI اجرا می‌شود.
+
+## ۹.۱. رفع‌های Phase 10-post (حسابرسیِ امنیتیِ خارجی)
+
+این موارد پس ازِ حسابرسیِ اصلی، بر اساسِ بازبینیِ یک مدل AI دیگر رفع شدند:
+
+| رفع | فایل | چرا مهم بود |
+|---|---|---|
+| `SET search_path = public, pg_temp` روی هر چهار تابع `SECURITY DEFINER` | `db/schema.sql` | جلوی search_path injection را می‌گیرد — بدونش، SECURITY DEFINER خودش سطحِ حمله است |
+| ساختارِ `db/migrations/` با `apply.ts` و جدول `_migrations` | `db/migrations/` | migrationهای forward-only با checksum validation — هرگز روی prodِ داده‌دار schema.sql اجرا نکن |
+| حذفِ فایلِ فیزیکی در `removeProductImage` | `web/src/db/products.ts` + `web/src/lib/fileCleanup.ts` | جلوی انباشتِ فایل‌های یتیم (orphan) در `public/uploads/` را می‌گیرد |
+| Rate limiter دو-حالته (`RATE_LIMIT_BACKEND=memory\|postgres`) | `web/src/auth/rateLimit.ts` + `db/migrations/0003_rate_limit_table.sql` | multi-instance: سقفِ واقعاً global، نه ضرب‌شده در تعداد پروسه‌ها |
+| GitHub Actions CI | `.github/workflows/ci.yml` | جلوی مرجِ کدِ تست‌نشکسته را می‌گیرد |
+| Dockerfile multi-stage + docker-compose | `Dockerfile`, `docker-compose.yml` | production-ready با non-root کاربر و volume ماندگار |
 
 ## ۱۰. قبل از هر دیپلوی
 

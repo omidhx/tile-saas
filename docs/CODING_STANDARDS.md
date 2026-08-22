@@ -13,8 +13,10 @@
 ## دیتابیس
 - **مسیر قفل/پول با raw SQL** (postgres.js)، نه query-builder — صراحت مهم‌تر از اختصار.
 - **schema.sql منبع حقیقت.** جدول را در TS بازتعریف نکن؛ `db:pull` introspect کن.
+- **تغییرات prod با migrationهای forward-only در `db/migrations/`** (Phase 10-post) — `apply.ts` رد اجرا را با checksum نگه می‌دارد. `schema.sql` فقط برای نصبِ تازه است.
 - هر کار روی داده‌ی tenant داخل `withTenant()` (که `SET LOCAL app.tenant_id` می‌زند). هرگز کوئری دامنه‌ای بیرون آن.
 - پول = ریال/BIGINT، متراژ = cm²/INT، زمان = UTC. اعشار فقط در UI.
+- **هر تابع `SECURITY DEFINER` باید `SET search_path = public, pg_temp` داشته باشد** (Phase 10-post) — بدونش، تابع در برابرِ search_path injection آسیب‌پذیر است.
 
 ## امنیت (هرگز ساده نکن)
 - هر endpoint: `currentUserId()` → `authorizeAgent()`. tenant/agent از body باور نمی‌شود.
@@ -44,6 +46,7 @@
 - کامیتِ کوچک و متمرکز. پیام: `type(scope): summary` + بدنه‌ی «چرا».
 - تریلر اجباری: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
 - push به هر دو mirror (GitLab + GitHub).
+- **هر تغییرِ schema با migration در `db/migrations/`** — هرگز `schema.sql` را در prodِ داده‌دار اجرا نکن.
 
 ## Assumptions
 - Node ۲۲+، Postgres ۱۶+، Docker برای تست محلی.
@@ -53,3 +56,6 @@
 
 ## Decision Log
 - بدون ORM برای مسیر رزرو (raw SQL) — ARCHITECTURE Trade-offs.
+- Migration با checksum (Phase 10-post) — `db/migrations/apply.ts`.
+- Rate limiter دو-حالته (Phase 10-post) — `RATE_LIMIT_BACKEND=memory|postgres`.
+- SECURITY DEFINER با `SET search_path` (Phase 10-post) — همه‌ی چهار تابع.

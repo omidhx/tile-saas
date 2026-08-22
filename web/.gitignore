@@ -34,6 +34,8 @@ yarn-error.log*
 .env*
 # استثنا: .env.test رازی ندارد و بدونش `npm test` بعد از clone کار نمی‌کند
 !.env.test
+# استثنا: .env.example الگو است و باید در git باشد
+!.env.example
 
 # vercel
 .vercel

@@ -8,7 +8,9 @@ Vertical SaaS چندمستأجری برای کارخانه‌های کاشی/س�
 |---|---|
 | مرجع کامل محصول/معماری/داده (v7.1) | [tile-saas-comprehensive-spec.md](tile-saas-comprehensive-spec.md) |
 | قوانین رفتاریِ کدنویسی برای AI | [CLAUDE.md](CLAUDE.md) |
+| **حافظه‌ی کاریِ پروژه** (چه کاری انجام شده) | [MEMORY.md](MEMORY.md) |
 | اسکیمای دیتابیس (منبع حقیقت) | [db/schema.sql](db/schema.sql) |
+| migrationهای prod | [db/migrations/](db/migrations/) |
 | اسناد این پوشه | [docs/](docs/) — PRD، ARCHITECTURE، API_SPEC، DATABASE_SCHEMA، CODING_STANDARDS، AI_CONTEXT، KNOWN_ISSUES، ux-wireframes |
 | **بکاپ‌های محلی (کجا هستند، چطور برگردانیم)** | [docs/BACKUPS.md](docs/BACKUPS.md) |
 
@@ -41,15 +43,26 @@ npm run dev               # http://localhost:3000  → /login → /reserve
 | `npm test` | تست یکپارچه (نیازمند `DATABASE_URL` به Postgres تازه) |
 | `npm run test:e2e` | e2e با Playwright — مسیرِ حیاتی (ورود→رزرو→تأیید→حواله→بارگیری). خودش DBِ dev را با `seed:dev` بازمی‌سازد و سرور را بالا می‌آورد؛ اولین بار `npx playwright install chromium` لازم است |
 | `npm run db:pull` | introspect اسکیمای typed از دیتابیس → `src/db/generated/` |
+| `npm run migrate` | اجرای idempotentِ migrationهای `db/migrations/` (Phase 10-post) |
+| `npm run cleanup:uploads` | حذف فایل‌های یتیم از `public/uploads/` (dry-run؛ `--commit` برای حذف واقعی) |
+| `npm run worker:expire` | worker انقضای رزروها (cron هر ۱۰ دقیقه) |
+| `npm run worker:outbox` | worker ارسال پیامک (cron هر ۲ دقیقه) |
 
 ## ساختار پوشه
 ```
-db/          schema.sql (منبع حقیقت) + test_schema.sql (تست دود)
+db/          schema.sql (منبع حقیقت) + test_schema.sql (تست دود) + migrations/ (Phase 10-post)
 docs/        اسناد کنترلی (این پوشه)
+scripts/     prodlike-smoke.sh (تست دود production-like)
 web/         اپ Next.js
   src/db/      client.ts (withTenant/RLS)، reservations.ts (الگوریتم رزرو)
-  src/auth/    password، session، authz (chokepoint IDOR)
+  src/auth/    password، session، authz (chokepoint IDOR)، rateLimit (دو-حالته)
+  src/lib/     fileCleanup، api، money، date، secretBox
   src/app/     login، reserve، api/{auth,me,lots,reservations}
+  scripts/    seed-dev، expire، outbox، cleanup-orphan-uploads
+.claude/     skills مخصوص Claude Code (نه جزء پروژه)
+Dockerfile   multi-stage production-ready (Phase 10-post)
+docker-compose.yml  postgres + web + worker-expire + worker-outbox
+.github/workflows/  CI با PostgreSQL داکری (Phase 10-post)
 ```
 
 ## معماری در یک نگاه
@@ -59,4 +72,18 @@ web/         اپ Next.js
 جزئیات: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## وضعیت
-اسکلت end-to-end کار می‌کند (لاگین → کاتالوگ → رزرو، همه با تست سبز). کارهای باز: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) و [CHANGELOG.md](CHANGELOG.md).
+اسکلت end-to-end کار می‌کند (لاگین → کاتالوگ → رزرو، همه با تست سبز). 
+**Phase 10-post (حسابرسیِ خارجی):** شش مورد از هشت ایرادِ یک مدل AI دیگر رفع شد —
+SECURITY DEFINER `search_path`، `db/migrations/`، orphan cleanup، rate limiter
+multi-instance، CI/CD، Dockerfile.
+کارهای باز: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) و [CHANGELOG.md](CHANGELOG.md).
+چک‌لیستِ آنلاین‌شدن: [docs/GO_LIVE.md](docs/GO_LIVE.md).
+
+## Docker (production-ready)
+```bash
+cp .env.example .env      # مقادیر واقعی پر کن (DATABASE_URL, AUTH_SECRET, ...)
+docker compose up -d      # postgres + web + worker-expire + worker-outbox
+```
+
+## CI/CD
+`.github/workflows/ci.yml` — هر push/PR: PostgreSQL داکری + migration + typecheck + test + build.

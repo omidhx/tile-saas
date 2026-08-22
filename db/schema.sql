@@ -815,7 +815,13 @@ CREATE FUNCTION user_contexts(p_user_id UUID)
 RETURNS TABLE (tenant_id UUID, tenant_name TEXT, agent_account_id UUID, agent_legal_name TEXT, role TEXT,
                can_manage_access BOOLEAN, allowed_pages TEXT[],
                assigned_staff_name TEXT, assigned_staff_phone TEXT, currency_unit TEXT)
-LANGUAGE sql SECURITY DEFINER STABLE AS $$
+LANGUAGE sql SECURITY DEFINER STABLE
+-- SECURITY DEFINER بدونِ قفلِ search_path سطحِ حمله است: مهاجم با ساختنِ شیء
+-- هم‌نام در schemaیِ قابلِ نوشتن، می‌تواند تابع را به کدِ خودش هدایت کند.
+-- SET search_path این پنجره را می‌بندد — فقط public (جایی که schema.sql ساخته)
+-- و pg_temp (که Postgres خودش مدیریتش می‌کند، نه قابلِ کاشتِ مخرب).
+SET search_path = public, pg_temp
+AS $$
     SELECT t.id, t.name, aa.id, aa.legal_name, tm.role, tm.can_manage_access, tm.allowed_pages,
            su.full_name, su.phone, t.currency_unit
     FROM tenant_membership tm
@@ -843,7 +849,9 @@ REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;
 -- می‌دانست «چیزی آزاد شد» ولی نه «چه چیزی»، و صف هرگز حرکت نمی‌کرد.
 CREATE FUNCTION expire_due_reservations()
 RETURNS TABLE (tenant_id UUID, variant_id UUID)
-LANGUAGE sql SECURITY DEFINER AS $$
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
     WITH done AS (
         UPDATE reservation SET status = 'expired'
         WHERE status = 'active' AND expires_at <= now()
@@ -872,7 +880,9 @@ REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
 -- پیامکیِ همان tenant (sms_config) را برای انتخابِ پروایدر بخواند.
 CREATE FUNCTION claim_pending_notifications(p_limit INT, p_max_attempts INT)
 RETURNS TABLE (id UUID, tenant_id UUID, channel TEXT, recipient TEXT, payload JSONB, attempt_count INT)
-LANGUAGE sql SECURITY DEFINER AS $$
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
     UPDATE notification_outbox SET attempt_count = notification_outbox.attempt_count + 1
     WHERE notification_outbox.id IN (
         SELECT o.id FROM notification_outbox o
@@ -889,7 +899,9 @@ REVOKE EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) FROM PUBLIC;
 -- ثبتِ نتیجه: موفق → sent، ناموفقِ رسیده به سقف → failed (dead-letter)، وگرنه pending می‌ماند.
 CREATE FUNCTION finish_notification(p_id UUID, p_sent BOOLEAN, p_max_attempts INT)
 RETURNS VOID
-LANGUAGE sql SECURITY DEFINER AS $$
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
     UPDATE notification_outbox
     SET status = CASE WHEN p_sent THEN 'sent'
                       WHEN attempt_count >= p_max_attempts THEN 'failed'
@@ -898,6 +910,36 @@ LANGUAGE sql SECURITY DEFINER AS $$
     WHERE id = p_id;
 $$;
 REVOKE EXECUTE ON FUNCTION finish_notification(UUID, BOOLEAN, INT) FROM PUBLIC;
+
+-- ---------------------------------------------------------------------------
+-- ۹. جداولِ زیرساختی (نه tenant-scoped، نه RLS) — برای migration system
+-- و rate limiter. این‌ها در schema.sql هستند تا نصبِ تازه و migration با هم
+-- همگام بمانند — جدول‌ها در `db/migrations/0002_*.sql` و `0003_*.sql` هم
+-- با `IF NOT EXISTS` قابل اجرا روی دیتابیسِ موجود هستند.
+-- ---------------------------------------------------------------------------
+
+-- جدولِ ردیابیِ migrationها (apply.ts)
+CREATE TABLE IF NOT EXISTS _migrations (
+    id          INT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    checksum    TEXT NOT NULL
+);
+REVOKE ALL ON _migrations FROM PUBLIC;
+GRANT SELECT ON _migrations TO PUBLIC;
+
+-- جدولِ rate limit برای multi-instance (RATE_LIMIT_BACKEND=postgres)
+CREATE TABLE IF NOT EXISTS _rate_limit_hits (
+    id      BIGSERIAL PRIMARY KEY,
+    key     TEXT NOT NULL,
+    hit_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_key_time ON _rate_limit_hits (key, hit_at);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_id ON _rate_limit_hits (id);
+REVOKE ALL ON _rate_limit_hits FROM PUBLIC;
+-- GRANT صریح به `app_user` در migration 0003 (با DO $$) — اینجا نمی‌زنیم چون
+-- در نصبِ تازه `app_user` ممکن است هنوز نساخته شده باشد. در migration 0003
+-- که حتماً بعد از ساختِ نقش اجرا می‌شود، GRANT داده می‌شود.
 
 -- ---------------------------------------------------------------------------
 -- ۸. RLS — لایه‌ی دوم دفاعی، روی هر جدولِ دارای tenant_id

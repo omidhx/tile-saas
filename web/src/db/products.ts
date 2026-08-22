@@ -1,6 +1,7 @@
 import { withTenant } from "./client";
 import { writeAudit, type AuditValue } from "./audit";
 import type { TransactionSql } from "postgres";
+import { deleteUploadFile, deleteUploadFiles } from "@/lib/fileCleanup";
 
 /**
  * مدیریتِ محصول (v2). محصول اینجا **ساخته** می‌شود — قبلاً فقط seed/SQL دستی بود.
@@ -274,14 +275,23 @@ export async function addProductImage(p: { tenantId: string; productId: string; 
   await withTenant(p.tenantId, (tx) => addProductImageTx(tx, p.tenantId, p.productId, p.url.trim()));
 }
 
-/** حذفِ یک عکس از گالری؛ اگر اصلی بود، عکسِ بعدی خودکار اصلی می‌شود. */
+/** حذفِ یک عکس از گالری؛ اگر اصلی بود، عکسِ بعدی خودکار اصلی می‌شود.
+ *  فایلِ فیزیکی روی دیسک هم (اگر `/uploads/...` باشد) حذف می‌شود — جلوی
+ *  انباشتِ فایل‌های یتیم را می‌گیرد. حذفِ فایل بعد از COMMIT انجام می‌شود تا
+ *  اگر تراکنش rollback شد، فایل فیزیکی از بین نرود و URL در دیتابیس هنوز زنده باشد. */
 export async function removeProductImage(p: { tenantId: string; imageId: string }) {
-  await withTenant(p.tenantId, async (tx) => {
-    const [row] = await tx<{ product_id: string }[]>`
+  const deletedUrl = await withTenant(p.tenantId, async (tx) => {
+    const [row] = await tx<{ product_id: string; url: string }[]>`
       DELETE FROM product_image WHERE id = ${p.imageId} AND tenant_id = ${p.tenantId}
-      RETURNING product_id`;
-    if (row) await syncPrimary(tx, p.tenantId, row.product_id);
+      RETURNING product_id, url`;
+    if (row) {
+      await syncPrimary(tx, p.tenantId, row.product_id);
+      return row.url;
+    }
+    return null;
   });
+  // حذفِ فایلِ فیزیکی بعد از COMMIT — شکست در این مرحله نباید رکورد DB را برگرداند
+  if (deletedUrl) await deleteUploadFile(deletedUrl);
 }
 
 /** یک عکسِ گالری را «اصلی» می‌کند: کمترین sort_order را می‌گیرد و کَش را همگام می‌کند. */
@@ -297,4 +307,20 @@ export async function setPrimaryImage(p: { tenantId: string; imageId: string }) 
       ) WHERE id = ${p.imageId} AND tenant_id = ${p.tenantId}`;
     await syncPrimary(tx, p.tenantId, row.product_id);
   });
+}
+
+/**
+ * حذفِ همه‌ی عکس‌های گالری برای یک محصول — برای زمانی که محصول حذف می‌شود
+ * (در حال حاضر حذفِ محصول پیاده نیست، ولی این تابع آماده است).
+ * فایل‌های فیزیکی هم پاک می‌شوند.
+ */
+export async function removeAllProductImages(p: { tenantId: string; productId: string }) {
+  const deletedUrls = await withTenant(p.tenantId, async (tx) => {
+    const rows = await tx<{ url: string }[]>`
+      DELETE FROM product_image WHERE product_id = ${p.productId} AND tenant_id = ${p.tenantId}
+      RETURNING url`;
+    return rows.map((r) => r.url);
+  });
+  // حذفِ فایل‌های فیزیکی بعد از COMMIT
+  if (deletedUrls.length > 0) await deleteUploadFiles(deletedUrls);
 }

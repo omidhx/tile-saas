@@ -16,12 +16,14 @@ staff/انباردار ────────┘        │
 |---|---|---|
 | `db/client` | اتصال + `withTenant()` که RLS context را `SET LOCAL` می‌کند | [client.ts](../web/src/db/client.ts) |
 | `db/reservations` | **الگوریتم رزرو** (قلب سیستم) | [reservations.ts](../web/src/db/reservations.ts) |
-| `auth/*` | هش، نشست JWT، **chokepoint دسترسی** | [authz.ts](../web/src/auth/authz.ts) |
+| `auth/*` | هش، نشست JWT، **chokepoint دسترسی**، rate limiter دو-حالته | [authz.ts](../web/src/auth/authz.ts) |
 | `app/api/*` | route handlerها: auth/login, me, lots, reservations | [api/](../web/src/app/api/) |
 | `app/{login,reserve}` | UI نماینده (pending-state، بدون optimistic) | [reserve/page.tsx](../web/src/app/reserve/page.tsx) |
 | `app/PageShell` | Shell/Sidebarِ مشترکِ صفحاتِ داخلی (staff+agent)؛ فیلترِ `role`/`allowed_pages` را از `NavMenu` می‌گیرد، خودش کپی نمی‌کند؛ برای چاپ/auth غیرفعال‌پذیر | [PageShell.tsx](../web/src/app/PageShell.tsx) |
 | `app/ThemeToggle` | تمِ روشن/تیره؛ `data-theme` + `localStorage`، no-flash script در `layout.tsx` قبل از اولین paint | [ThemeToggle.tsx](../web/src/app/ThemeToggle.tsx) |
 | `middleware` | CSPِ `script-src` با nonceِ تصادفیِ per-request (الگوی رسمیِ Next برای App Router) | [middleware.ts](../web/src/middleware.ts) |
+| `lib/fileCleanup` | حذفِ امنِ فایل‌های آپلودشده از دیسک (ضدِ orphan) | [fileCleanup.ts](../web/src/lib/fileCleanup.ts) |
+| `db/migrations/` | اسکریپتِ migrationِ idempotent با checksum validation | [apply.ts](../db/migrations/apply.ts) |
 
 ## Data Flow — رزرو (مسیر بحرانی)
 1. کلاینت `POST /api/reservations` (بدون refetch-before-submit، pending-state).
@@ -46,7 +48,22 @@ staff/انباردار ────────┘        │
 - لاگین: پیام یکسان + هش الکیِ timing-safe (عدم افشای وجود کاربر).
 
 ## Deployment Topology
-VPS ایران + Docker/PM2 + Nginx/Caddy (HTTPS با Let's Encrypt). Postgres بدون expose مستقیم. بک‌آپ رمزنگاری‌شده خارج از سرور. جزئیات: spec ۳ و ۱۴.۱۰. (DEPLOYMENT_RUNBOOK.md وقتی به دیپلوی رسیدیم ساخته می‌شود.)
+VPS ایران + Docker/PM2 + Nginx/Caddy (HTTPS با Let's Encrypt). Postgres بدون expose مستقیم. بک‌آپ رمزنگاری‌شده خارج از سرور. جزئیات: spec ۳ و ۱۴.۱۰.
+
+**Dockerfile و docker-compose** ساخته شد — production-ready با:
+- Multi-stage build (deps → builder → runner)
+- Non-root user (`next`)
+- Volume ماندگار برای `public/uploads/`
+- Workerها (expire و outbox) به‌عنوان سرویس جدا در `docker-compose.yml`
+- Healthcheck روی `/api/me`
+
+```bash
+cp .env.example .env  # مقادیر واقعی پر کن
+docker compose up -d   # postgres + web + worker-expire + worker-outbox
+```
+
+(DEPLOYMENT_RUNBOOK.md وقتی به دیپلوی رسیدیم ساخته می‌شود — فعلاً `docs/GO_LIVE.md`
+چک‌لیستِ کاملِ عملیاتی است.)
 
 ## Trade-offs (چرا این، نه آن)
 | انتخاب | به‌جای | چرا |
@@ -56,6 +73,8 @@ VPS ایران + Docker/PM2 + Nginx/Caddy (HTTPS با Let's Encrypt). Postgres �
 | `SELECT FOR UPDATE` | Redis/OCC | مقیاس چند ده نماینده؛ قفل ردیفی کافی |
 | RLS + composite FK **با هم** | یکی | RLS نرم (session)، FK سخت (DB)؛ مکمل |
 | JWT در کوکی HttpOnly | session در DB | ساده، بدون state سمت سرور برای MVP |
+| Rate limiter دو-حالته | فقط in-memory یا فقط Redis | `RATE_LIMIT_BACKEND=memory` برای تک-instance، `postgres` برای multi-instance — هر دو در `rateLimit.ts` |
+| Migration با checksum | schema.sql تنها | `db/migrations/apply.ts` ردِ اجرا و checksum را در `_migrations` نگه می‌دارد |
 
 ## Assumptions
 - Postgres 16+ (برای `NULLS NOT DISTINCT` احتمالیِ import، `gen_random_uuid`).
@@ -71,3 +90,7 @@ VPS ایران + Docker/PM2 + Nginx/Caddy (HTTPS با Let's Encrypt). Postgres �
 - font سیستمی به‌جای `next/font/google` (تاب‌آوری VPS ایران).
 - بازطراحیِ بصری (Shell/Sidebar/تمِ تیره‌روشن روی همه‌ی صفحاتِ داخلی، ۴ فاز) بدونِ افزودنِ Tailwind/کتابخانه‌ی کامپوننت — همان توکن‌های `CSS Custom Properties`ِ `globals.css` گسترش یافتند، منطقِ کسب‌وکار/RLS/مجوزها دست‌نخورده ماند.
 - CSPِ nonce-based در `middleware.ts` به‌جای هدرِ استاتیک در `next.config.ts` — nonce باید هر request تازه باشد؛ عوارضِ جانبیِ پذیرفته‌شده: root layout دیگر نمی‌تواند static prerender شود.
+- **هر چهار تابع `SECURITY DEFINER` حالا `SET search_path = public, pg_temp` دارند** (Phase 10-post) — جلوی search_path injection را می‌گیرد. بدونش، SECURITY DEFINER خودش سطحِ حمله است.
+- **`db/migrations/`** با `apply.ts` و جدول `_migrations` (checksum) — forward-only، idempotent. schema.sql همچنان منبع حقیقت برای نصبِ تازه.
+- **Rate limiter دو-حالته** (`RATE_LIMIT_BACKEND=memory|postgres`) — برای تک-instance همون in-memory کافی، برای multi-instance از جدول `_rate_limit_hits` استفاده می‌کنه.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) — هر push/PR: PostgreSQL داکری + migration + typecheck + test + build.
