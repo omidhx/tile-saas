@@ -1,16 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sql, resetSchema } from "@/db/_testdb";
-import { checkRateAsync, resetRates } from "@/auth/rateLimit";
 
-// این تست‌ها فقط وقتی RATE_LIMIT_BACKEND=postgres است معنا دارند. در غیر این
-// صورت، فقط in-memory را تست می‌کنند که قبلاً پوشش داده شده.
+// این تست‌ها فقط وقتی RATE_LIMIT_BACKEND=postgres است معنا دارند. در CI،
+// RATE_LIMIT_BACKEND=memory است (پیش‌فرض)، پس این تست‌ها skip می‌شوند.
+//
+// نکته: به‌جای test.skip() داخل test function (که در Node.js test runner
+// ممکنه باعث هنگ کردن بشه)، از شرطِ ساده استفاده می‌کنیم و اگر backend
+// postgres نیست، تست را بدون assert رد می‌کنیم.
+
+const isPostgresBackend = process.env.RATE_LIMIT_BACKEND === "postgres";
 
 test("rate limiter postgres: سقف در چند insert موازی رعایت می‌شود", async () => {
-  if (process.env.RATE_LIMIT_BACKEND !== "postgres") {
-    test.skip("RATE_LIMIT_BACKEND=postgres نیست — این تست فقط برای postgres است");
-    return;
-  }
+  if (!isPostgresBackend) return; // skip در حالتِ memory
+
+  const { sql, resetSchema } = await import("@/db/_testdb");
+  const { checkRateAsync, resetRates } = await import("@/auth/rateLimit");
 
   await resetSchema();
   resetRates();
@@ -31,13 +35,15 @@ test("rate limiter postgres: سقف در چند insert موازی رعایت م�
 
   assert.equal(allowed, limit, `فقط ${limit} درخواست باید مجاز شوند، نه ${allowed}`);
   assert.equal(blocked, 10 - limit, `بقیه باید block شوند`);
+
+  await sql.end();
 });
 
 test("rate limiter postgres: کلیدهای متفاوت مستقل‌اند", async () => {
-  if (process.env.RATE_LIMIT_BACKEND !== "postgres") {
-    test.skip("RATE_LIMIT_BACKEND=postgres نیست");
-    return;
-  }
+  if (!isPostgresBackend) return; // skip در حالتِ memory
+
+  const { sql, resetSchema } = await import("@/db/_testdb");
+  const { checkRateAsync, resetRates } = await import("@/auth/rateLimit");
 
   await resetSchema();
   resetRates();
@@ -56,13 +62,15 @@ test("rate limiter postgres: کلیدهای متفاوت مستقل‌اند", a
   // کلید B باید هنوز مجاز باشد
   const bResult = await checkRateAsync("test:isolation:B", limit, windowMs, { failPolicy: "closed" });
   assert.equal(bResult.ok, true, "B نباید تحت تأثیر A باشد");
+
+  await sql.end();
 });
 
 test("rate limiter postgres: پنجره لغزان است", async () => {
-  if (process.env.RATE_LIMIT_BACKEND !== "postgres") {
-    test.skip("RATE_LIMIT_BACKEND=postgres نیست");
-    return;
-  }
+  if (!isPostgresBackend) return; // skip در حالتِ memory
+
+  const { sql, resetSchema } = await import("@/db/_testdb");
+  const { checkRateAsync, resetRates } = await import("@/auth/rateLimit");
 
   await resetSchema();
   resetRates();
@@ -84,4 +92,6 @@ test("rate limiter postgres: پنجره لغزان است", async () => {
   // حالا باید دوباره مجاز باشد
   const after = await checkRateAsync(key, limit, windowMs, { failPolicy: "closed" });
   assert.equal(after.ok, true, "پنجره باید لغزان باشد");
+
+  await sql.end();
 });
