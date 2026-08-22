@@ -25,7 +25,9 @@ test("هر جدولِ schema.sql در DATABASE_SCHEMA.md نام برده شده"
   const schema = read("db/schema.sql");
   const doc = read("docs/DATABASE_SCHEMA.md");
 
-  const tables = [...schema.matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]);
+  // (?:IF NOT EXISTS )? برای پشتیبانی از CREATE TABLE IF NOT EXISTS که
+  // در migrationهای 0002 و 0003 استفاده شده (جداولِ _migrations و _rate_limit_hits)
+  const tables = [...schema.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)/g)].map((m) => m[1]);
   assert.ok(tables.length > 20, `انتظار جدول‌های زیاد، ${tables.length} پیدا شد`);
 
   const missing = tables.filter((t) => !doc.includes(t));
