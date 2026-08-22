@@ -42,6 +42,8 @@ type MigrationFile = {
  *
  * الگوریتم: روی کاراکترها حرکت کن، وقتی `$$` دیدی، تا `$$` بعدی به‌عنوان
  * یک block در نظر بگیر. وقتی `;` خارج از quote دیدی، statement را ببند.
+ * خط‌هایی که با `--` شروع می‌شوند را به‌عنوان comment حذف کن (نه همه‌ی commentها —
+ * فقط خط‌های کامل comment، نه commentهای انتهای خط).
  */
 function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -60,7 +62,9 @@ function splitSqlStatements(sql: string): string[] {
 
     // چک برای `;` خارج از dollar-quote
     if (sql[i] === ";" && !inDollarQuote) {
-      statements.push(current);
+      // قبل از push، commentها را از statement حذف کن
+      const cleaned = stripComments(current).trim();
+      if (cleaned) statements.push(cleaned);
       current = "";
       i++;
       continue;
@@ -71,11 +75,49 @@ function splitSqlStatements(sql: string): string[] {
   }
 
   // آخرین statement (اگر چیزی مونده)
-  if (current.trim()) {
-    statements.push(current);
+  const lastCleaned = stripComments(current).trim();
+  if (lastCleaned) {
+    statements.push(lastCleaned);
   }
 
   return statements;
+}
+
+/**
+ * خط‌هایی که با `--` شروع می‌شوند را حذف کن (commentهای SQL).
+ * داخل `$$...$$` را دست نمی‌زنیم (commentها داخل dollar-quote حفظ می‌شوند).
+ */
+function stripComments(sql: string): string {
+  const lines = sql.split("\n");
+  let inDollar = false;
+  const result: string[] = [];
+
+  for (const line of lines) {
+    // چک برای `$$` در این خط — ممکن است چند بار باشد
+    let idx = 0;
+    let lineHasDollar = false;
+    while (idx < line.length) {
+      if (line.substring(idx, idx + 2) === "$$") {
+        inDollar = !inDollar;
+        lineHasDollar = true;
+        idx += 2;
+      } else {
+        idx++;
+      }
+    }
+
+    // اگر داخل dollar-quote هستیم، خط را حفظ کن
+    // اگر خارج و خط با `--` شروع می‌شود، حذف کن
+    // (توجه: این چک ساده است — commentهای انتهای خط را حفظ می‌کند)
+    if (inDollar || lineHasDollar) {
+      result.push(line);
+    } else if (!line.trim().startsWith("--")) {
+      result.push(line);
+    }
+    // خط‌های comment-only حذف می‌شوند
+  }
+
+  return result.join("\n");
 }
 
 function parseMigrations(): MigrationFile[] {
