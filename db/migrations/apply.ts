@@ -36,24 +36,26 @@ type MigrationFile = {
 /**
  * SQL را به statementهای جدا تقسیم کن.
  *
- * نکته: ساده‌ترین روش split با `;` است، ولی این روش `DO $$...$$` را
- * می‌شکند چون `;` داخل `$$` هم هست. پس باید `$$` را به‌عنوان quote
- * در نظر بگیریم.
+ * مراحل:
+ *   ۱. اول کامنت‌های خطی (`-- ...`) را حذف کن — غیر از داخل `$$...$$`.
+ *   ۲. بعد بر اساس `;` جدا کن — غیر از داخل `$$...$$`.
  *
- * الگوریتم: روی کاراکترها حرکت کن، وقتی `$$` دیدی، تا `$$` بعدی به‌عنوان
- * یک block در نظر بگیر. وقتی `;` خارج از quote دیدی، statement را ببند.
- * خط‌هایی که با `--` شروع می‌شوند را به‌عنوان comment حذف کن (نه همه‌ی commentها —
- * فقط خط‌های کامل comment، نه commentهای انتهای خط).
+ * این ترتیب مهم است: اگر اول split کنی، `;` داخل کامنت‌ها هم به‌عنوان
+ * پایان statement شناسه می‌شود و statementهای خالی/ناقص می‌سازد.
  */
 function splitSqlStatements(sql: string): string[] {
+  // مرحله ۱: اول کامنت‌ها را حذف کن
+  const withoutComments = stripComments(sql);
+
+  // مرحله ۲: حالا بر اساس `;` جدا کن (با احترام به `$$...$$`)
   const statements: string[] = [];
   let current = "";
   let inDollarQuote = false;
   let i = 0;
 
-  while (i < sql.length) {
+  while (i < withoutComments.length) {
     // چک برای `$$` (شروع یا پایان dollar-quote)
-    if (sql.substring(i, i + 2) === "$$") {
+    if (withoutComments.substring(i, i + 2) === "$$") {
       inDollarQuote = !inDollarQuote;
       current += "$$";
       i += 2;
@@ -61,23 +63,22 @@ function splitSqlStatements(sql: string): string[] {
     }
 
     // چک برای `;` خارج از dollar-quote
-    if (sql[i] === ";" && !inDollarQuote) {
-      // قبل از push، commentها را از statement حذف کن
-      const cleaned = stripComments(current).trim();
-      if (cleaned) statements.push(cleaned);
+    if (withoutComments[i] === ";" && !inDollarQuote) {
+      const trimmed = current.trim();
+      if (trimmed) statements.push(trimmed);
       current = "";
       i++;
       continue;
     }
 
-    current += sql[i];
+    current += withoutComments[i];
     i++;
   }
 
   // آخرین statement (اگر چیزی مونده)
-  const lastCleaned = stripComments(current).trim();
-  if (lastCleaned) {
-    statements.push(lastCleaned);
+  const lastTrimmed = current.trim();
+  if (lastTrimmed) {
+    statements.push(lastTrimmed);
   }
 
   return statements;
@@ -85,39 +86,59 @@ function splitSqlStatements(sql: string): string[] {
 
 /**
  * خط‌هایی که با `--` شروع می‌شوند را حذف کن (commentهای SQL).
- * داخل `$$...$$` را دست نمی‌زنیم (commentها داخل dollar-quote حفظ می‌شوند).
+ * داخل `$$...$$` را دست نمی‌زنیم.
+ *
+ * الگوریتم: کاراکتر به کاراکتر پیش برو. در هر لحظه یکی از این حالت‌ها هستی:
+ *   - در حالتِ عادی (default)
+ *   - در حالتِ dollar-quote (بین $$ و $$)
+ *   - در حالتِ line-comment (بعد از -- تا انتهای خط)
+ *
+ * این روش صحیح‌تر از split-by-line است چون `$$` داخل commentها را به‌عنوان
+ * dollar-quote اشتباه نمی‌گیرد.
  */
 function stripComments(sql: string): string {
-  const lines = sql.split("\n");
-  let inDollar = false;
+  const chars = [...sql];
   const result: string[] = [];
+  let i = 0;
+  let inDollarQuote = false;
+  let inLineComment = false;
 
-  for (const line of lines) {
-    // چک برای `$$` در این خط — ممکن است چند بار باشد
-    let idx = 0;
-    let lineHasDollar = false;
-    while (idx < line.length) {
-      if (line.substring(idx, idx + 2) === "$$") {
-        inDollar = !inDollar;
-        lineHasDollar = true;
-        idx += 2;
-      } else {
-        idx++;
-      }
+  while (i < chars.length) {
+    // چک برای `$$` (dollar-quote)
+    if (!inLineComment && sql.substring(i, i + 2) === "$$") {
+      inDollarQuote = !inDollarQuote;
+      result.push("$$");
+      i += 2;
+      continue;
     }
 
-    // اگر داخل dollar-quote هستیم، خط را حفظ کن
-    // اگر خارج و خط با `--` شروع می‌شود، حذف کن
-    // (توجه: این چک ساده است — commentهای انتهای خط را حفظ می‌کند)
-    if (inDollar || lineHasDollar) {
-      result.push(line);
-    } else if (!line.trim().startsWith("--")) {
-      result.push(line);
+    // چک برای `--` (شروع line-comment) — فقط وقتی داخل dollar-quote نیستیم
+    if (!inDollarQuote && !inLineComment && sql.substring(i, i + 2) === "--") {
+      inLineComment = true;
+      i += 2;
+      continue;
     }
-    // خط‌های comment-only حذف می‌شوند
+
+    // چک برای newline (پایان line-comment)
+    if (inLineComment && chars[i] === "\n") {
+      inLineComment = false;
+      result.push("\n"); // newline را حفظ کن تا ساختار خط‌ها بماند
+      i++;
+      continue;
+    }
+
+    // اگر داخل comment هستیم، chars را skip کن
+    if (inLineComment) {
+      i++;
+      continue;
+    }
+
+    // در غیر این صورت، char را اضافه کن
+    result.push(chars[i]);
+    i++;
   }
 
-  return result.join("\n");
+  return result.join("");
 }
 
 function parseMigrations(): MigrationFile[] {

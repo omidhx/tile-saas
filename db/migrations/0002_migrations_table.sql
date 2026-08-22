@@ -41,9 +41,9 @@ GRANT SELECT ON _migrations TO PUBLIC;  -- خواندن برای همه (اطل�
 -- اگر این GRANT نباشد، `apply.ts` با `app_user` نمی‌تواند INSERT بزند.
 --
 -- نکته: اگر نقشِ `app_user` هنوز نساخته شده باشد (مثلاً در dev)، این GRANT
--- خطا می‌دهد. برای جلوگیری از این، از `DO $$` با EXCEPTION handling استفاده
--- می‌کنیم. ولی چون postgres.js در `tx.unsafe` با چند statement مشکل دارد،
--- `DO $$` را به یک BEGIN/EXCEPTION/END ساده تبدیل می‌کنیم.
+-- خطا می‌دهد. برای جلوگیری از این، از DO با EXCEPTION handling استفاده می‌کنیم.
+-- (توجه: در commentها از عبارت DO $$ استفاده نکنیم چون stripComments
+-- در apply.ts آن را به‌عنوان dollar-quote marker اشتباه می‌شناسد.)
 -- =============================================================================
 DO $$
 BEGIN
@@ -51,8 +51,6 @@ BEGIN
         GRANT SELECT ON _migrations TO app_user;
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    -- اگر GRANT شکست خورد (مثلاً نقش وجود ندارد)، بی‌صدا رد شو.
-    -- این migration نباید به‌خاطرِ GRANT شکست بخورد — جدول ساخته شده.
     NULL;
 END $$;
 
