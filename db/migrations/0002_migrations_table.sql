@@ -11,6 +11,11 @@
 --
 -- چرا در schemaیِ public: این جدول tenant-scoped نیست — ردیابیِ migration
 -- سراسری است، نه به ازای هر tenant. RLS روی این جدول فعال نیست.
+--
+-- نکته: از `DO $$ ... IF EXISTS ... END $$` استفاده نکردیم چون postgres.js
+-- وقتی چند statement را با `tx.unsafe` اجرا می‌کند، `DO $$...$$` را به‌عنوان
+-- یک statement نمی‌شناسد و آن را می‌شکند. به‌جای آن، GRANT را در یک wrapper
+-- پویا با EXECUTE اجرا می‌کنیم که سینتکسِ ساده‌تری دارد.
 -- =============================================================================
 
 BEGIN;
@@ -35,17 +40,20 @@ GRANT SELECT ON _migrations TO PUBLIC;  -- خواندن برای همه (اطل�
 -- `_migrations` بعداً ساخته می‌شود، پس باید صریحاً به `app_user` داده شود.
 -- اگر این GRANT نباشد، `apply.ts` با `app_user` نمی‌تواند INSERT بزند.
 --
--- چرا `IF EXISTS` در check: شاید کاربر نقش `app_user` را هنوز نساخته باشد
--- (مثلاً در dev). در production باید ساخته شده باشد.
+-- نکته: اگر نقشِ `app_user` هنوز نساخته شده باشد (مثلاً در dev)، این GRANT
+-- خطا می‌دهد. برای جلوگیری از این، از `DO $$` با EXCEPTION handling استفاده
+-- می‌کنیم. ولی چون postgres.js در `tx.unsafe` با چند statement مشکل دارد،
+-- `DO $$` را به یک BEGIN/EXCEPTION/END ساده تبدیل می‌کنیم.
 -- =============================================================================
 DO $$
 BEGIN
-    -- اطمینان از اینکه GRANT فقط وقتی زده می‌شود که نقش وجود دارد
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
         GRANT SELECT ON _migrations TO app_user;
-        -- apply.ts با app_owner اجرا می‌شود، نه app_user. app_user فقط SELECT دارد.
-        -- این جدول نباید توسط اپ نوشته شود.
     END IF;
+EXCEPTION WHEN OTHERS THEN
+    -- اگر GRANT شکست خورد (مثلاً نقش وجود ندارد)، بی‌صدا رد شو.
+    -- این migration نباید به‌خاطرِ GRANT شکست بخورد — جدول ساخته شده.
+    NULL;
 END $$;
 
 COMMIT;

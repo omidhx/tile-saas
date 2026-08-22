@@ -33,6 +33,51 @@ type MigrationFile = {
   checksum: string;
 };
 
+/**
+ * SQL را به statementهای جدا تقسیم کن.
+ *
+ * نکته: ساده‌ترین روش split با `;` است، ولی این روش `DO $$...$$` را
+ * می‌شکند چون `;` داخل `$$` هم هست. پس باید `$$` را به‌عنوان quote
+ * در نظر بگیریم.
+ *
+ * الگوریتم: روی کاراکترها حرکت کن، وقتی `$$` دیدی، تا `$$` بعدی به‌عنوان
+ * یک block در نظر بگیر. وقتی `;` خارج از quote دیدی، statement را ببند.
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let inDollarQuote = false;
+  let i = 0;
+
+  while (i < sql.length) {
+    // چک برای `$$` (شروع یا پایان dollar-quote)
+    if (sql.substring(i, i + 2) === "$$") {
+      inDollarQuote = !inDollarQuote;
+      current += "$$";
+      i += 2;
+      continue;
+    }
+
+    // چک برای `;` خارج از dollar-quote
+    if (sql[i] === ";" && !inDollarQuote) {
+      statements.push(current);
+      current = "";
+      i++;
+      continue;
+    }
+
+    current += sql[i];
+    i++;
+  }
+
+  // آخرین statement (اگر چیزی مونده)
+  if (current.trim()) {
+    statements.push(current);
+  }
+
+  return statements;
+}
+
 function parseMigrations(): MigrationFile[] {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => /^\d{4}_.*\.sql$/.test(f))
@@ -144,7 +189,18 @@ async function main() {
         const cleaned = m.content
           .replace(/^BEGIN;?\s*$/gm, "")
           .replace(/^COMMIT;?\s*$/gm, "");
-        await tx.unsafe(cleaned);
+
+        // statementها را جدا کن — postgres.js در tx.unsafe با چند statement
+        // مشکل دارد، به‌خصوص با `DO $$...$$` که به‌عنوان quote شناخته می‌شود.
+        // با `;` جدا می‌کنیم ولی `$$...$$` را حفظ می‌کنیم.
+        const statements = splitSqlStatements(cleaned);
+
+        for (const stmt of statements) {
+          const trimmed = stmt.trim();
+          if (!trimmed || trimmed.startsWith("--")) continue;
+          await tx.unsafe(trimmed);
+        }
+
         await tx`
           INSERT INTO _migrations (id, name, checksum) VALUES (${m.id}, ${m.name}, ${m.checksum})`;
       });
