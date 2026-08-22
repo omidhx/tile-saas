@@ -93,12 +93,33 @@ jobs:
         run: |
           # ابتدا schema.sql را اجرا می‌کنیم (نصبِ اولیه)
           PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -f ../db/schema.sql
-          # بعد migrationها را — NODE_PATH برای پیدا کردن postgres package
-          node --env-file=.env.test --import tsx ../db/migrations/apply.ts
+          # بعد migrationها را — از web/ اجرا می‌کنیم تا node_modules در دسترس باشد
+          # .env.test مقادیر dev دارد؛ در CI، متغیرهای محیطی override می‌کنند
+          DATABASE_URL=postgres://postgres:pw@localhost:5432/tile_test \
+          AUTH_SECRET=ci-secret-must-be-at-least-32-characters-long-for-tests-only \
+          node --import tsx ../db/migrations/apply.ts
 
       - name: Run tests
         working-directory: web
-        run: npm test
+        env:
+          DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
+          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
+          NODE_ENV: test
+        # npm test از --env-file=.env.test استفاده می‌کند. در CI، .env.test مقادیر
+        # dev را دارد (localhost:55433/devpw) که با PostgreSQL داکریِ CI (localhost:5432/pw)
+        # هم‌خوان نیست. پس قبل از تست، .env.test را با مقادیر CI بازنویسی می‌کنیم.
+        run: |
+          # backup .env.test
+          cp .env.test .env.test.backup
+          # write CI-specific values
+          cat > .env.test << 'ENVEOF'
+DATABASE_URL=postgres://postgres:pw@localhost:5432/tile_test
+AUTH_SECRET=ci-secret-must-be-at-least-32-characters-long-for-tests-only
+ENVEOF
+          # run tests
+          npm test
+          # restore (for artifacts if needed)
+          mv .env.test.backup .env.test
 
       - name: Build
         working-directory: web
