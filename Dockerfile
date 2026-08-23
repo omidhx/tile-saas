@@ -7,11 +7,12 @@
 # نکته‌ی امنیتی: این image با non-root کاربر اجرا می‌شود (next).
 # در production، volumeی `/app/web/public/uploads` باید جدا باشد.
 #
-# اساس: node:20-alpine چون سبک‌تر از full node است و آسیب‌پذیری کمتری دارد.
+# اساس: node:22-alpine چون سبک‌تر از full node است و آسیب‌پذیری کمتری دارد.
+# Node 22 Active LTS (تا آوریل ۲۰۲۷) — Node 20 در آوریل ۲۰۲۶ منقضی شد.
 # =============================================================================
 
 # ---- stage 1: deps ----
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
 # فقط package*.json را کپی — از cache شدنِ npm install بهره می‌برد
@@ -21,7 +22,7 @@ WORKDIR /app/web
 RUN npm ci --include=dev
 
 # ---- stage 2: builder ----
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/web/node_modules ./web/node_modules
@@ -39,7 +40,7 @@ ENV SENTRY_DSN=""
 RUN npm run build
 
 # ---- stage 3: runner ----
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # غیرفعال‌کردن telemetry در runtime هم
