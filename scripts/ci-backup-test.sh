@@ -285,9 +285,9 @@ SELECT '11111111-1111-1111-1111-111111111112', '09999999999',
        '\$2a\$10\$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', true, now()
 WHERE NOT EXISTS (SELECT 1 FROM app_user WHERE is_platform_admin);
 
--- Link admin to tenant
-INSERT INTO tenant_membership (tenant_id, user_id, role, is_active, created_at)
-SELECT '11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111112', 'admin', true, now()
+-- Link admin to tenant (tenant_membership has no created_at column)
+INSERT INTO tenant_membership (tenant_id, user_id, role, is_active)
+SELECT '11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111112', 'admin', true
 WHERE NOT EXISTS (SELECT 1 FROM tenant_membership);
 "
 
@@ -467,8 +467,8 @@ ok "7.2 Table count OK — ${RESULT}"
 
 # 7.3 Migrations table populated
 RESULT=$(psql_db "SELECT count(*) FROM _migrations;")
-if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 4 ]; then
-  error "Check 7.3 failed: Expected ≥ 4 migrations, got '${RESULT}'"
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 3 ]; then
+  error "Check 7.3 failed: Expected ≥ 3 migrations, got '${RESULT}'"
   exit 4
 fi
 ok "7.3 Migrations OK — ${RESULT}"

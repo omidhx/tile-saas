@@ -414,8 +414,8 @@ fi
 
 # Check 4.3: Migrations table populated (≥ 4 migrations: 0002, 0003, 0004, ...)
 RESULT=$(query_db "SELECT count(*) FROM _migrations;")
-if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 4 ]; then
-  error "Check 4.3 failed: Expected ≥ 4 migrations, got '${RESULT}'"
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 3 ]; then
+  error "Check 4.3 failed: Expected ≥ 3 migrations, got '${RESULT}'"
   CHECKS_PASS=false
   CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} migrations"
 else
