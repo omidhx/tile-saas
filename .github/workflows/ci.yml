@@ -159,7 +159,14 @@ jobs:
 
       - name: Smoke test /api/health
         # بعد از build، سرور را بالا بیاور و /api/health را چک کن
+        # در CI، DATABASE_URL به postgres superuser وصل می‌شود، پس role check
+        # را skip می‌کنیم. در staging/production، app_user استفاده می‌شود.
         working-directory: web
+        env:
+          DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
+          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
+          NODE_ENV: production
+          SKIP_ROLE_CHECK: "1"
         run: |
           npm run start &
           SERVER_PID=$!

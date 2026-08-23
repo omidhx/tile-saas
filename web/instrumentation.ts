@@ -4,8 +4,13 @@ export async function register() {
 
     // DB-001: در production، در startup بررسی کن که اپ با non-superuser وصل شده.
     // اگر superuser یا BYPASSRLS باشد، fail-loud — اپ بالا نمی‌آید.
-    // این تابع در dev و test نادیده گرفته می‌شود.
-    if (process.env.NODE_ENV === "production") {
+    // در dev و test نادیده گرفته می‌شود.
+    // نکته: next start همیشه NODE_ENV=production ست می‌کند، حتی اگر CI
+    // NODE_ENV=test ست کرده باشد. پس باید بررسی کنیم که واقعاً production است
+    // نه اینکه فقط next start اجرا شده. در CI smoke test، DATABASE_URL به
+    // postgres superuser وصل می‌شود، پس نباید این check اجرا شود.
+    // راه‌حل: فقط اگر SKIP_ROLE_CHECK نیست و NODE_ENV=production است.
+    if (process.env.NODE_ENV === "production" && !process.env.SKIP_ROLE_CHECK) {
       const { assertNonSuperuserRole } = await import("@/db/client");
       try {
         await assertNonSuperuserRole();
