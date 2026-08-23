@@ -153,7 +153,10 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`/`DELETE`) | فهرست؛ ساخت/تغییرِ نام/حذف برای admin (حذف فقط بدونِ سابقه — گاردِ `has_history`) |
 | `/api/team` | admin + مدیرِ دسترسی (`can_manage_access`) | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری+نامِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن/دسترسیِ ریزدانه (`allowedPages`)/نام، حذفِ واقعی (گاردِ last_admin/last_deputy/linked_to_agent) |
 | `/api/platform/tenants` | مدیرِ پلتفرم (`app_user.is_platform_admin`) | v9 — روزِ صفرِ مشتریِ تازه: `POST` یک tenant + اولین کاربرِ admin (که `can_manage_access` هم دارد) در یک تراکنش می‌سازد؛ بدونِ SQL دستی |
-| `/api/health` | عمومی (احراز هویت لازم نیست) | بررسیِ سلامتِ اپ — `GET` یک `SELECT 1` روی DB می‌زند و `{status:"ok"}` یا `{status:"down"}` برمی‌گرداند. برای Docker healthcheck و reverse proxy. اطلاعاتِ version یا ساختار برنمی‌گرداند تا discovery ممکن نباشد. |
+| `/api/health` | عمومی (احراز هویت لازم نیست) | **Liveness probe** — فقط بررسی می‌کند که process زنده است. DB چک نمی‌شود. `{status:"ok",timestamp}` برمی‌گرداند. برای Docker healthcheck. |
+| `/api/ready` | عمومی (احراز هویت لازم نیست) | **Readiness probe** — بررسی می‌کند که DB در دسترس است (`SELECT 1`). `{status:"ready",checks:{db:"ok"}}` یا `{status:"not_ready",checks:{db:"fail"}}` برمی‌گرداند. برای reverse proxy (Caddy/Nginx) — فقط ترافیک می‌فرستد اگر 200 باشد. |
+| `/api/metrics` | مدیرِ پلتفرم (`app_user.is_platform_admin`) در production | **Metrics عملیاتی** — request count per route، latency (avg/min/max)، 4xx/5xx count، error rate، uptime. در dev بدون auth. |
+| `/api/uploads/[id]` | احراز هویت‌شده (کاربر عضو tenant فایل) | **Download فایل** — فایل را از `private/uploads/` با احراز هویت و بررسی tenant ownership می‌خواند. 404 برای unauthorized (no existence leak). |
 
 ## Rate limits
 پیاده‌شده روی: `login`، `reservations` (۳۰/دقیقه per user)، `auth/password` (۵/۱۵دقیقه)،
