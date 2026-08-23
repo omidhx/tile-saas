@@ -24,6 +24,21 @@
 
 set -euo pipefail
 
+# Concurrency guard — flock prevents cleanup from racing with backup-db.sh
+# (cleanup might delete a backup that backup-db.sh is in the middle of writing)
+LOCK_FILE="${CLEANUP_LOCK_FILE:-/var/lock/tile-saas-cleanup-backups.lock}"
+LOCK_DIR=$(dirname "${LOCK_FILE}")
+if [ ! -d "${LOCK_DIR}" ]; then
+  if [ "${LOCK_FILE}" = "/var/lock/tile-saas-cleanup-backups.lock" ]; then
+    LOCK_FILE="/tmp/tile-saas-cleanup-backups.lock"
+  fi
+fi
+exec 200>"${LOCK_FILE}"
+if ! flock -n 200; then
+  echo "ERROR: another cleanup-old-backups.sh is already running (lock: ${LOCK_FILE})" >&2
+  exit 1
+fi
+
 if [ -t 1 ]; then
   RED='\033[0;31m'
   GREEN='\033[0;32m'

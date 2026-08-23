@@ -200,202 +200,26 @@ jobs:
         # Phase 8 — ابزارهای لازم برایِ تستِ backup/restore
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd gpg
+          sudo apt-get install -y -qq zstd gpg util-linux
           zstd --version
           gpg --version | head -1
+          flock --version 2>&1 | head -1 || echo "flock bundled with util-linux"
 
       - name: Phase 8 — Backup + Verify + Restore test
-        # این مرحله مهم‌ترین verification برایِ Phase 8 است: ثابت می‌کند که
-        # backup واقعاً قابلِ بازیابی است. هر بار در CI این چرخه اجرا می‌شود:
-        #   ۱. pg_dump از دیتابیسِ تست (که شاملِ schema + seed data است)
-        #   ۲. zstd compression
-        #   ۳. GPG encryption با passphrase تست
-        #   ۴. Verify (decrypt + checksum + pg_restore --list)
-        #   ۵. Restore به دیتابیسِ موقتِ tile_restore_test
-        #   ۶. Integrity checks (table count, FK validity, tenant presence)
-        #   ۷. Smoke queries (SECURITY DEFINER functions)
-        #   ۸. Cleanup
+        # این مرحله مهم‌ترین verification برایِ Phase 8 است. اسکریپتِ
+        # `scripts/ci-backup-test.sh` چرخه‌ی کاملِ backup → verify → restore را
+        # اجرا می‌کند. این اسکریپت در پوشه‌ی scripts/ است و code review
+        # می‌شود — به‌این ترتیب از drift بینِ CI و scripts/ جلوگیری می‌شود.
         env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pw
           POSTGRES_DB: tile_test
           BACKUP_GPG_PASSPHRASE: ci-test-passphrase-only-not-for-production
           BACKUP_RETENTION_DAYS: "30"
-          # در CI، postgres روی host است (نه داخلِ docker compose) — اسکریپت باید
-          # به‌جایِ docker compose exec از psql/pg_dump مستقیم استفاده کند.
-          # برایِ سادگی، در CI مستقیماً pg_dump روی host اجرا می‌کنیم.
-          CI_MODE: "1"
           PGPASSWORD: pw
-        run: |
-          set -e
-          echo "=== Phase 8: Backup → Verify → Restore test ==="
-
-          # CI mode: postgres روی host است، نه داخلِ docker compose.
-          # اسکریپتِ backup-db.sh از docker compose استفاده می‌کند — در CI
-          # از مسیرِ جایگزین استفاده می‌کنیم.
-
-          # ──────────────────────────────────────────────
-          # Step 1: pg_dump directly (no docker compose)
-          # ──────────────────────────────────────────────
-          mkdir -p backups/daily backups/status
-          STAMP=$(date -u +%Y-%m-%d_%H%M)
-          BACKUP_NAME="tile_saas_${STAMP}"
-          BACKUP_RAW="backups/daily/${BACKUP_NAME}.sql"
-          BACKUP_ZST="backups/daily/${BACKUP_NAME}.sql.zst"
-          BACKUP_GPG="backups/daily/${BACKUP_NAME}.sql.zstd.gpg"
-
-          echo "--- pg_dump (custom format) ---"
-          pg_dump \
-            -h localhost -U postgres -d tile_test \
-            --format=custom --no-owner --no-privileges \
-            > "${BACKUP_RAW}"
-          RAW_SIZE=$(stat -c%s "${BACKUP_RAW}")
-          echo "  raw size: ${RAW_SIZE} bytes"
-          if [ "${RAW_SIZE}" -lt 1024 ]; then
-            echo "FAIL: pg_dump too small"
-            exit 1
-          fi
-
-          # ──────────────────────────────────────────────
-          # Step 2: zstd compress
-          # ──────────────────────────────────────────────
-          echo "--- zstd compression ---"
-          zstd -q -19 -f -o "${BACKUP_ZST}" "${BACKUP_RAW}"
-          ZST_SIZE=$(stat -c%s "${BACKUP_ZST}")
-          echo "  compressed: ${ZST_SIZE} bytes"
-
-          # ──────────────────────────────────────────────
-          # Step 3: GPG encrypt
-          # ──────────────────────────────────────────────
-          echo "--- GPG symmetric encryption ---"
-          echo "${BACKUP_GPG_PASSPHRASE}" | gpg \
-            --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
-            --symmetric --cipher-algo AES256 --compress-algo none \
-            --s2k-digest-algo SHA512 --s2k-count 65011712 \
-            --output "${BACKUP_GPG}" "${BACKUP_ZST}"
-          GPG_SIZE=$(stat -c%s "${BACKUP_GPG}")
-          echo "  encrypted: ${GPG_SIZE} bytes"
-
-          # Cleanup unencrypted
-          rm -f "${BACKUP_RAW}" "${BACKUP_ZST}"
-
-          # ──────────────────────────────────────────────
-          # Step 4: SHA-256 checksum
-          # ──────────────────────────────────────────────
-          echo "--- SHA-256 checksum ---"
-          SHA256=$(sha256sum "${BACKUP_GPG}" | awk '{print $1}')
-          echo "${SHA256}  ${BACKUP_GPG}" > "${BACKUP_GPG}.sha256"
-          echo "  sha256: ${SHA256}"
-
-          # ──────────────────────────────────────────────
-          # Step 5: Verify (decrypt + check format)
-          # ──────────────────────────────────────────────
-          echo "--- Verify: decrypt + format check ---"
-          TMP_VERIFY=$(mktemp -d)
-          echo "${BACKUP_GPG_PASSPHRASE}" | gpg \
-            --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
-            --decrypt "${BACKUP_GPG}" 2>/dev/null \
-            | zstd -d 2>/dev/null > "${TMP_VERIFY}/dump.sql"
-          MAGIC=$(head -c 5 "${TMP_VERIFY}/dump.sql")
-          if [ "${MAGIC}" != "PGDMP" ]; then
-            echo "FAIL: not a valid pg_dump format (got '${MAGIC}')"
-            rm -rf "${TMP_VERIFY}"
-            exit 1
-          fi
-          echo "  PGDMP magic OK"
-
-          # ──────────────────────────────────────────────
-          # Step 6: pg_restore --list (schema validation)
-          # ──────────────────────────────────────────────
-          TABLE_COUNT=$(pg_restore --list "${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || echo "0")
-          echo "  pg_restore --list: ${TABLE_COUNT} entries"
-          if [ "${TABLE_COUNT}" -lt 10 ]; then
-            echo "FAIL: pg_restore --list returned too few entries"
-            rm -rf "${TMP_VERIFY}"
-            exit 1
-          fi
-
-          # ──────────────────────────────────────────────
-          # Step 7: Restore to temporary database
-          # ──────────────────────────────────────────────
-          echo "--- Restore to tile_restore_test (TEMPORARY) ---"
-          psql -h localhost -U postgres -d postgres -c "DROP DATABASE IF EXISTS tile_restore_test;"
-          psql -h localhost -U postgres -d postgres -c "CREATE DATABASE tile_restore_test;"
-          pg_restore \
-            -h localhost -U postgres -d tile_restore_test \
-            --no-owner --no-privileges --exit-on-error \
-            "${TMP_VERIFY}/dump.sql"
-          rm -rf "${TMP_VERIFY}"
-          echo "  restore OK"
-
-          # ──────────────────────────────────────────────
-          # Step 8: Integrity checks
-          # ──────────────────────────────────────────────
-          echo "--- Integrity checks ---"
-          # 8.1 SELECT 1
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT 1;" | tr -d '[:space:]')
-          [ "${RESULT}" = "1" ] || { echo "FAIL: SELECT 1 returned '${RESULT}'"; exit 1; }
-          echo "  8.1 SELECT 1 OK"
-
-          # 8.2 Table count (≥ 38)
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" | tr -d '[:space:]')
-          [ "${RESULT}" -ge 38 ] || { echo "FAIL: expected ≥ 38 tables, got ${RESULT}"; exit 1; }
-          echo "  8.2 Table count OK (${RESULT})"
-
-          # 8.3 Migrations table populated
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT count(*) FROM _migrations;" | tr -d '[:space:]')
-          [ "${RESULT}" -ge 4 ] || { echo "FAIL: expected ≥ 4 migrations, got ${RESULT}"; exit 1; }
-          echo "  8.3 Migrations OK (${RESULT})"
-
-          # 8.4 RLS policies present
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT count(*) FROM pg_policy;" | tr -d '[:space:]')
-          [ "${RESULT}" -ge 1 ] || { echo "FAIL: no RLS policies found"; exit 1; }
-          echo "  8.4 RLS policies OK (${RESULT})"
-
-          # 8.5 SECURITY DEFINER functions present
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosecdef = true;" | tr -d '[:space:]')
-          [ "${RESULT}" -ge 4 ] || { echo "FAIL: expected ≥ 4 SECURITY DEFINER functions, got ${RESULT}"; exit 1; }
-          echo "  8.5 SECURITY DEFINER functions OK (${RESULT})"
-
-          # 8.6 Smoke query: user_contexts function (SECURITY DEFINER)
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT count(*) FROM user_contexts('00000000-0000-0000-0000-000000000000');" | tr -d '[:space:]')
-          [ -n "${RESULT}" ] || { echo "FAIL: user_contexts() returned no result"; exit 1; }
-          echo "  8.6 user_contexts() OK (${RESULT} contexts for non-existent user)"
-
-          # 8.7 Smoke query: _rate_limit_hits accessible
-          RESULT=$(psql -h localhost -U postgres -d tile_restore_test -t -c "SELECT count(*) FROM _rate_limit_hits;" | tr -d '[:space:]')
-          [ -n "${RESULT}" ] || { echo "FAIL: _rate_limit_hits not accessible"; exit 1; }
-          echo "  8.7 _rate_limit_hits OK (${RESULT} rows)"
-
-          # ──────────────────────────────────────────────
-          # Step 9: Write status file (simulating what backup-db.sh does)
-          # ──────────────────────────────────────────────
-          echo "--- Write backup-status.json ---"
-          DATE_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          cat > backups/status/backup-status.json <<EOF
-          {
-            "last_success_at": "${DATE_ISO}",
-            "last_failure_at": null,
-            "last_failure_reason": null,
-            "last_success_size_bytes": ${GPG_SIZE},
-            "last_success_sha256": "${SHA256}",
-            "backup_age_seconds": 0,
-            "restore_test_last_success_at": "${DATE_ISO}",
-            "restore_test_last_failure_at": null,
-            "retention_days": 30
-          }
-          EOF
-          echo "  status file written"
-          cat backups/status/backup-status.json
-
-          # ──────────────────────────────────────────────
-          # Step 10: Cleanup
-          # ──────────────────────────────────────────────
-          echo "--- Cleanup ---"
-          psql -h localhost -U postgres -d postgres -c "DROP DATABASE IF EXISTS tile_restore_test;"
-          # Keep the backup file for artifact upload on failure
-          echo ""
-          echo "=== Phase 8: Backup → Verify → Restore test PASSED ==="
+        run: bash scripts/ci-backup-test.sh
 
       - name: Upload backup artifacts (on failure)
         if: failure()

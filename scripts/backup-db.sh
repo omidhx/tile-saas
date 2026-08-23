@@ -53,6 +53,40 @@ fi
 set +o history 2>/dev/null || true
 
 # ──────────────────────────────────────────────────────────
+# Concurrency guard — flock prevents two backup-db.sh runs from
+# clobbering each other's output or status file
+# ──────────────────────────────────────────────────────────
+# سناریوی خطر: cron قبلی هنوز در حالِ اجراست (مثلاً pg_dump کند است)،
+# cron بعدی شروع می‌شود. هر دو به status file می‌نویسند، هر دو فایلِ
+# backup می‌سازند — race condition، احتمالاً corruption.
+#
+# flock با یک FD و فایل lock این را حل می‌کند:
+#   - اگر lock در دسترس باشد، اجرا ادامه می‌یابد
+#   - اگر در دسترس نباشد، اسکریپت fail-loud خارج می‌شود
+#
+# مسیرِ lock قابلِ override با BACKUP_LOCK_FILE (مثلاً برایِ تست).
+LOCK_FILE="${BACKUP_LOCK_FILE:-/var/lock/tile-saas-backup-db.lock}"
+
+# اطمینان از اینکه دایرکتوریِ lock موجود است (ممکن است /var/lock نباشد در برخی envها)
+LOCK_DIR=$(dirname "${LOCK_FILE}")
+if [ ! -d "${LOCK_DIR}" ]; then
+  # اگر /var/lock نیست، fallback به /tmp
+  if [ "${LOCK_FILE}" = "/var/lock/tile-saas-backup-db.lock" ]; then
+    LOCK_FILE="/tmp/tile-saas-backup-db.lock"
+  fi
+fi
+
+# FD 200 را باز کن و flock بگیر (non-blocking)
+# این دستور یا موفق می‌شود (lock گرفته شد) یا fail می‌کند (lock در دستِ دیگری است)
+exec 200>"${LOCK_FILE}"
+if ! flock -n 200; then
+  echo "ERROR: another backup-db.sh is already running (lock: ${LOCK_FILE})" >&2
+  echo "ERROR: if you are sure no backup is running, remove the lock file: rm ${LOCK_FILE}" >&2
+  exit 1
+fi
+# Lock به‌صورت خودکار با exitِ process آزاد می‌شود (FD 200 بسته می‌شود)
+
+# ──────────────────────────────────────────────────────────
 # Color codes (only if stdout is a TTY)
 # ──────────────────────────────────────────────────────────
 if [ -t 1 ]; then

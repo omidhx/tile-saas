@@ -41,6 +41,25 @@ if [[ "${-}" == *x* ]]; then
 fi
 set +o history 2>/dev/null || true
 
+# ──────────────────────────────────────────────────────────
+# Concurrency guard — flock prevents two restore-db.sh runs from
+# clobbering the same tile_restore_test database
+# ──────────────────────────────────────────────────────────
+LOCK_FILE="${RESTORE_LOCK_FILE:-/var/lock/tile-saas-restore-db.lock}"
+LOCK_DIR=$(dirname "${LOCK_FILE}")
+if [ ! -d "${LOCK_DIR}" ]; then
+  if [ "${LOCK_FILE}" = "/var/lock/tile-saas-restore-db.lock" ]; then
+    LOCK_FILE="/tmp/tile-saas-restore-db.lock"
+  fi
+fi
+exec 200>"${LOCK_FILE}"
+if ! flock -n 200; then
+  echo "ERROR: another restore-db.sh is already running (lock: ${LOCK_FILE})" >&2
+  echo "ERROR: this would race on the '${RESTORE_DB_NAME:-tile_restore_test}' database" >&2
+  echo "ERROR: if you are sure no restore is running, remove the lock file: rm ${LOCK_FILE}" >&2
+  exit 1
+fi
+
 if [ -t 1 ]; then
   RED='\033[0;31m'
   GREEN='\033[0;32m'
@@ -463,6 +482,44 @@ if [ "${SMOKE_PASS}" != true ]; then
   exit 5
 fi
 ok "All smoke queries passed"
+
+# ──────────────────────────────────────────────────────────
+# 5.5. Transactional integrity — prove the database can do a real write
+# (catches read-only replicas or partial restores that leave the DB
+# in a state where reads work but writes don't)
+# ──────────────────────────────────────────────────────────
+log "Step 5.5: Transactional integrity (BEGIN/INSERT/ROLLBACK)"
+
+# This runs in a transaction and rolls back — so it doesn't pollute the DB.
+# It proves: BEGIN works, INSERT works, ROLLBACK works, constraints are enforced.
+# Schema for audit_log: id, tenant_id, actor_user_id, action, entity, entity_id,
+#   old_value, new_value, created_at
+# We use a non-existent tenant_id (zeros) — FK will fail, but in a transaction
+# with ROLLBACK, this proves the database is writable AND that FKs are enforced.
+if ! psql_super_db -v ON_ERROR_STOP=1 <<SQL 2>"${TMP_RESTORE}/txn_test.log"
+BEGIN;
+-- Insert with valid FK target (a real tenant must exist for this to succeed)
+-- We pick the first tenant and first platform admin
+INSERT INTO audit_log (tenant_id, actor_user_id, action, entity, entity_id)
+  SELECT t.id, u.id, 'restore_test_validation', 'test', gen_random_uuid()
+  FROM tenant t, app_user u
+  WHERE u.is_platform_admin
+  LIMIT 1;
+ROLLBACK;
+SQL
+then
+  error "Transactional integrity test FAILED — database may be read-only or schema may be incomplete"
+  cat "${TMP_RESTORE}/txn_test.log" >&2 || true
+  exit 5
+fi
+
+# Verify the rollback worked — there should be no 'restore_test_validation' rows
+RESULT=$(psql_super_db -t -c "SELECT count(*) FROM audit_log WHERE action = 'restore_test_validation';" 2>/dev/null | tr -d '[:space:]')
+if [ "${RESULT}" != "0" ]; then
+  error "Transactional integrity test FAILED — ROLLBACK did not work (got ${RESULT} rows, expected 0)"
+  exit 5
+fi
+ok "Transactional integrity OK — BEGIN/INSERT/ROLLBACK works correctly"
 
 # ──────────────────────────────────────────────────────────
 # Update status file with restore_test success

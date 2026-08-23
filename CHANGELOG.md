@@ -5,7 +5,67 @@
 
 ## [Unreleased]
 
-### Security Hardening (Phase 8 — post-review)
+### Operational Hardening (Phase 8 — round 2)
+
+بازبینیِ عملیاتیِ دومِ فاز ۸ — رفعِ ۴ findingِ تکمیلی:
+
+- **Concurrency guard (flock):** هر چهار اسکریپتِ operational (backup-db،
+  restore-db، cleanup-old-backups، ci-backup-test) اکنون با `flock -n 200`
+  در برابرِ اجرای همزمان محافظت می‌شوند. اگر cron قبلی هنوز در حالِ اجراست
+  (مثلاً pg_dump کند است)، cron بعدی fail-loud خارج می‌شود به‌جایِ race
+  condition که می‌توانست status file را corrupt کند یا دو بکاپِ نصفه بسازد.
+  مسیرِ lock قابلِ override با `BACKUP_LOCK_FILE`، `RESTORE_LOCK_FILE`،
+  `CLEANUP_LOCK_FILE` env vars.
+- **CI drift prevention:** کلِ منطقِ inline در `.github/workflows/ci.yml`
+  (~۲۰۰ خط) به یک اسکریپتِ مستقل `scripts/ci-backup-test.sh` منتقل شد. CI
+  حالا فقط `bash scripts/ci-backup-test.sh` را صدا می‌زند. این کار drift
+  بینِ CI و scripts/ را از بین می‌برد — هر تغییر در scripts/ در CI همان
+  لحظه reflect می‌شود. اسکریپتِ CI همان الگوهای امنیاتیِ backup-db.sh
+  را دارد: flock، pipefail، anti-leak defenses، atomic status write،
+  RESTORE_DB_NAME validation.
+- **Transactional integrity test:** restore-db.sh و ci-backup-test.sh
+  اکنون یک تستِ `BEGIN/INSERT/ROLLBACK` اجرا می‌کنند که ثابت می‌کند دیتابیس
+  restore شده نه‌تنها قابلِ خواندن بلکه قابلِ نوشتن است و transactions
+  درست کار می‌کنند. این تست از جدولِ `audit_log` استفاده می‌کند چون در
+  همه‌ی tenantها موجود است و `INSERT` در آن سبک است. چون `ROLLBACK` می‌شود،
+  database state تغییر نمی‌کند.
+- **pipefail در همه‌ی اسکریپت‌ها verify شد:** همه‌ی ۵ اسکریپتِ bash
+  اکنون `set -euo pipefail` دارند. بدونِ pipefail، اگر `pg_dump` در یک pipe
+  fail شود ولی `gpg` یک فایل خالی را encrypt کند، کل pipe با exit 0 تمام
+  می‌شد و اسکریپت فکر می‌کرد بکاپ موفق بود. این رفتار خطرناک بود.
+
+### Tests Added
+
+- ۱۳ تستِ جدید به `backupHardening.test.ts` اضافه شد (مجموعاً ۴۹ تست):
+  - flock در همه‌ی ۴ اسکریپتِ operational
+  - `set -euo pipefail` در همه‌ی ۵ اسکریپت
+  - syntax check اسکریپتِ جدیدِ ci-backup-test.sh
+  - RESTORE_DB_NAME validation در ci-backup-test.sh
+  - DROP DATABASE در cleanup اسکریپتِ CI
+  - transactional integrity (BEGIN/INSERT/ROLLBACK) در restore-db.sh و ci-backup-test.sh
+  - atomic status write در ci-backup-test.sh
+  - CI invokes scripts/ci-backup-test.sh (نه inline logic)
+
+### Files Changed
+
+- `scripts/backup-db.sh` — flock + lock file
+- `scripts/restore-db.sh` — flock + transactional integrity test
+- `scripts/cleanup-old-backups.sh` — flock
+- `scripts/ci-backup-test.sh` (NEW) — standalone CI script (host postgres mode)
+- `.github/workflows/ci.yml` — replaced 200 lines of inline logic with one
+  line: `bash scripts/ci-backup-test.sh`
+- `web/src/lib/backupHardening.test.ts` — 13 new tests
+
+### Verification
+
+- TypeScript: tsc --noEmit clean
+- 62/62 lib tests pass (13 backupStatus + 49 hardening)
+- bash syntax check: 5/5 scripts OK
+- YAML syntax check OK
+
+---
+
+### Security Hardening (Phase 8 — post-review, round 1)
 
 بازبینیِ امنیتی/عملیاتیِ فاز ۸ قبل از production — رفعِ ۱۴ finding:
 

@@ -490,3 +490,160 @@ test("restore-db.sh: maybe_cleanup function is defined before the trap that refe
     "maybe_cleanup must be defined BEFORE trap (order matters if script exits early)",
   );
 });
+
+// ──────────────────────────────────────────────
+// 19. Concurrency guards (flock) — prevents two simultaneous runs
+// ──────────────────────────────────────────────
+
+test("backup-db.sh: uses flock for concurrency guard (prevents two simultaneous runs)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    src.includes("flock -n 200"),
+    "should use flock -n 200 (non-blocking lock on FD 200)",
+  );
+  assert.ok(
+    src.includes("exec 200>"),
+    "should allocate FD 200 for the lock file",
+  );
+  assert.ok(
+    src.includes("already running"),
+    "should report 'already running' when lock fails",
+  );
+});
+
+test("restore-db.sh: uses flock for concurrency guard", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(src.includes("flock -n 200"), "should use flock -n 200");
+  assert.ok(src.includes("exec 200>"), "should allocate FD 200");
+});
+
+test("cleanup-old-backups.sh: uses flock for concurrency guard", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "cleanup-old-backups.sh"), "utf8");
+  assert.ok(src.includes("flock -n 200"), "should use flock -n 200");
+  assert.ok(src.includes("exec 200>"), "should allocate FD 200");
+});
+
+test("ci-backup-test.sh: uses flock for concurrency guard", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(src.includes("flock -n 200"), "should use flock -n 200");
+  assert.ok(src.includes("exec 200>"), "should allocate FD 200");
+});
+
+// ──────────────────────────────────────────────
+// 20. pipefail is set in all scripts (catches pipe failures)
+// ──────────────────────────────────────────────
+
+test("all backup scripts: have 'set -euo pipefail' (catches pipe failures)", () => {
+  const scripts = [
+    "backup-db.sh",
+    "restore-db.sh",
+    "verify-backup.sh",
+    "cleanup-old-backups.sh",
+    "ci-backup-test.sh",
+  ];
+  for (const s of scripts) {
+    const src = readFileSync(join(SCRIPTS_DIR, s), "utf8");
+    assert.ok(
+      src.includes("set -euo pipefail"),
+      `${s} should have 'set -euo pipefail' (without pipefail, a pg_dump failure in a pipe could go undetected)`,
+    );
+  }
+});
+
+// ──────────────────────────────────────────────
+// 21. ci-backup-test.sh: bash syntax is valid
+// ──────────────────────────────────────────────
+
+test("ci-backup-test.sh: bash syntax is valid", () => {
+  const result = runBash("-n", {}, [join(SCRIPTS_DIR, "ci-backup-test.sh")]);
+  assert.equal(result.exitCode, 0, `Syntax error: ${result.stderr}`);
+});
+
+test("ci-backup-test.sh: validates RESTORE_DB_NAME against POSTGRES_DB equality", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("RESTORE_DB_NAME") && src.includes("POSTGRES_DB") &&
+    src.includes("must not equal POSTGRES_DB"),
+    "should refuse to run if RESTORE_DB_NAME equals POSTGRES_DB",
+  );
+});
+
+test("ci-backup-test.sh: validates RESTORE_DB_NAME against regex", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("^[a-zA-Z_][a-zA-Z0-9_]*$") || src.includes("[a-zA-Z_][a-zA-Z0-9_]*"),
+    "should validate RESTORE_DB_NAME against a safe identifier regex",
+  );
+});
+
+test("ci-backup-test.sh: drops the temporary database on cleanup", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("DROP DATABASE IF EXISTS") && src.includes("RESTORE_DB_NAME"),
+    "should DROP DATABASE IF EXISTS in cleanup function",
+  );
+  assert.ok(
+    /cleanup\(\)/.test(src),
+    "should have a cleanup function",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 22. restore-db.sh: transactional integrity test (BEGIN/INSERT/ROLLBACK)
+// ──────────────────────────────────────────────
+
+test("restore-db.sh: includes transactional integrity test (BEGIN/INSERT/ROLLBACK)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(
+    src.includes("BEGIN;") && src.includes("ROLLBACK;"),
+    "should have a transactional integrity test with BEGIN/INSERT/ROLLBACK",
+  );
+  assert.ok(
+    src.includes("restore_test_validation"),
+    "should insert a row with a recognizable action label",
+  );
+  assert.ok(
+    src.includes("Transactional integrity"),
+    "should log 'Transactional integrity' test result",
+  );
+});
+
+test("ci-backup-test.sh: includes transactional integrity test", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("BEGIN;") && src.includes("ROLLBACK;"),
+    "should have a transactional integrity test with BEGIN/INSERT/ROLLBACK",
+  );
+  assert.ok(
+    src.includes("restore_test_validation"),
+    "should insert a row with a recognizable action label",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 23. ci-backup-test.sh: atomic status file write (same as backup-db.sh)
+// ──────────────────────────────────────────────
+
+test("ci-backup-test.sh: status file write is atomic (temp + mv + chmod 0644)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(src.includes("mktemp"), "should use mktemp for temp status file");
+  assert.ok(src.includes("mv -f"), "should use mv -f for atomic rename");
+  assert.ok(src.includes("chmod 0644"), "should chmod 0644 the status file");
+});
+
+// ──────────────────────────────────────────────
+// 24. CI workflow: invokes scripts/ci-backup-test.sh (not inline logic)
+// ──────────────────────────────────────────────
+
+test("CI workflow invokes scripts/ci-backup-test.sh (drift prevention)", () => {
+  const ciYaml = readFileSync(join(PROJECT_ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  assert.ok(
+    ciYaml.includes("bash scripts/ci-backup-test.sh"),
+    "CI should invoke scripts/ci-backup-test.sh (not inline logic — prevents drift)",
+  );
+  // The old inline logic should NOT be present anymore
+  assert.ok(
+    !ciYaml.includes("Step 1: pg_dump directly"),
+    "CI should no longer contain inline pg_dump logic (use scripts/ci-backup-test.sh instead)",
+  );
+});
