@@ -60,17 +60,18 @@ test("upload security: tenant A نمی‌تواند عکس tenant B را حذف 
   const imageUrl = "/uploads/tenant-b-photo-uuid.jpg";
   await addProductImage({ tenantId: T2, productId: P2, url: imageUrl });
 
-  // tenant A سعی می‌کند عکس tenant B را حذف کند
-  // removeProductImage با withTenant(T1) اجرا می‌شود — RLS باید جلوی حذف را بگیرد
-  const { withTenant } = await import("./client");
-  await withTenant(T1, async (tx) => {
-    // این DELETE با tenant_id = T1 در WHERE — ردیف tenant B را پیدا نمی‌کند
-    await tx`DELETE FROM product_image WHERE tenant_id = ${T2}`;
-  });
+  // tenant B عکس را می‌خواند
+  const [imageB] = await sql`SELECT id FROM product_image WHERE tenant_id = ${T2}`;
+  assert.ok(imageB, "tenant B باید عکس داشته باشد");
+
+  // tenant A سعی می‌کند عکس tenant B را حذف کند — از طریق removeProductImage
+  // این تابع با withTenant(T1) اجرا می‌شود و WHERE tenant_id = T1 دارد.
+  // حتی با superuser، فیلتر صریح tenant_id = T1 جلوی حذف tenant B را می‌گیرد.
+  await removeProductImage({ tenantId: T1, imageId: imageB.id });
 
   // عکس tenant B نباید حذف شده باشد
-  const [image] = await sql`SELECT id FROM product_image WHERE tenant_id = ${T2}`;
-  assert.ok(image, "عکس tenant B نباید حذف شود توسط tenant A");
+  const [stillThere] = await sql`SELECT id FROM product_image WHERE id = ${imageB.id}`;
+  assert.ok(stillThere, "عکس tenant B نباید توسط tenant A حذف شود");
 });
 
 test("upload security: deleteUploadFile فقط مسیرهای /uploads/ را قبول می‌کند", async () => {
