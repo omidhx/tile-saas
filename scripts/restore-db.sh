@@ -220,10 +220,25 @@ chmod 700 "${TMP_RESTORE}"
 # Container path for the dump file (cleaned up on exit)
 CONTAINER_DUMP_PATH="/tmp/restore-$(date +%s).dump"
 
-# Cleanup function — handles all exit paths
-# Note: we set a flag so we don't try to drop a database we never created.
+# Cleanup function — handles all exit paths, with double-cleanup guard.
+#
+# وقتی Ctrl+C می‌زنیم (INT) یا SIGTERM می‌آید:
+#   ۱. signal handler اجرا می‌شود → cleanup + exit با signal code
+#   ۲. EXIT trap اجرا می‌شود (به‌خاطرِ exit) → cleanup دوباره — مگر اینکه guard داشته باشیم
+#
+# CLEANUP_DONE جلویِ اجرایِ دوباره را می‌گیرد. مهم چون:
+#   - DROP DATABASE دوبار اجرا شود → خطای غلط
+#   - در شرایطِ rare، race condition پیش بیاید
+CLEANUP_DONE=0
 RESTORE_DONE=false
+
 maybe_cleanup() {
+  # Guard: only run once
+  if [ "${CLEANUP_DONE}" -eq 1 ]; then
+    return 0
+  fi
+  CLEANUP_DONE=1
+
   # Clean up temp files
   if [ -n "${TMP_RESTORE:-}" ] && [ -d "${TMP_RESTORE}" ]; then
     rm -rf "${TMP_RESTORE}" 2>/dev/null || true
@@ -240,21 +255,29 @@ maybe_cleanup() {
     return
   fi
 
-  # Only drop the database if we created it (RESTORE_DONE=true means success path)
-  # On pre-restore failure, we may not have created it — but if we did, we should still clean up.
+  # Drop the temporary database (best effort)
+  # First, terminate any lingering connections (otherwise DROP fails with
+  # "database is being accessed by other users"). This is especially
+  # important if a previous run was killed mid-restore.
   log "Cleanup: dropping ${RESTORE_DB_NAME} (if exists)"
+  psql_super -d postgres -c \
+    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" \
+    2>/dev/null || true
   psql_super -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || \
     warn "Could not drop ${RESTORE_DB_NAME} (may need manual cleanup)"
 }
 
-cleanup_exit() {
-  local exit_code=$?
+# Signal handler: cleanup + exit with signal-appropriate code
+on_signal() {
+  local sig=$1
   maybe_cleanup
-  exit $exit_code
+  exit $((128 + sig))
 }
 
-# Trap on EXIT, INT, TERM, HUP — all paths clean up
-trap cleanup_exit EXIT INT TERM HUP
+trap maybe_cleanup EXIT
+trap 'on_signal 2' INT    # SIGINT (Ctrl+C) → exit 130
+trap 'on_signal 15' TERM  # SIGTERM (cron kill) → exit 143
+trap 'on_signal 1' HUP    # SIGHUP (terminal closed) → exit 129
 
 # ──────────────────────────────────────────────────────────
 # 1. Decrypt + decompress
@@ -417,6 +440,37 @@ if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 4 ]; then
   warn "Check 4.8: Expected ≥ 4 SECURITY DEFINER functions, got '${RESULT}'"
 else
   ok "Check 4.8: SECURITY DEFINER functions OK — ${RESULT} functions"
+fi
+
+# Check 4.9: Row counts for key tables (informational, not pass/fail)
+# This catches "table exists but is empty when it shouldn't be" — a sign of
+# partial restore or wrong backup source. Counts may legitimately differ from
+# production (backup taken at different time), so we log them as info.
+log "Check 4.9: Row counts for key tables (informational):"
+for table in app_user tenant audit_log product inventory_balance reservation; do
+  RESULT=$(query_db "SELECT count(*) FROM ${table};")
+  if [[ "${RESULT}" =~ ^[0-9]+$ ]]; then
+    log "  - ${table}: ${RESULT} rows"
+  else
+    warn "  - ${table}: cannot read (got '${RESULT}')"
+    warn "  - this suggests the table is missing or schema is incomplete"
+  fi
+done
+
+# Sanity check: app_user and tenant must be non-empty (we already checked
+# in 4.4 and 4.5, but verify that audit_log and product are accessible
+# even if empty — empty is fine, inaccessible is not).
+RESULT=$(query_db "SELECT count(*) FROM audit_log;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]]; then
+  error "Check 4.9: audit_log table is not accessible (got '${RESULT}')"
+  CHECKS_PASS=false
+  CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} audit_log"
+fi
+RESULT=$(query_db "SELECT count(*) FROM product;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]]; then
+  error "Check 4.9: product table is not accessible (got '${RESULT}')"
+  CHECKS_PASS=false
+  CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} product"
 fi
 
 if [ "${CHECKS_PASS}" != true ]; then
@@ -604,7 +658,7 @@ ok "Status file:    ${STATUS_FILE}"
 ok ""
 ok "Restore test SUCCEEDED — backup is restorable."
 
-# Reset trap to avoid re-running cleanup logic unnecessarily on normal exit
-trap - EXIT INT TERM HUP
+# Run cleanup explicitly (CLEANUP_DONE guard makes this safe — it will run
+# once, and the EXIT trap will be a no-op).
 maybe_cleanup
 exit 0

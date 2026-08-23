@@ -88,9 +88,17 @@ STATUS_FILE="${STATUS_DIR}/backup-status.json"
 TMP_DIR=$(mktemp -d)
 chmod 700 "${TMP_DIR}"
 
-# Cleanup function — called on exit, signal, error
+# Cleanup function — with double-cleanup guard (called on exit, signal, error)
+#
+# CLEANUP_DONE جلویِ اجرایِ دوباره را می‌گیرد. وقتی Ctrl+C می‌زنیم:
+#   ۱. INT handler اجرا می‌شود → cleanup + exit 130
+#   ۲. EXIT trap اجرا می‌شود (به‌خاطرِ exit) → cleanup دوباره — مگر guard داشته باشیم
+CLEANUP_DONE=0
 cleanup() {
-  local exit_code=$?
+  if [ "${CLEANUP_DONE}" -eq 1 ]; then
+    return 0
+  fi
+  CLEANUP_DONE=1
 
   # Clean up intermediate files
   rm -f "${BACKUP_FILE_RAW:-}" 2>/dev/null || true
@@ -101,15 +109,29 @@ cleanup() {
   fi
 
   # Drop the temporary restore test database (best effort)
+  # First terminate any lingering connections (otherwise DROP may fail).
   if [ -n "${RESTORE_DB_NAME:-}" ]; then
+    PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+      -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+      -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" \
+      2>/dev/null || true
     PGPASSWORD="${POSTGRES_PASSWORD}" psql \
       -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
       -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || true
   fi
-
-  exit $exit_code
 }
-trap cleanup EXIT INT TERM HUP
+
+# Signal handler: cleanup + exit with signal-appropriate code
+on_signal() {
+  local sig=$1
+  cleanup
+  exit $((128 + sig))
+}
+
+trap cleanup EXIT
+trap 'on_signal 2' INT    # SIGINT (Ctrl+C) → exit 130
+trap 'on_signal 15' TERM  # SIGTERM (cron kill) → exit 143
+trap 'on_signal 1' HUP    # SIGHUP (terminal closed) → exit 129
 
 # ──────────────────────────────────────────────────────────
 # Helpers
@@ -135,12 +157,17 @@ log "=== Phase 8: Backup → Verify → Restore test (CI) ==="
 log "Target: ${POSTGRES_USER}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 log "Restore target: ${RESTORE_DB_NAME}"
 
-# Required commands
-for cmd in pg_dump psql pg_restore gpg zstd; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    error "Required command not found: $cmd"
-    exit 1
+# Required commands — fail loud if any are missing
+# flock is needed for the concurrency guard (used at the top of this script)
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    error "Required command not found: $1"
+    error "On Ubuntu/Debian: sudo apt-get install -y util-linux postgresql-client zstd gnupg"
+    exit 127
   fi
+}
+for cmd in pg_dump psql pg_restore gpg zstd flock; do
+  require_command "$cmd"
 done
 
 mkdir -p "${BACKUP_DIR}" "${STATUS_DIR}"
@@ -378,6 +405,19 @@ if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 5 ]; then
   exit 5
 fi
 ok "8.5 app_user schema OK — ${RESULT} columns"
+
+# 8.6 Row counts for key tables (informational — catches partial restore)
+log "8.6 Row counts for key tables:"
+for table in app_user tenant audit_log product inventory_balance reservation; do
+  RESULT=$(psql_db "SELECT count(*) FROM ${table};")
+  if [[ "${RESULT}" =~ ^[0-9]+$ ]]; then
+    log "  - ${table}: ${RESULT} rows"
+  else
+    error "8.6 ${table} table is not accessible (got '${RESULT}')"
+    exit 5
+  fi
+done
+ok "8.6 All key tables accessible"
 
 # ──────────────────────────────────────────────────────────
 # Step 8.5: Transactional integrity — BEGIN/INSERT/ROLLBACK

@@ -105,15 +105,29 @@ log "Verifying: ${BACKUP_FILE}"
 TMP_VERIFY=$(mktemp -d)
 chmod 700 "${TMP_VERIFY}"
 
-# Cleanup function — defined BEFORE trap
+# Cleanup function — with double-cleanup guard (defined BEFORE trap)
+CLEANUP_DONE=0
 cleanup() {
-  local exit_code=$?
+  if [ "${CLEANUP_DONE}" -eq 1 ]; then
+    return 0
+  fi
+  CLEANUP_DONE=1
   if [ -n "${TMP_VERIFY:-}" ] && [ -d "${TMP_VERIFY}" ]; then
     rm -rf "${TMP_VERIFY}" 2>/dev/null || true
   fi
-  exit $exit_code
 }
-trap cleanup EXIT INT TERM HUP
+
+# Signal handler: cleanup + exit with signal-appropriate code
+on_signal() {
+  local sig=$1
+  cleanup
+  exit $((128 + sig))
+}
+
+trap cleanup EXIT
+trap 'on_signal 2' INT    # SIGINT (Ctrl+C) → exit 130
+trap 'on_signal 15' TERM  # SIGTERM (cron kill) → exit 143
+trap 'on_signal 1' HUP    # SIGHUP (terminal closed) → exit 129
 
 # ──────────────────────────────────────────────────────────
 # 1. File exists and is non-empty
@@ -215,8 +229,7 @@ else
   warn "pg_restore not available — skipping schema list check"
   warn "Install PostgreSQL client tools OR run with Docker Compose up"
   ok "Verify passed (without pg_restore --list)"
-  # Reset trap to skip cleanup-on-exit double-call
-  trap - EXIT INT TERM HUP
+  # CLEANUP_DONE guard makes this safe (no double-cleanup)
   cleanup
   exit 0
 fi
@@ -243,7 +256,6 @@ ok ""
 ok "Backup file is valid and ready for restore."
 ok "For full restore test, run: bash scripts/restore-db.sh ${BACKUP_FILE}"
 
-# Reset trap to skip cleanup-on-exit double-call
-trap - EXIT INT TERM HUP
+# CLEANUP_DONE guard makes this safe (no double-cleanup)
 cleanup
 exit 0

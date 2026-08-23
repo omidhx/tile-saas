@@ -305,12 +305,27 @@ write_status_success() {
 }
 
 # ──────────────────────────────────────────────────────────
-# Cleanup on exit / error / signal
+# Cleanup on exit / error / signal — with double-cleanup guard
 # ──────────────────────────────────────────────────────────
-# Use a single cleanup function that handles all paths.
-# Trap on EXIT, INT, TERM, HUP.
+# وقتی Ctrl+C می‌زنیم (INT) یا cron SIGTERM می‌فرستد، این اتفاق می‌افتد:
+#   ۱. signal handler اجرا می‌شود
+#   ۲. cleanup اجرا می‌شود
+#   ۳. exit با signal-appropriate code صدا زده می‌شود
+#   ۴. EXIT trap اجرا می‌شود (چون exit صدا زده شد)
+#   ۵. cleanup دوباره اجرا می‌شود — مگر اینکه CLEANUP_DONE guard داشته باشیم
+#
+# CLEANUP_DONE جلویِ اجرایِ دوباره‌ی cleanup را می‌گیرد. این مهم است چون:
+#   - DROP DATABASE دوبار اجرا شود → خطای غلط
+#   - logهای گمراه‌کننده چاپ شوند
+#   - در شرایطِ rare، race condition پیش بیاید
+CLEANUP_DONE=0
+
 cleanup() {
-  local exit_code=$?
+  # Guard: only run once
+  if [ "${CLEANUP_DONE}" -eq 1 ]; then
+    return 0
+  fi
+  CLEANUP_DONE=1
 
   # Clean up intermediate files (raw dump and compressed-but-not-encrypted)
   rm -f "${BACKUP_FILE_RAW}" 2>/dev/null || true
@@ -324,13 +339,23 @@ cleanup() {
 
   # If we failed before reaching write_status_success, write a failure status
   if [ "${FAILED}" = true ]; then
-    error "Backup failed: ${FAILURE_REASON:-unknown} (exit ${exit_code})"
+    error "Backup failed: ${FAILURE_REASON:-unknown}"
     write_status_failure "${FAILURE_REASON:-unknown}"
   fi
-
-  exit $exit_code
 }
-trap cleanup EXIT INT TERM HUP
+
+# Signal handler: cleanup + exit with signal-appropriate code
+# (128 + signal_number is the conventional exit code for signal termination)
+on_signal() {
+  local sig=$1
+  cleanup
+  exit $((128 + sig))
+}
+
+trap cleanup EXIT
+trap 'on_signal 2' INT    # SIGINT (Ctrl+C) → exit 130
+trap 'on_signal 15' TERM  # SIGTERM (cron kill) → exit 143
+trap 'on_signal 1' HUP    # SIGHUP (terminal closed) → exit 129
 
 # ──────────────────────────────────────────────────────────
 # 0. Pre-flight checks
@@ -604,9 +629,11 @@ else
   warn "Check /api/metrics → backup.last_failure_reason"
 fi
 
-# Reset FAILED so the EXIT trap doesn't double-write a failure status
+# Reset FAILED so the EXIT trap doesn't write a failure status
 FAILED=false
 
-# Reset trap to avoid re-running cleanup logic
-trap - EXIT INT TERM HUP
+# Note: we don't reset traps here. The CLEANUP_DONE guard prevents
+# double-cleanup if a signal fires during the last few lines.
+# EXIT trap will run cleanup() one final time — which will clean up
+# TMP_DIR. CLEANUP_DONE guard ensures it's a no-op if already cleaned.
 exit 0

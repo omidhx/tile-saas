@@ -247,19 +247,29 @@ test("backup-db.sh: source code does not contain 'eval rsync' command (use array
   );
 });
 
-test("backup-db.sh: trap covers INT, TERM, HUP (not just EXIT)", () => {
+test("backup-db.sh: trap covers EXIT, INT, TERM, HUP (not just EXIT)", () => {
   const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
-  assert.ok(/trap\s+\w+\s+EXIT\s+INT\s+TERM\s+HUP/.test(src), "trap should cover EXIT INT TERM HUP");
+  // New pattern: separate traps per signal, with on_signal helper
+  assert.ok(/trap\s+cleanup\s+EXIT/.test(src), "trap cleanup EXIT should be set");
+  assert.ok(/trap\s+'on_signal 2'\s+INT/.test(src), "trap on_signal 2 INT should be set");
+  assert.ok(/trap\s+'on_signal 15'\s+TERM/.test(src), "trap on_signal 15 TERM should be set");
+  assert.ok(/trap\s+'on_signal 1'\s+HUP/.test(src), "trap on_signal 1 HUP should be set");
 });
 
-test("restore-db.sh: trap covers INT, TERM, HUP (not just EXIT)", () => {
+test("restore-db.sh: trap covers EXIT, INT, TERM, HUP (not just EXIT)", () => {
   const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
-  assert.ok(/trap\s+\w+\s+EXIT\s+INT\s+TERM\s+HUP/.test(src), "trap should cover EXIT INT TERM HUP");
+  assert.ok(/trap\s+maybe_cleanup\s+EXIT/.test(src), "trap maybe_cleanup EXIT should be set");
+  assert.ok(/trap\s+'on_signal 2'\s+INT/.test(src), "trap on_signal 2 INT should be set");
+  assert.ok(/trap\s+'on_signal 15'\s+TERM/.test(src), "trap on_signal 15 TERM should be set");
+  assert.ok(/trap\s+'on_signal 1'\s+HUP/.test(src), "trap on_signal 1 HUP should be set");
 });
 
-test("verify-backup.sh: trap covers INT, TERM, HUP (not just EXIT)", () => {
+test("verify-backup.sh: trap covers EXIT, INT, TERM, HUP (not just EXIT)", () => {
   const src = readFileSync(join(SCRIPTS_DIR, "verify-backup.sh"), "utf8");
-  assert.ok(/trap\s+\w+\s+EXIT\s+INT\s+TERM\s+HUP/.test(src), "trap should cover EXIT INT TERM HUP");
+  assert.ok(/trap\s+cleanup\s+EXIT/.test(src), "trap cleanup EXIT should be set");
+  assert.ok(/trap\s+'on_signal 2'\s+INT/.test(src), "trap on_signal 2 INT should be set");
+  assert.ok(/trap\s+'on_signal 15'\s+TERM/.test(src), "trap on_signal 15 TERM should be set");
+  assert.ok(/trap\s+'on_signal 1'\s+HUP/.test(src), "trap on_signal 1 HUP should be set");
 });
 
 // ──────────────────────────────────────────────
@@ -482,9 +492,9 @@ test("verify-backup.sh: pg_restore_cmd is an array (no word-splitting bug)", () 
 test("restore-db.sh: maybe_cleanup function is defined before the trap that references it", () => {
   const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
   const cleanupDefIndex = src.indexOf("maybe_cleanup()");
-  const trapIndex = src.indexOf("trap cleanup_exit");
+  const trapIndex = src.indexOf("trap maybe_cleanup EXIT");
   assert.ok(cleanupDefIndex > -1, "maybe_cleanup should be defined");
-  assert.ok(trapIndex > -1, "trap cleanup_exit should be set");
+  assert.ok(trapIndex > -1, "trap maybe_cleanup EXIT should be set");
   assert.ok(
     cleanupDefIndex < trapIndex,
     "maybe_cleanup must be defined BEFORE trap (order matters if script exits early)",
@@ -645,5 +655,226 @@ test("CI workflow invokes scripts/ci-backup-test.sh (drift prevention)", () => {
   assert.ok(
     !ciYaml.includes("Step 1: pg_dump directly"),
     "CI should no longer contain inline pg_dump logic (use scripts/ci-backup-test.sh instead)",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 25. CLEANUP_DONE guard — prevents double-cleanup on EXIT+signal
+// ──────────────────────────────────────────────
+// این الگو بحرانی است: وقتی Ctrl+C می‌زنیم، INT handler اجرا می‌شود
+// و exit 130 صدا زده می‌شود. سپس EXIT trap اجرا می‌شود (به‌خاطرِ exit).
+// بدون CLEANUP_DONE guard، cleanup دوبار اجرا می‌شد: DROP DATABASE دوبار،
+// logهای گمراه‌کننده، و در شرایط rare، race condition.
+
+test("backup-db.sh: has CLEANUP_DONE guard to prevent double-cleanup", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    src.includes("CLEANUP_DONE=0") &&
+    src.includes('if [ "${CLEANUP_DONE}" -eq 1 ]') &&
+    src.includes("CLEANUP_DONE=1"),
+    "should define CLEANUP_DONE guard pattern (init + check + set)",
+  );
+});
+
+test("restore-db.sh: has CLEANUP_DONE guard to prevent double-cleanup", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(
+    src.includes("CLEANUP_DONE=0") &&
+    src.includes('if [ "${CLEANUP_DONE}" -eq 1 ]'),
+    "should define CLEANUP_DONE guard",
+  );
+});
+
+test("verify-backup.sh: has CLEANUP_DONE guard to prevent double-cleanup", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "verify-backup.sh"), "utf8");
+  assert.ok(
+    src.includes("CLEANUP_DONE=0") &&
+    src.includes('if [ "${CLEANUP_DONE}" -eq 1 ]'),
+    "should define CLEANUP_DONE guard",
+  );
+});
+
+test("ci-backup-test.sh: has CLEANUP_DONE guard to prevent double-cleanup", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("CLEANUP_DONE=0") &&
+    src.includes('if [ "${CLEANUP_DONE}" -eq 1 ]'),
+    "should define CLEANUP_DONE guard",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 26. on_signal function uses 128 + signal_number (conventional exit codes)
+// ──────────────────────────────────────────────
+// INT → 130, TERM → 143, HUP → 129 (per POSIX: 128 + signal number)
+
+test("backup-db.sh: on_signal exits with 128 + signal_number (conventional)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    /on_signal\(\)/.test(src) &&
+    /exit \$\(\(128 \+ sig\)\)/.test(src),
+    "should have on_signal function that exits with 128 + signal_number",
+  );
+  assert.ok(
+    /trap\s+'on_signal 2'\s+INT/.test(src) &&
+    /trap\s+'on_signal 15'\s+TERM/.test(src) &&
+    /trap\s+'on_signal 1'\s+HUP/.test(src),
+    "should trap INT/TERM/HUP with correct signal numbers",
+  );
+});
+
+test("restore-db.sh: on_signal exits with 128 + signal_number", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(
+    /on_signal\(\)/.test(src) &&
+    /exit \$\(\(128 \+ sig\)\)/.test(src),
+    "should have on_signal function with 128 + signal_number pattern",
+  );
+});
+
+test("verify-backup.sh: on_signal exits with 128 + signal_number", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "verify-backup.sh"), "utf8");
+  assert.ok(
+    /on_signal\(\)/.test(src) &&
+    /exit \$\(\(128 \+ sig\)\)/.test(src),
+    "should have on_signal function with 128 + signal_number pattern",
+  );
+});
+
+test("ci-backup-test.sh: on_signal exits with 128 + signal_number", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    /on_signal\(\)/.test(src) &&
+    /exit \$\(\(128 \+ sig\)\)/.test(src),
+    "should have on_signal function with 128 + signal_number pattern",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 27. cleanup does NOT call exit (only signal handler does)
+// ──────────────────────────────────────────────
+// اگر cleanup خودش exit صدا بزند، EXIT trap دوباره اجرا می‌شود و loop پیش می‌آید.
+// الگوی صحیح: cleanup فقط کارش را انجام دهد و return کند. EXIT trap خودش
+// اسکریپت را exit می‌کند (به‌صورت ضمنی با اجرای آخرین دستور).
+
+test("backup-db.sh: cleanup() does not call exit (signal handler does)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  // Find cleanup() function body and verify it doesn't have `exit`
+  const cleanupMatch = src.match(/cleanup\(\)\s*{[\s\S]*?^}/m);
+  assert.ok(cleanupMatch, "cleanup function should be defined");
+  const cleanupBody = cleanupMatch![0];
+  // Allow only comments containing 'exit' (like "exit code")
+  // Strip comments first
+  const noComments = cleanupBody.split("\n")
+    .map(l => l.replace(/#.*$/, ""))
+    .join("\n");
+  assert.ok(
+    !/\bexit\b\s+\$/.test(noComments) && !/\bexit\b\s+\d/.test(noComments),
+    `cleanup() must not call exit() (signal handler does that). Cleanup body:\n${cleanupBody}`,
+  );
+});
+
+test("ci-backup-test.sh: cleanup() does not call exit (signal handler does)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  const cleanupMatch = src.match(/cleanup\(\)\s*{[\s\S]*?^}/m);
+  assert.ok(cleanupMatch, "cleanup function should be defined");
+  const cleanupBody = cleanupMatch![0];
+  const noComments = cleanupBody.split("\n")
+    .map(l => l.replace(/#.*$/, ""))
+    .join("\n");
+  assert.ok(
+    !/\bexit\b\s+\$/.test(noComments) && !/\bexit\b\s+\d/.test(noComments),
+    "cleanup() must not call exit()",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 28. DROP DATABASE is preceded by pg_terminate_backend (no stale connections)
+// ──────────────────────────────────────────────
+
+test("restore-db.sh: drops temporary database with pg_terminate_backend first", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  // The cleanup function should call pg_terminate_backend before DROP DATABASE
+  assert.ok(
+    src.includes("pg_terminate_backend(pid)") &&
+    src.includes("datname = '${RESTORE_DB_NAME}'") &&
+    src.includes("DROP DATABASE IF EXISTS"),
+    "should call pg_terminate_backend before DROP DATABASE to clear connections",
+  );
+});
+
+test("ci-backup-test.sh: drops temporary database with pg_terminate_backend first", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("pg_terminate_backend(pid)") &&
+    src.includes("datname = '${RESTORE_DB_NAME}'") &&
+    src.includes("DROP DATABASE IF EXISTS"),
+    "should call pg_terminate_backend before DROP DATABASE",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 29. ci-backup-test.sh: requires flock in the pre-flight command check
+// ──────────────────────────────────────────────
+
+test("ci-backup-test.sh: requires flock in pre-flight command check", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("flock") &&
+    /for cmd in.*flock/.test(src.replace(/\s+/g, " ")),
+    "should require flock in the pre-flight command check loop",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 30. Row counts for key tables (catches partial restore)
+// ──────────────────────────────────────────────
+
+test("restore-db.sh: includes row count checks for key tables", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(
+    src.includes("audit_log") && src.includes("product") &&
+    src.includes("inventory_balance") && src.includes("reservation"),
+    "should check row counts for audit_log, product, inventory_balance, reservation",
+  );
+});
+
+test("ci-backup-test.sh: includes row count checks for key tables", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("audit_log") && src.includes("product") &&
+    src.includes("inventory_balance") && src.includes("reservation"),
+    "should check row counts for key tables",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 31. No `trap - EXIT` (trap reset) in success path
+// ──────────────────────────────────────────────
+// اگر اسکریپت در مسیرِ موفقیت `trap - EXIT` بزند، cleanup در EXIT اجرا
+// نمی‌شود و فایل‌های موقت باقی می‌مانند. CLEANUP_DONE guard این نیاز را
+// از بین می‌برد.
+
+test("backup-db.sh: does NOT reset traps in success path (relies on CLEANUP_DONE guard)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    !src.includes("trap - EXIT"),
+    "should not reset traps (CLEANUP_DONE guard makes this unnecessary)",
+  );
+});
+
+test("restore-db.sh: does NOT reset traps in success path", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(
+    !src.includes("trap - EXIT"),
+    "should not reset traps (CLEANUP_DONE guard makes this unnecessary)",
+  );
+});
+
+test("verify-backup.sh: does NOT reset traps in success path", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "verify-backup.sh"), "utf8");
+  assert.ok(
+    !src.includes("trap - EXIT"),
+    "should not reset traps (CLEANUP_DONE guard makes this unnecessary)",
   );
 });
