@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/db/client";
 import { verifyPassword } from "@/auth/password";
-import { setSessionCookie } from "@/auth/session";
+import { setSessionCookie, invalidateSessionsIn } from "@/auth/session";
 import { checkRateAsync, clientIp, tooMany } from "@/auth/rateLimit";
 import { assertSameOrigin } from "@/auth/csrf";
 
@@ -12,6 +12,7 @@ export async function POST(req: Request) {
   // CSRF سبک: چکِ Origin/Host روی state-changing endpoints. SameSite=lax
   // روی مرورگرهای مدرن کافی است، ولی این چک، subdomain و WebView را هم
   // می‌پوشاند و حدود ۱۰ خط است — درِ اضافی که چیزی از دست نمی‌رود.
+  // (اکنون در middleware هم متمرکز شده، ولی برای defense-in-depth باقی می‌ماند.)
   const csrfFail = assertSameOrigin(req);
   if (csrfFail) return csrfFail;
 
@@ -47,6 +48,11 @@ export async function POST(req: Request) {
 
   if (!ok) return NextResponse.json({ error: "نام کاربری یا رمز اشتباه است" }, { status: 401 });
 
+  // Session rotation: نشست‌های قبلی را باطل کن و کوکیِ تازه صادر کن.
+  // این جلوی session fixation را می‌گیرد: اگر مهاجمی قبل از لاگینِ کاربر
+  // توکنی دزدیده بود، بعد از لاگینِ موفق آن توکن دیگر معتبر نیست.
+  // (همان الگوی passwordFlows.ts و logout-all/route.ts)
+  await sql.begin(async (tx) => invalidateSessionsIn(tx, user.id));
   await setSessionCookie(user.id);
   return NextResponse.json({ ok: true });
 }

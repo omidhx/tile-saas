@@ -247,21 +247,48 @@ export async function reserveIn(
     }
 
     // ۵. ثبت reservation + itemها
-    const [resv] = await tx<{ id: string }[]>`
+    //    ON CONFLICT DO NOTHING: اگر دو درخواست هم‌زمان با همان idempotencyKey
+    //    رسیدند، دومی به‌جای ۵۰۰، ۰ ردیف برمی‌گرداند و ما را مجبور می‌کند
+    //    رزروِ موجود را دوباره بخوانیم (dedupe).
+    const inserted = await tx<{ id: string }[]>`
       INSERT INTO reservation (tenant_id, agent_account_id, expires_at, idempotency_key, idempotency_request_hash)
       VALUES (${tenantId}, ${agentAccountId}, now() + make_interval(hours => ${ttlHours}), ${idempotencyKey}, ${requestHash})
+      ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
       RETURNING id`;
+
+    if (inserted.length === 0) {
+      // رقابتِ هم‌زمان: درخواستِ دیگری با همان کلید زودتر INSERT کرد.
+      // رزروِ موجود را بخوان و dedupe کن (یا mismatch را برگردان).
+      const [existing] = await tx<{ id: string; idempotency_request_hash: string | null }[]>`
+        SELECT id, idempotency_request_hash FROM reservation
+        WHERE tenant_id = ${tenantId} AND idempotency_key = ${idempotencyKey}`;
+      if (existing) {
+        return existing.idempotency_request_hash === requestHash
+          ? { ok: true, reservationId: existing.id, deduped: true }
+          : { ok: false, idempotencyMismatch: true };
+      }
+      // بسیار نادر: INSERT شکست خورد ولی ردیف هم پیدا نشد (مثلاً rollback هم‌زمان).
+      // در این حالت fallback به INSERT ساده بدون ON CONFLICT:
+      const [resv] = await tx<{ id: string }[]>`
+        INSERT INTO reservation (tenant_id, agent_account_id, expires_at, idempotency_key, idempotency_request_hash)
+        VALUES (${tenantId}, ${agentAccountId}, now() + make_interval(hours => ${ttlHours}), ${idempotencyKey}, ${requestHash})
+        RETURNING id`;
+      var resvId = resv.id;
+    } else {
+      var resvId = inserted[0].id;
+    }
+
     for (const lotId of lotIds)
       await tx`
         INSERT INTO reservation_item (tenant_id, reservation_id, lot_id, quantity_boxes)
-        VALUES (${tenantId}, ${resv.id}, ${lotId}, ${byLot.get(lotId)!})`;
+        VALUES (${tenantId}, ${resvId}, ${lotId}, ${byLot.get(lotId)!})`;
 
     // ۶. لجر (hold: on_hand/allocated عوض نمی‌شه چون held محاسباتیه — فقط ردپای audit)
     for (const lotId of lotIds)
       await tx`
         INSERT INTO inventory_transaction
           (tenant_id, lot_id, transaction_type, reference_type, reference_id, note)
-        VALUES (${tenantId}, ${lotId}, 'reservation_hold', 'reservation', ${resv.id},
+        VALUES (${tenantId}, ${lotId}, 'reservation_hold', 'reservation', ${resvId},
                 ${"held " + byLot.get(lotId)!})`;
 
     // ۷. تأیید هیبریدی (v2): اگر ارزشِ سفارش زیرِ سقف بود، همین‌جا و در **همین تراکنش**
@@ -270,17 +297,17 @@ export async function reserveIn(
     //    تصمیم «نه» است، پس رفتارِ پیش‌فرض همان تأییدِ دستیِ قبلی می‌ماند.
     const decision = skipAutoApprove
       ? ({ approve: false, reason: "disabled" } as const)
-      : await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resv.id });
+      : await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resvId });
     if (decision.approve) {
       const approved = await approveReservationIn(tx, {
-        tenantId, reservationId: resv.id, actorUserId: null,
+        tenantId, reservationId: resvId, actorUserId: null,
         mode: "auto", limitApplied: decision.limitApplied,
       });
       // تأییدِ همین رزروِ تازه‌ساخته نباید شکست بخورد؛ اگر خورد، چیزی که فرض کردیم
       // درست نیست و بهتر است کلِ تراکنش برگردد تا رزروِ نیمه‌تأیید بماند.
       if (!approved.ok) throw new Error(`تأیید خودکار شکست خورد: ${approved.reason}`);
       return {
-        ok: true, reservationId: resv.id, deduped: false,
+        ok: true, reservationId: resvId, deduped: false,
         autoApproved: {
           salesRequestId: approved.salesRequestId,
           orderValue: decision.orderValue,
@@ -289,6 +316,6 @@ export async function reserveIn(
       };
     }
 
-    return { ok: true, reservationId: resv.id, deduped: false };
+    return { ok: true, reservationId: resvId, deduped: false };
   }
 }
