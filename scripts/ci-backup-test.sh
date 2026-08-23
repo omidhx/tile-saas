@@ -250,10 +250,12 @@ mkdir -p "${BACKUP_DIR}" "${STATUS_DIR}"
 log "--- Step 0/9: Re-apply migrations + seed minimal data ---"
 
 # Run apply.ts to populate _migrations table (needs node + tsx from web/)
+# NODE_PATH is needed because apply.ts is in db/migrations/ but node_modules is in web/
 if [ -f "${PROJECT_ROOT}/db/migrations/apply.ts" ]; then
   cd "${PROJECT_ROOT}/web"
   DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}" \
     AUTH_SECRET="ci-secret-must-be-at-least-32-characters-long-for-tests-only" \
+    NODE_PATH="${PROJECT_ROOT}/web/node_modules" \
     node --import tsx "${PROJECT_ROOT}/db/migrations/apply.ts" \
     2>"${TMP_DIR}/migrations_apply.log" || {
     error "apply.ts failed"
