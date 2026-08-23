@@ -252,9 +252,69 @@ postgresql.conf:
 
 ---
 
-## ۱۰. خطوطِ پایانی
+## ۱۰. Secret Management — ذخیره‌سازیِ امنِ Passphrase و SSH Keys
+
+این بخش مهم‌ترین قسمتِ امنیتیِ فاز ۸ است. اگر passphrase یا SSH key لو برود،
+مهاجم می‌تواند بکاپ‌ها را decrypt کند یا به storage off-site دسترسی پیدا کند.
+
+### ۱۰.۱ Passphrase (`BACKUP_GPG_PASSPHRASE`)
+
+**کجا نگهداری شود:**
+
+| محل | مناسب؟ | توضیح |
+|---|---|---|
+| Password manager (1Password، Bitwarden، KeePass) | ✅ | بهترین گزینه — encrypted at rest، share بینِ team members. |
+| Vault (HashiCorp Vault، AWS Secrets Manager) | ✅ | برایِ enterprise — auto-rotation، audit log. |
+| `.env` روی VPS production | ⚠️ | قابلِ قبول فقط اگر VPS hardened است و فقط ۱–۲ نفر root دارند. |
+| Git repository | ❌ | هرگز — حتی private repo. |
+| Slack/email/chat | ❌ | هرگز — ممکن است لاگ شود. |
+| همان VPS که دیتابیس روش اجرا می‌شود (بدون encryption) | ❌ | اگر VPS هک شود، بکاپ هم لو می‌رود. |
+
+**قوانین:**
+- حداقل ۳۲ کاراکتر — `openssl rand -base64 32` برایِ تولید.
+- حداقل دو نفر باید به آن دسترسی داشته باشند (bus factor).
+- در صورتِ suspicion به leak — فوراً rotation: passphrase جدید، re-encrypt همه‌ی بکاپ‌های موجود، delete بکاپ‌های قبلی.
+- هرگز در logs، console، error messages چاپ نشود — اسکریپت‌ها از `--passphrase-fd 0` استفاده می‌کنند و `set -x` را رد می‌کنند (defense-in-depth).
+
+### ۱۰.۲ SSH Key برایِ rsync off-site (`BACKUP_OFFSITE_SSH_KEY`)
+
+**قوانین:**
+- کلیدِ اختصاصی برایِ backup — نه کلیدِ root یا کلیدِ production.
+- Passphrase روی کلید: اختیاری ولی توصیه می‌شود (اگر `ssh-agent` اجرا می‌شود).
+- Permission فایل کلید: `0600` یا `0400` (ssh در غیر این صورت رد می‌کند).
+- کلیدِ عمومی روی سرورِ off-site در `~/.ssh/authorized_keys` — با restriction:
+  ```
+  # در ~/.ssh/authorized_keys روی سرورِ backup:
+  command="rsync --server -vlogDtprze.iLs --timeout=300 . /backups/tile-saas/",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding ssh-ed25519 AAAA... backup@tile-saas-prod
+  ```
+  این جلویِ اجرایِ دستورهای دیگر را می‌گیرد — حتی اگر کلید لو شود، مهاجم فقط می‌تواند به `backups/tile-saas/` فایل بنویسد.
+- rotation: سالانه یا در صورتِ suspicion.
+
+### ۱۰.۳ `POSTGRES_PASSWORD`
+
+- در `.env` روی VPS production — فقط root خوانده می‌شود.
+- در password manager (برایِ restore در VPS جدید).
+- هرگز در backup file ذخیره نمی‌شود (pg_dump با `--no-owner --no-privileges` گرفته می‌شود).
+
+### ۱۰.۴ Audit Checklist (هفتگی)
+
+```text
+[ ] BACKUP_GPG_PASSPHRASE در password manager موجود است؟
+[ ] حداقل دو نفر به passphrase دسترسی دارند؟
+[ ] SSH key backup فقط permission 0600 دارد؟
+[ ] SSH key backup در authorized_keysِ سرورِ off-site با command= restriction است؟
+[ ] هیچ passphrase یا password در git نیست؟ (grep -r 'BACKUP_GPG_PASSPHRASE' .)
+[ ] فایل‌های .gpg و .sha256 در backups/daily/ فقط 0600 هستند؟
+[ ] status file (backup-status.json) 0644 است و هیچ secret ندارد؟
+[ ] در لاگ‌های آخرین هفته هیچ passphrase چاپ نشده؟
+```
+
+---
+
+## ۱۱. خطوطِ پایانی
 
 - این سند با هر تغییرِ RPO/RTO/retention به‌روزرسانی می‌شود.
 - تغییرات در `CHANGELOG.md` اشاره می‌شوند.
 - اسکریپت‌ها مقادیر را از env vars می‌خوانند — این سند اسنادِ آن مقادیر است.
 - در صورتِ تناقضِ بینِ سند و کد، کد حاکم است ولی bug گزارش می‌شود.
+- **اگر passphrase گم شود:** همه‌ی بکاپ‌ها قابلِ بازیابی نیستند. این ریسکِ پذیرفته‌شده‌ست و در بخشِ ۹ مستند شده.

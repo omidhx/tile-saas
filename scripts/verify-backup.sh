@@ -13,10 +13,15 @@
 # این verify سریع است (۲–۵ ثانیه برایِ بکاپِ متوسط) و برایِ monitoring
 # روزانه مناسب است. برایِ تستِ واقعیِ restore، از `scripts/restore-db.sh` استفاده کنید.
 #
+# Security:
+#   - Passphrase هرگز در args نیست (stdin از طریقِ --passphrase-fd 0)
+#   - gpg stderr به فایلِ موقت هدایت می‌شود (نه به console)
+#   - فایلِ decrypt شده در /tmp با chmod 700 ساخته می‌شود و بعداً پاک می‌شود
+#   - `set -x` غیرفعال است (passphrase leak prevention)
+#
 # Usage:
 #   bash scripts/verify-backup.sh [backup-file]
-#
-# اگر backup-file داده نشود، آخرین بکاپِ موفق در `backups/daily/` استفاده می‌شود.
+#   COMPOSE_FILE=docker-compose.staging.yml bash scripts/verify-backup.sh
 #
 # Exit codes:
 #   0 — verify موفق
@@ -29,6 +34,13 @@
 # =============================================================================
 
 set -euo pipefail
+
+# Anti-leak defenses — same as backup-db.sh
+if [[ "${-}" == *x* ]]; then
+  echo "ERROR: this script must not run with 'set -x' (passphrase leak risk)" >&2
+  exit 1
+fi
+set +o history 2>/dev/null || true
 
 if [ -t 1 ]; then
   RED='\033[0;31m'
@@ -53,13 +65,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="${PROJECT_ROOT}/backups/daily"
 
-# Load .env
+# Load .env (selectively, same pattern as backup-db.sh)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
-  # shellcheck disable=SC1091
-  set -a; source "${PROJECT_ROOT}/.env" 2>/dev/null || true; set +a
+  set -a
+  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
+    for var in BACKUP_GPG_PASSPHRASE COMPOSE_FILE; do
+      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
+    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  set +a
 fi
 
 BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/BACKUP_POLICY.md}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 
 # Find backup file to verify
 BACKUP_FILE="${1:-}"
@@ -83,6 +100,20 @@ if [ ! -f "${BACKUP_FILE}" ]; then
 fi
 
 log "Verifying: ${BACKUP_FILE}"
+
+# Temporary directory for all intermediate files (cleaned on exit)
+TMP_VERIFY=$(mktemp -d)
+chmod 700 "${TMP_VERIFY}"
+
+# Cleanup function — defined BEFORE trap
+cleanup() {
+  local exit_code=$?
+  if [ -n "${TMP_VERIFY:-}" ] && [ -d "${TMP_VERIFY}" ]; then
+    rm -rf "${TMP_VERIFY}" 2>/dev/null || true
+  fi
+  exit $exit_code
+}
+trap cleanup EXIT INT TERM HUP
 
 # ──────────────────────────────────────────────────────────
 # 1. File exists and is non-empty
@@ -120,9 +151,8 @@ fi
 # 3. GPG decrypt
 # ──────────────────────────────────────────────────────────
 log "Step 3/6: GPG decrypt"
-TMP_VERIFY=$(mktemp -d)
-trap 'rm -rf "${TMP_VERIFY}"' EXIT
 
+# Passphrase via stdin; gpg stderr to temp log (NEVER to console)
 if ! echo "${BACKUP_GPG_PASSPHRASE}" | gpg \
   --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
   --decrypt "${BACKUP_FILE}" 2>"${TMP_VERIFY}/gpg.log" \
@@ -166,30 +196,33 @@ fi
 ok "PGDMP magic OK"
 
 # ──────────────────────────────────────────────────────────
-# 6. pg_restore --list (sanity check that schema is intact)
+# 6. pg_restore --list (validate schema)
 # ──────────────────────────────────────────────────────────
 log "Step 6/6: pg_restore --list (validate schema)"
 # pg_restore can read the custom-format file and list its contents without
 # connecting to a database. This verifies the dump is internally consistent.
 
-# Find pg_restore — try docker first (postgres container), then host
-PG_RESTORE_BIN=""
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "postgres"; then
-  PG_RESTORE_BIN="docker compose -f ${PROJECT_ROOT}/docker-compose.yml exec -T postgres pg_restore"
+# Build command as an ARRAY (no string splitting, no eval)
+# Prefer docker compose (uses COMPOSE_FILE env var) — fall back to host pg_restore
+pg_restore_cmd=()
+if docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" ps postgres 2>/dev/null | grep -q "postgres"; then
+  pg_restore_cmd=(
+    docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres pg_restore
+  )
+elif command -v pg_restore >/dev/null 2>&1; then
+  pg_restore_cmd=(pg_restore)
 else
-  if command -v pg_restore >/dev/null 2>&1; then
-    PG_RESTORE_BIN="pg_restore"
-  else
-    warn "pg_restore not available — skipping schema list check"
-    warn "Install PostgreSQL client tools OR run with Docker Compose up"
-    ok "Verify passed (without pg_restore --list)"
-    exit 0
-  fi
+  warn "pg_restore not available — skipping schema list check"
+  warn "Install PostgreSQL client tools OR run with Docker Compose up"
+  ok "Verify passed (without pg_restore --list)"
+  # Reset trap to skip cleanup-on-exit double-call
+  trap - EXIT INT TERM HUP
+  cleanup
+  exit 0
 fi
 
-# Copy the dump file into a path pg_restore can read
-# If using Docker, we need to pipe via stdin
-TABLE_COUNT=$(${PG_RESTORE_BIN} --list "${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || echo "0")
+# Run pg_restore --list, count entries
+TABLE_COUNT=$("${pg_restore_cmd[@]}" --list "${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || echo "0")
 if [ "${TABLE_COUNT}" -lt 10 ]; then
   error "pg_restore --list returned too few entries (${TABLE_COUNT})"
   error "Expected ≥ 10 tables, got ${TABLE_COUNT}"
@@ -210,4 +243,7 @@ ok ""
 ok "Backup file is valid and ready for restore."
 ok "For full restore test, run: bash scripts/restore-db.sh ${BACKUP_FILE}"
 
+# Reset trap to skip cleanup-on-exit double-call
+trap - EXIT INT TERM HUP
+cleanup
 exit 0

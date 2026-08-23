@@ -10,7 +10,13 @@
 #   ۵. در صورتِ موفقیت، timestamp را در `backup-status.json` ثبت می‌کند
 #   ۶. دیتابیس موقت را پاک می‌کند
 #
-# ⚠️  این اسکریپت هرگز به production database نمی‌زند. فقط `tile_restore_test`.
+# ⚠️  این اسکریپت هرگز به production database نمی‌زند. فقط دیتابیسِ
+#     `RESTORE_DB_NAME` (پیش‌فرض: `tile_restore_test`).
+#
+# Safety:
+#   - RESTORE_DB_NAME اعتبارسنجی می‌شود: باید با `^[a-zA-Z_][a-zA-Z0-9_]*$`
+#     مطابقت کند و نباید برابر با POSTGRES_DB باشد.
+#   - اگر RESTORE_DB_NAME برابر با POSTGRES_DB باشد، اسکریپت fail-loud می‌شود.
 #
 # Usage:
 #   bash scripts/restore-db.sh [backup-file]
@@ -19,15 +25,21 @@
 #
 # Exit codes:
 #   0 — restore test موفق
-#   1 — pre-flight failure
+#   1 — pre-flight failure (env, validation, docker)
 #   2 — decrypt/decompress failed
 #   3 — restore failed
 #   4 — integrity check failed
 #   5 — smoke test failed
-#   6 — status update failed
 # =============================================================================
 
 set -euo pipefail
+
+# Anti-leak defenses — same as backup-db.sh
+if [[ "${-}" == *x* ]]; then
+  echo "ERROR: this script must not run with 'set -x' (passphrase leak risk)" >&2
+  exit 1
+fi
+set +o history 2>/dev/null || true
 
 if [ -t 1 ]; then
   RED='\033[0;31m'
@@ -54,10 +66,15 @@ BACKUP_DIR="${PROJECT_ROOT}/backups/daily"
 STATUS_DIR="${PROJECT_ROOT}/backups/status"
 STATUS_FILE="${STATUS_DIR}/backup-status.json"
 
-# Load .env
+# Load .env (selectively, same pattern as backup-db.sh)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
-  # shellcheck disable=SC1091
-  set -a; source "${PROJECT_ROOT}/.env" 2>/dev/null || true; set +a
+  set -a
+  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
+    for var in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
+               BACKUP_GPG_PASSPHRASE BACKUP_RETENTION_DAYS COMPOSE_FILE RESTORE_DB_NAME; do
+      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
+    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  set +a
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-tile_app}"
@@ -69,6 +86,29 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 
 # Restore target — TEMPORARY database, never production
 RESTORE_DB_NAME="${RESTORE_DB_NAME:-tile_restore_test}"
+
+# ──────────────────────────────────────────────────────────
+# SAFETY: Validate RESTORE_DB_NAME
+# ──────────────────────────────────────────────────────────
+# Must be a valid PostgreSQL identifier (letters, digits, underscores).
+# Must NOT equal POSTGRES_DB (would clobber production!).
+if ! [[ "${RESTORE_DB_NAME}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+  echo "ERROR: RESTORE_DB_NAME contains invalid characters: '${RESTORE_DB_NAME}'" >&2
+  echo "ERROR: must match ^[a-zA-Z_][a-zA-Z0-9_]*\$" >&2
+  exit 1
+fi
+
+if [ "${RESTORE_DB_NAME}" = "${POSTGRES_DB}" ]; then
+  echo "ERROR: RESTORE_DB_NAME ('${RESTORE_DB_NAME}') must NOT equal POSTGRES_DB ('${POSTGRES_DB}')" >&2
+  echo "ERROR: this would clobber the PRODUCTION database!" >&2
+  echo "ERROR: override with: RESTORE_DB_NAME=tile_restore_test bash scripts/restore-db.sh ..." >&2
+  exit 1
+fi
+
+# Optional: warn if RESTORE_DB_NAME doesn't end with _test or _restore
+if ! [[ "${RESTORE_DB_NAME}" =~ _test$|_restore$|_restore_test$ ]]; then
+  warn "RESTORE_DB_NAME ('${RESTORE_DB_NAME}') doesn't end with '_test' or '_restore' — please double-check this is not a production database"
+fi
 
 # Parse args
 BACKUP_FILE=""
@@ -85,6 +125,13 @@ for arg in "$@"; do
       ;;
     -h|--help)
       echo "Usage: bash scripts/restore-db.sh [backup-file | --test-only] [--no-cleanup]"
+      echo ""
+      echo "Options:"
+      echo "  --test-only   Use the most recent backup in backups/daily/"
+      echo "  --no-cleanup  Keep the temporary database and files (for debugging)"
+      echo ""
+      echo "Env:"
+      echo "  RESTORE_DB_NAME  (default: tile_restore_test) — must not equal POSTGRES_DB"
       exit 0
       ;;
     *)
@@ -128,9 +175,11 @@ if ! docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" ps postgres 2>/dev/null
   exit 1
 fi
 
-# Helper: run psql inside container as superuser (POSTGRES_USER has full access
-# inside the postgres container; it's NOT the runtime app_user)
+# ──────────────────────────────────────────────────────────
+# Helper functions — defined BEFORE the trap that references them
+# ──────────────────────────────────────────────────────────
 psql_super() {
+  # Run psql inside container, non-interactive (-T), with PGPASSWORD in env
   docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres \
     psql -U "${POSTGRES_USER}" -v ON_ERROR_STOP=1 "$@"
 }
@@ -145,27 +194,55 @@ pg_restore_cmd() {
     pg_restore "$@"
 }
 
+# Temporary directory for logs and intermediate files
+TMP_RESTORE=$(mktemp -d)
+chmod 700 "${TMP_RESTORE}"
+
+# Container path for the dump file (cleaned up on exit)
+CONTAINER_DUMP_PATH="/tmp/restore-$(date +%s).dump"
+
+# Cleanup function — handles all exit paths
+# Note: we set a flag so we don't try to drop a database we never created.
+RESTORE_DONE=false
+maybe_cleanup() {
+  # Clean up temp files
+  if [ -n "${TMP_RESTORE:-}" ] && [ -d "${TMP_RESTORE}" ]; then
+    rm -rf "${TMP_RESTORE}" 2>/dev/null || true
+  fi
+
+  # Clean up the dump file inside the container (always — best effort)
+  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres \
+    rm -f "${CONTAINER_DUMP_PATH}" 2>/dev/null || true
+
+  if [ "${NO_CLEANUP}" = true ]; then
+    warn "Skipping DB cleanup (--no-cleanup)"
+    warn "Temporary database '${RESTORE_DB_NAME}' left in place — drop manually:"
+    warn "  docker compose exec postgres psql -U ${POSTGRES_USER} -c 'DROP DATABASE ${RESTORE_DB_NAME};'"
+    return
+  fi
+
+  # Only drop the database if we created it (RESTORE_DONE=true means success path)
+  # On pre-restore failure, we may not have created it — but if we did, we should still clean up.
+  log "Cleanup: dropping ${RESTORE_DB_NAME} (if exists)"
+  psql_super -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || \
+    warn "Could not drop ${RESTORE_DB_NAME} (may need manual cleanup)"
+}
+
+cleanup_exit() {
+  local exit_code=$?
+  maybe_cleanup
+  exit $exit_code
+}
+
+# Trap on EXIT, INT, TERM, HUP — all paths clean up
+trap cleanup_exit EXIT INT TERM HUP
+
 # ──────────────────────────────────────────────────────────
 # 1. Decrypt + decompress
 # ──────────────────────────────────────────────────────────
 log "Step 1/5: Decrypt + decompress"
-TMP_RESTORE=$(mktemp -d)
-trap 'rm -rf "${TMP_RESTORE}"; maybe_cleanup' EXIT
 
-maybe_cleanup() {
-  if [ "${NO_CLEANUP}" = true ]; then
-    warn "Skipping DB cleanup (--no-cleanup)"
-    warn "Temporary files in: ${TMP_RESTORE}"
-    warn "Temporary database: ${RESTORE_DB_NAME} (drop manually with: docker compose exec postgres psql -U ${POSTGRES_USER} -c 'DROP DATABASE ${RESTORE_DB_NAME}')"
-    return
-  fi
-
-  # Drop the temporary database
-  log "Cleanup: dropping ${RESTORE_DB_NAME}"
-  psql_super -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || warn "Could not drop ${RESTORE_DB_NAME}"
-  rm -rf "${TMP_RESTORE}"
-}
-
+# Passphrase via stdin, gpg stderr to temp log (not console)
 if ! echo "${BACKUP_GPG_PASSPHRASE}" | gpg \
   --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
   --decrypt "${BACKUP_FILE}" 2>"${TMP_RESTORE}/gpg.log" \
@@ -194,10 +271,9 @@ ok "Decrypt + decompress OK"
 # ──────────────────────────────────────────────────────────
 log "Step 2/5: Recreate temporary database '${RESTORE_DB_NAME}'"
 
-# Disconnect any lingering sessions
-psql_super -d postgres <<SQL 2>/dev/null || true
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();
-SQL
+# Disconnect any lingering sessions (use parameterized SQL — RESTORE_DB_NAME
+# is already validated to be a safe identifier, but we double-quote it in SQL)
+psql_super -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" 2>/dev/null || true
 
 psql_super -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";"
 psql_super -d postgres -c "CREATE DATABASE \"${RESTORE_DB_NAME}\";"
@@ -208,11 +284,17 @@ ok "Database recreated"
 # ──────────────────────────────────────────────────────────
 log "Step 3/5: pg_restore into ${RESTORE_DB_NAME}"
 
-# Copy dump file into the container's /tmp so pg_restore can read it
-# (We avoid piping via stdin because pg_restore wants a seekable file for parallel mode)
-CONTAINER_DUMP_PATH="/tmp/restore-$(date +%s).dump"
+# Copy dump file into the container so pg_restore can read it as a seekable file.
+# We use a timestamped path to avoid collisions with concurrent restores.
 docker cp "${TMP_RESTORE}/dump.sql" \
-  "$(docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" ps -q postgres):${CONTAINER_DUMP_PATH}" 2>/dev/null
+  "$(docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" ps -q postgres):${CONTAINER_DUMP_PATH}" \
+  2>"${TMP_RESTORE}/docker_cp.log"
+
+if [ $? -ne 0 ]; then
+  error "docker cp failed — could not copy dump file into container"
+  cat "${TMP_RESTORE}/docker_cp.log" >&2 || true
+  exit 3
+fi
 
 if ! pg_restore_cmd \
   -U "${POSTGRES_USER}" \
@@ -223,13 +305,12 @@ if ! pg_restore_cmd \
   "${CONTAINER_DUMP_PATH}" 2>"${TMP_RESTORE}/pg_restore.log"; then
   error "pg_restore failed"
   cat "${TMP_RESTORE}/pg_restore.log" >&2 || true
-  # Cleanup the temp file in container
-  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres rm -f "${CONTAINER_DUMP_PATH}" 2>/dev/null || true
   exit 3
 fi
 
-# Clean up the dump file inside the container
-docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres rm -f "${CONTAINER_DUMP_PATH}" 2>/dev/null || true
+# Clean up the dump file inside the container (we have it locally too if needed)
+docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres \
+  rm -f "${CONTAINER_DUMP_PATH}" 2>/dev/null || true
 ok "pg_restore OK"
 
 # ──────────────────────────────────────────────────────────
@@ -239,8 +320,13 @@ log "Step 4/5: Integrity checks"
 CHECKS_PASS=true
 CHECKS_FAIL_LIST=""
 
+# Helper: run a SQL query and return the result (trimmed)
+query_db() {
+  psql_super_db -t -c "$1" 2>/dev/null | tr -d '[:space:]'
+}
+
 # Check 4.1: Database responsive
-RESULT=$(psql_super_db -t -c "SELECT 1;" 2>/dev/null | tr -d '[:space:]')
+RESULT=$(query_db "SELECT 1;")
 if [ "${RESULT}" != "1" ]; then
   error "Check 4.1 failed: SELECT 1 did not return 1 (got: '${RESULT}')"
   CHECKS_PASS=false
@@ -250,9 +336,9 @@ else
 fi
 
 # Check 4.2: Table count (≥ 38 per schema.sql)
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 38 ] 2>/dev/null; then
-  error "Check 4.2 failed: Expected ≥ 38 tables, got ${RESULT}"
+RESULT=$(query_db "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 38 ]; then
+  error "Check 4.2 failed: Expected ≥ 38 tables, got '${RESULT}'"
   CHECKS_PASS=false
   CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} table_count"
 else
@@ -260,9 +346,9 @@ else
 fi
 
 # Check 4.3: Migrations table populated (≥ 4 migrations: 0002, 0003, 0004, ...)
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM _migrations;" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 4 ] 2>/dev/null; then
-  error "Check 4.3 failed: Expected ≥ 4 migrations, got ${RESULT}"
+RESULT=$(query_db "SELECT count(*) FROM _migrations;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 4 ]; then
+  error "Check 4.3 failed: Expected ≥ 4 migrations, got '${RESULT}'"
   CHECKS_PASS=false
   CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} migrations"
 else
@@ -270,8 +356,8 @@ else
 fi
 
 # Check 4.4: Tenant exists
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM tenant;" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 1 ] 2>/dev/null; then
+RESULT=$(query_db "SELECT count(*) FROM tenant;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 1 ]; then
   error "Check 4.4 failed: No tenants found in restored database"
   CHECKS_PASS=false
   CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} tenant"
@@ -280,8 +366,8 @@ else
 fi
 
 # Check 4.5: Platform admin exists
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM app_user WHERE is_platform_admin;" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 1 ] 2>/dev/null; then
+RESULT=$(query_db "SELECT count(*) FROM app_user WHERE is_platform_admin;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 1 ]; then
   error "Check 4.5 failed: No platform admin in restored database"
   CHECKS_PASS=false
   CHECKS_FAIL_LIST="${CHECKS_FAIL_LIST} platform_admin"
@@ -290,14 +376,7 @@ else
 fi
 
 # Check 4.6: All foreign key constraints are valid
-RESULT=$(psql_super_db -t -c "
-  SELECT con.conname
-  FROM pg_constraint con
-  JOIN pg_class rel ON rel.oid = con.conrelid
-  JOIN pg_namespace nsp ON nsp.oid = connamespace
-  WHERE con.contype = 'f' AND nsp.nspname = 'public'
-  LIMIT 1;
-" 2>/dev/null | tr -d '[:space:]')
+RESULT=$(query_db "SELECT con.conname FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid JOIN pg_namespace nsp ON nsp.oid = connamespace WHERE con.contype = 'f' AND nsp.nspname = 'public' LIMIT 1;")
 if [ -z "${RESULT}" ]; then
   warn "Check 4.6: No FK constraints found (suspicious — schema may be incomplete)"
   # Don't fail, just warn
@@ -306,22 +385,17 @@ else
 fi
 
 # Check 4.7: RLS policies installed
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM pg_policy;" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 1 ] 2>/dev/null; then
+RESULT=$(query_db "SELECT count(*) FROM pg_policy;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 1 ]; then
   warn "Check 4.7: No RLS policies found (suspicious — RLS may not have been backed up)"
 else
   ok "Check 4.7: RLS policies OK — ${RESULT} policies"
 fi
 
 # Check 4.8: SECURITY DEFINER functions exist
-RESULT=$(psql_super_db -t -c "
-  SELECT count(*)
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public' AND p.prosecdef = true;
-" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 4 ] 2>/dev/null; then
-  warn "Check 4.8: Expected ≥ 4 SECURITY DEFINER functions, got ${RESULT}"
+RESULT=$(query_db "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosecdef = true;")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 4 ]; then
+  warn "Check 4.8: Expected ≥ 4 SECURITY DEFINER functions, got '${RESULT}'"
 else
   ok "Check 4.8: SECURITY DEFINER functions OK — ${RESULT} functions"
 fi
@@ -340,7 +414,7 @@ log "Step 5/5: Smoke queries (application-level)"
 SMOKE_PASS=true
 
 # Smoke 5.1: user_contexts function works (SECURITY DEFINER)
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM user_contexts('00000000-0000-0000-0000-000000000000');" 2>/dev/null | tr -d '[:space:]')
+RESULT=$(query_db "SELECT count(*) FROM user_contexts('00000000-0000-0000-0000-000000000000');")
 if [ -z "${RESULT}" ]; then
   error "Smoke 5.1 failed: user_contexts() returned no result"
   SMOKE_PASS=false
@@ -349,7 +423,7 @@ else
 fi
 
 # Smoke 5.2: expire_due_reservations function callable
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM expire_due_reservations();" 2>/dev/null | tr -d '[:space:]')
+RESULT=$(query_db "SELECT count(*) FROM expire_due_reservations();")
 if [ -z "${RESULT}" ]; then
   error "Smoke 5.2 failed: expire_due_reservations() returned no result"
   SMOKE_PASS=false
@@ -358,7 +432,7 @@ else
 fi
 
 # Smoke 5.3: claim_pending_notifications callable
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM claim_pending_notifications(1, 10);" 2>/dev/null | tr -d '[:space:]')
+RESULT=$(query_db "SELECT count(*) FROM claim_pending_notifications(1, 10);")
 if [ -z "${RESULT}" ]; then
   error "Smoke 5.3 failed: claim_pending_notifications() returned no result"
   SMOKE_PASS=false
@@ -367,22 +441,17 @@ else
 fi
 
 # Smoke 5.4: _rate_limit_hits table is accessible
-RESULT=$(psql_super_db -t -c "SELECT count(*) FROM _rate_limit_hits;" 2>/dev/null | tr -d '[:space:]')
-if [ -z "${RESULT}" ] && [ "${RESULT}" != "0" ]; then
+RESULT=$(query_db "SELECT count(*) FROM _rate_limit_hits;")
+if [ -z "${RESULT}" ]; then
   error "Smoke 5.4 failed: cannot read _rate_limit_hits"
   SMOKE_PASS=false
 else
   ok "Smoke 5.4: _rate_limit_hits OK — ${RESULT} rows"
 fi
 
-# Smoke 5.5: Transactional consistency — pick a known table and verify it has the
-# expected columns (catches partial restore)
-RESULT=$(psql_super_db -t -c "
-  SELECT count(*)
-  FROM information_schema.columns
-  WHERE table_schema='public' AND table_name='app_user';
-" 2>/dev/null | tr -d '[:space:]')
-if [ "${RESULT}" -lt 5 ] 2>/dev/null; then
+# Smoke 5.5: Transactional consistency — app_user table has expected columns
+RESULT=$(query_db "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='app_user';")
+if ! [[ "${RESULT}" =~ ^[0-9]+$ ]] || [ "${RESULT}" -lt 5 ]; then
   error "Smoke 5.5 failed: app_user table has too few columns (${RESULT})"
   SMOKE_PASS=false
 else
@@ -404,48 +473,48 @@ log "Updating status file with restore_test timestamp"
 
 mkdir -p "${STATUS_DIR}"
 
-# Read existing status file (if any) to preserve last_success_* fields
+# Read existing status file to preserve all other fields (last_success_*, etc.)
 LAST_SUCCESS_AT_VAL="null"
 LAST_SUCCESS_SIZE_VAL="null"
 LAST_SUCCESS_SHA256_VAL="null"
 LAST_FAILURE_AT_VAL="null"
 LAST_FAILURE_REASON_VAL="null"
 BACKUP_AGE_VAL="null"
-RETENTION_DAYS_VAL=30
+RETENTION_DAYS_VAL="${BACKUP_RETENTION_DAYS:-30}"
 
 if [ -f "${STATUS_FILE}" ]; then
-  LAST_SUCCESS_AT_VAL=$(grep -o '"last_success_at": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/\1/' || echo "")
-  LAST_SUCCESS_AT_VAL=${LAST_SUCCESS_AT_VAL:+\"${LAST_SUCCESS_AT_VAL}\"}
-  LAST_SUCCESS_AT_VAL=${LAST_SUCCESS_AT_VAL:-null}
+  LAST_SUCCESS_AT_VAL=$(grep -o '"last_success_at": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/"\1"/' || echo "null")
+  LAST_SUCCESS_AT_VAL="${LAST_SUCCESS_AT_VAL:-null}"
 
   LAST_SUCCESS_SIZE_VAL=$(grep -o '"last_success_size_bytes": [0-9]*' "${STATUS_FILE}" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo "null")
-  LAST_SUCCESS_SIZE_VAL=${LAST_SUCCESS_SIZE_VAL:-null}
+  LAST_SUCCESS_SIZE_VAL="${LAST_SUCCESS_SIZE_VAL:-null}"
 
-  LAST_SUCCESS_SHA256_VAL=$(grep -o '"last_success_sha256": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/\1/' || echo "")
-  LAST_SUCCESS_SHA256_VAL=${LAST_SUCCESS_SHA256_VAL:+\"${LAST_SUCCESS_SHA256_VAL}\"}
-  LAST_SUCCESS_SHA256_VAL=${LAST_SUCCESS_SHA256_VAL:-null}
+  LAST_SUCCESS_SHA256_VAL=$(grep -o '"last_success_sha256": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/"\1"/' || echo "null")
+  LAST_SUCCESS_SHA256_VAL="${LAST_SUCCESS_SHA256_VAL:-null}"
 
-  LAST_FAILURE_AT_VAL=$(grep -o '"last_failure_at": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/\1/' || echo "")
-  LAST_FAILURE_AT_VAL=${LAST_FAILURE_AT_VAL:+\"${LAST_FAILURE_AT_VAL}\"}
-  LAST_FAILURE_AT_VAL=${LAST_FAILURE_AT_VAL:-null}
+  LAST_FAILURE_AT_VAL=$(grep -o '"last_failure_at": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/"\1"/' || echo "null")
+  LAST_FAILURE_AT_VAL="${LAST_FAILURE_AT_VAL:-null}"
 
-  LAST_FAILURE_REASON_VAL=$(grep -o '"last_failure_reason": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/\1/' || echo "")
-  LAST_FAILURE_REASON_VAL=${LAST_FAILURE_REASON_VAL:+\"${LAST_FAILURE_REASON_VAL}\"}
-  LAST_FAILURE_REASON_VAL=${LAST_FAILURE_REASON_VAL:-null}
+  LAST_FAILURE_REASON_VAL=$(grep -o '"last_failure_reason": "[^"]*"' "${STATUS_FILE}" 2>/dev/null | head -1 | sed 's/.*: "\(.*\)"/"\1"/' || echo "null")
+  LAST_FAILURE_REASON_VAL="${LAST_FAILURE_REASON_VAL:-null}"
 
-  RETENTION_DAYS_VAL=$(grep -o '"retention_days": [0-9]*' "${STATUS_FILE}" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo "30")
-  RETENTION_DAYS_VAL=${RETENTION_DAYS_VAL:-30}
+  RETENTION_DAYS_VAL=$(grep -o '"retention_days": [0-9]*' "${STATUS_FILE}" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo "${RETENTION_DAYS_VAL}")
+  RETENTION_DAYS_VAL="${RETENTION_DAYS_VAL:-${BACKUP_RETENTION_DAYS:-30}}"
 fi
 
-# Compute backup_age_seconds if we have last_success_at
+# Compute backup_age_seconds from last_success_at
 if [ "${LAST_SUCCESS_AT_VAL}" != "null" ]; then
   LAST_SUCCESS_TS=$(echo "${LAST_SUCCESS_AT_VAL}" | tr -d '"')
-  if LAST_SUCCESS_EPOCH=$(date -u -d "${LAST_SUCCESS_TS}" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${LAST_SUCCESS_TS}" +%s 2>/dev/null); then
+  if LAST_SUCCESS_EPOCH=$(date -u -d "${LAST_SUCCESS_TS}" +%s 2>/dev/null); then
     BACKUP_AGE_VAL=$((RESTORE_END - LAST_SUCCESS_EPOCH))
   fi
 fi
 
-cat > "${STATUS_FILE}" <<EOF
+# Atomic write: temp file + chmod 0644 + rename
+TMP_STATUS=$(mktemp "${STATUS_DIR}/.backup-status.XXXXXX")
+chmod 0644 "${TMP_STATUS}"
+
+cat > "${TMP_STATUS}" <<JSON
 {
   "last_success_at": ${LAST_SUCCESS_AT_VAL},
   "last_failure_at": ${LAST_FAILURE_AT_VAL},
@@ -457,8 +526,12 @@ cat > "${STATUS_FILE}" <<EOF
   "restore_test_last_failure_at": null,
   "retention_days": ${RETENTION_DAYS_VAL}
 }
-EOF
+JSON
+
+mv -f "${TMP_STATUS}" "${STATUS_FILE}"
 ok "Status file updated"
+
+RESTORE_DONE=true
 
 # ──────────────────────────────────────────────────────────
 # Summary
@@ -474,4 +547,7 @@ ok "Status file:    ${STATUS_FILE}"
 ok ""
 ok "Restore test SUCCEEDED — backup is restorable."
 
+# Reset trap to avoid re-running cleanup logic unnecessarily on normal exit
+trap - EXIT INT TERM HUP
+maybe_cleanup
 exit 0

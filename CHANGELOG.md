@@ -5,6 +5,81 @@
 
 ## [Unreleased]
 
+### Security Hardening (Phase 8 — post-review)
+
+بازبینیِ امنیتی/عملیاتیِ فاز ۸ قبل از production — رفعِ ۱۴ finding:
+
+- **Status file staleness (Critical):** `backup-db.sh` در startup فایلِ status
+  موجود را می‌خواند و `last_success_at` قبلی را در حافظه نگه می‌دارد. اگر
+  بکاپِ جدید fail شود، status file به‌جایِ null شدن، آخرین موفقیتِ شناخته‌شده
+  را حفظ می‌کند. این رفعِ مهم‌ترین bug از نظرِ operation بود — قبلاً یک fail
+  نشانگر موفقیتِ قبلی را پاک می‌کرد.
+- **`eval rsync` حذف شد (Critical):** به‌جایِ ساختِ string و `eval`، از array
+  (`local_rsync_args`) استفاده می‌شود. این جلویِ word-splitting و injection
+  از طریقِ `BACKUP_OFFSITE_SSH_KEY` یا `BACKUP_OFFSITE_TARGET` را می‌گیرد.
+- **`RESTORE_DB_NAME` validation (Critical):** اگر کاربر آن را برابر با
+  `POSTGRES_DB` تنظیم کند، اسکریپت fail-loud می‌شود و از clobber کردنِ
+  production جلوگیری می‌کند. اعتبارسنجیِ regex `^[a-zA-Z_][a-zA-Z0-9_]*$` هم
+  SQL injection را بسته می‌کند.
+- **File permissions (Critical):** `.gpg` و `.sha256` با `chmod 600` ساخته
+  می‌شوند (owner-only). status file با `chmod 0644` ساخته می‌شود (readable by
+  app container). قبلاً umask پیش‌فرض (0644) اعمال می‌شد — یعنی همه‌ی
+  کاربرانِ host می‌توانستند بکاپِ رمزنگاری‌شده را بخوانند (که البته با
+  passphrase هنوز قابلِ decrypt نیست، ولی defense-in-depth لازم است).
+- **Atomic status write (Critical):** status file به temp file نوشته می‌شود،
+  سپس `mv -f` (atomic rename). اگر process در حینِ write بکشد، status file
+  نه نصفه می‌ماند نه corrupt.
+- **`BACKUP_RETENTION_DAYS` validation:** باید integer ≥ ۷ باشد. رد می‌کند
+  `abc` یا `3`.
+- **`BACKUP_OFFSITE_METHOD` validation:** فقط `rsync` پشتیبانی می‌شود.
+- **`BACKUP_OFFSITE_SSH_KEY` existence + permission check:** اگر فایل وجود
+  ندارد، fail-loud. اگر permission 0600/0400 ندارد، warn می‌دهد.
+- **Passphrase leak prevention:**
+  - `set +o history` در ابتدایِ هر اسکریپت (defense-in-depth).
+  - اسکریپت با `bash -x` اجرا نمی‌شود — اگر `${-}` شاملِ `x` باشد، exit 1
+    می‌کند (passphrase در trace چاپ می‌شد).
+  - gpg stderr به فایلِ موقت در `${TMP_DIR}` هدایت می‌شود (نه به console).
+    اگر gpg به‌اشتباه passphrase را در error message چاپ کند، در temp file
+    می‌رود که در حینِ cleanup پاک می‌شود.
+- **Signal handling:** `trap` اکنون روی EXIT، INT، TERM، HUP تنظیم شده (نه
+  فقط EXIT). اگر کاربر Ctrl+C بزند یا cron kill بفرستد، cleanup کامل اجرا
+  می‌شود.
+- **Temp file cleanup:** همه‌ی فایل‌های موقت در `${TMP_DIR}` (که با `chmod
+  700` ساخته می‌شود) قرار می‌گیرند و در حینِ cleanup پاک می‌شوند. قبلاً
+  `/tmp/verify.sql` و `/tmp/restore-*.dump` مستقیم در `/tmp` ساخته می‌شدند.
+- **`docker compose exec -T`:** همه‌ی فراخوانی‌های `docker compose exec` از
+  flag `-T` استفاده می‌کنند (غیرفعال‌کردنِ TTY) — ضروری برایِ اجرایِ
+  non-interactive در cron و CI.
+- **`verify-backup.sh`:** از `docker compose ps postgres` استفاده می‌کند
+  (نه `docker ps | grep postgres`). قبلاً کانتینرهای نامرتبط را match می‌کرد.
+- **`verify-backup.sh`:** `pg_restore_cmd` به‌صورتِ array تعریف می‌شود (نه
+  string) — جلویِ word-splitting را در مسیرهایی با فاصله می‌گیرد.
+- **`verify-backup.sh`:** از `COMPOSE_FILE` env var استفاده می‌کند (نه
+  hardcoded `docker-compose.yml`).
+- **`restore-db.sh`:** تابعِ `maybe_cleanup` قبل از trap تعریف می‌شود
+  (نه بعد) — اگر script قبل از تعریفِ تابع exit کند، trap خراب نمی‌شود.
+- **`docs/BACKUP_POLICY.md` بخش ۱۰:** Secret Management کامل اضافه شد —
+  جدولِ محلِ ذخیره‌سازیِ passphrase (password manager ✅ / git ❌)، قوانینِ
+  SSH key برایِ rsync (command= restriction در authorized_keys)، audit
+  checklist هفتگی.
+- **`docs/KNOWN_ISSUES.md`:** AUD-009 ثبت شد — فایل‌های `private/uploads/`
+  توسطِ سیستمِ backup پشتیبانی نمی‌شوند و در فاز ۹ اضافه خواهند شد.
+- **`web/src/lib/backupHardening.test.ts`:** ۳۶ تستِ security/operational که
+  همه‌ی اصلاحاتِ بالا را verify می‌کنند:
+  - bash syntax check (4 اسکریپت)
+  - env var validation (RETENTION_DAYS، PASSPHRASE، PASSWORD، SSH_KEY، METHOD)
+  - production safety (RESTORE_DB_NAME ≠ POSTGRES_DB)
+  - SQL injection prevention (RESTORE_DB_NAME regex)
+  - passphrase leak prevention (set -x rejection، set +o history،
+    --passphrase-fd 0)
+  - file permissions (chmod 600/0644)
+  - atomic write (temp + mv)
+  - trap coverage (EXIT INT TERM HUP)
+  - `eval rsync` absent
+  - `docker compose exec -T` everywhere
+  - status file staleness prevention (reads existing at startup)
+  - maybe_cleanup defined before trap
+
 ### Added (Phase 8 — Backup, Restore & Disaster Recovery)
 
 > **وضعیت: «پیاده‌سازی شد، آماده‌ی فعال‌سازی روی VPS»** — اسکریپت‌ها، تست‌ها و
