@@ -140,7 +140,9 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // فایلِ استاتیک/آپلود/API لازم ندارد؛ فقط مسیرهایی که واقعاً HTML رندر می‌کنند
-  // یا API routeها (برای CSRF check).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json|uploads/).*)"],
+  // فایلِ استاتیک/API لازم ندارد؛ فقط مسیرهایی که واقعاً HTML رندر می‌کنند
+  // یا API routeها (برای CSRF check و rate limit).
+  // نکته: `uploads/` دیگر معاف نیست چون فایل‌ها در `private/uploads/` هستند
+  // و فقط از طریق `/api/uploads/[id]` با احراز هویت قابل دسترسی هستند.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json).*)"],
 };

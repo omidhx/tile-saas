@@ -1,5 +1,5 @@
 // =============================================================================
-// scripts/cleanup-orphan-uploads.ts — حذفِ فایل‌های یتیم از public/uploads/
+// scripts/cleanup-orphan-uploads.ts — حذفِ فایل‌های یتیم از private/uploads/
 // =============================================================================
 // دو نوع یتیم را پاک می‌کند:
 //
@@ -25,7 +25,7 @@ import { readdir, unlink, stat } from "node:fs/promises";
 import { join, resolve, normalize } from "node:path";
 import postgres from "postgres";
 
-const UPLOADS_DIR = join(process.cwd(), "public", "uploads");
+const UPLOADS_DIR = join(process.cwd(), "private", "uploads");
 
 async function main() {
   const url = process.env.DATABASE_URL;

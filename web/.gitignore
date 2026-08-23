@@ -45,7 +45,8 @@ yarn-error.log*
 next-env.d.ts
 
 # عکس‌های آپلودشده — روی volume می‌مانند، نه در git
-/public/uploads/
+# فایل‌ها در private/uploads ذخیره می‌شوند (خارج از public/)
+/private/uploads/
 
 # خروجیِ Playwright (اسکرین‌شات/trace/گزارشِ HTML) — قابلِ‌بازتولید، نه چیزی برای git
 /test-results/

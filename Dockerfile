@@ -67,9 +67,11 @@ COPY --from=builder --chown=next:nodejs /app/web/scripts ./web/scripts
 COPY --from=builder --chown=next:nodejs /app/db ./db
 
 # ساختِ volume برای آپلودها — در production باید روی volume جدا باشد
-# تا با redeploy فایل‌ها از بین نروند
-RUN mkdir -p /app/web/public/uploads && chown -R next:nodejs /app/web/public/uploads
-VOLUME ["/app/web/public/uploads"]
+# تا با redeploy فایل‌ها از بین نروند.
+# فایل‌ها در private/uploads ذخیره می‌شوند (خارج از public/) و فقط از طریق
+# /api/uploads/[id] با احراز هویت قابل دسترسی هستند.
+RUN mkdir -p /app/web/private/uploads && chown -R next:nodejs /app/web/private/uploads
+VOLUME ["/app/web/private/uploads"]
 
 USER next
 WORKDIR /app/web

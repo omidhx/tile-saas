@@ -72,13 +72,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad_type" }, { status: 415 });
 
   // ۷. نام‌گذاری با UUID و ذخیره
-  const dir = join(process.cwd(), "public", "uploads");
+  // فایل‌ها در `private/uploads/` ذخیره می‌شوند (خارج از `public/`).
+  // دسترسی فقط از طریق `/api/uploads/[id]` با احراز هویت و tenant ownership.
+  // این AUD-001 را حل می‌کند — UUID مجوز دسترسی نیست، authorization واقعی است.
+  const dir = join(process.cwd(), "private", "uploads");
   await mkdir(dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;
 
   // path traversal safety — name فقط UUID.ext است، ولی برای defense-in-depth
   const absPath = normalize(resolve(dir, name));
-  const uploadsRoot = resolve(process.cwd(), "public", "uploads");
+  const uploadsRoot = resolve(process.cwd(), "private", "uploads");
   if (!absPath.startsWith(uploadsRoot + "/") && absPath !== uploadsRoot) {
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   }

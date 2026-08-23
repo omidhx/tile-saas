@@ -33,10 +33,10 @@ export async function deleteUploadFile(url: string): Promise<void> {
   // فقط مسیرهای نسبی خودِ سایت (خروجیِ /api/upload) — نه URL خارجی
   if (!trimmed.startsWith("/uploads/")) return;
 
-  // /uploads/foo.jpg → public/uploads/foo.jpg
+  // /uploads/foo.jpg → private/uploads/foo.jpg (فایل‌ها در private هستند، نه public)
   const relPath = trimmed.slice(1); // حذفِ اسلشِ اول
-  const uploadsRoot = resolve(process.cwd(), "public", "uploads");
-  const absPath = normalize(resolve(process.cwd(), "public", relPath));
+  const uploadsRoot = resolve(process.cwd(), "private", "uploads");
+  const absPath = normalize(resolve(process.cwd(), "private", relPath));
 
   // بررسیِ path traversal: absPath باید داخلِ uploadsRoot باشد
   // (با separator انتهای، جلوی `/uploads2/...` را هم می‌گیرد)

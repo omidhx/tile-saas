@@ -64,7 +64,7 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
       # آپلودها روی volume ماندگار — با redeploy از بین نمی‌رود
-      - uploads:/app/web/public/uploads
+      - uploads:/app/web/private/uploads
     ports:
       - "${WEB_PORT:-3000}:3000"
 
