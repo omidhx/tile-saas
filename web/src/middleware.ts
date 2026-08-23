@@ -2,40 +2,80 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Middleware با دو مسئولیت:
+ * Middleware با سه مسئولیت:
  *
- *   ۱. CSPِ script-src با nonce — الگوی رسمیِ خودِ Next برای App Router
- *      (https://nextjs.org/docs/app/guides/content-security-policy).
- *
+ *   ۱. Rate limit ساده‌ی IP-based برای mutation methods (global defense)
  *   ۲. CSRF سبک — چکِ Origin/Host روی تمام mutationهای cookie-based
- *      (POST/PATCH/PUT/DELETE). `SameSite=lax` روی مرورگرهای مدرن کافی است،
- *      ولی این چک subdomain و WebView را هم می‌پوشاند.
+ *   ۳. CSPِ script-src با nonce + HSTS
  *
- * چرا اینجا و نه next.config.ts: nonce و CSRF باید هر درخواست بررسی شوند —
- * next.config.ts استاتیک است، فقط middleware به‌ازای هر request اجرا می‌شود.
+ * نکته: middleware در Edge runtime اجرا می‌شود — نمی‌تواند به PostgreSQL وصل شود.
+ * این rate limit ساده‌ی in-memory است (IP-based). rate limit دقیق‌تر (per-user)
+ * در route handlerها با checkRateAsync پیاده شده.
  */
+
+// ──────────────────────────────────────────────────────────
+// Rate limit ساده‌ی IP-based (Edge-compatible)
+// ──────────────────────────────────────────────────────────
+// این یک لایه‌ی دفاعی اضافی است. rate limit دقیق‌تر (per-user, per-route)
+// در route handlerها با checkRateAsync پیاده شده.
+const ipHits = new Map<string, number[]>();
+const IP_MAX_KEYS = 5_000;
+const IP_STALE_MS = 24 * 60 * 60 * 1000;
+const IP_RATE_LIMIT = 100; // ۱۰۰ mutation در دقیقه per IP
+const IP_RATE_WINDOW = 60_000;
+
+function checkIpRate(ip: string, now = Date.now()): boolean {
+  if (ipHits.size > IP_MAX_KEYS) {
+    for (const [k, times] of ipHits)
+      if (times.length === 0 || now - times[times.length - 1] > IP_STALE_MS) ipHits.delete(k);
+  }
+  const recent = (ipHits.get(ip) ?? []).filter((t) => now - t < IP_RATE_WINDOW);
+  if (recent.length >= IP_RATE_LIMIT) {
+    ipHits.set(ip, recent);
+    return false;
+  }
+  recent.push(now);
+  ipHits.set(ip, recent);
+  return true;
+}
+
+function getClientIp(req: NextRequest): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  return fwd?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+}
+
 export function middleware(req: NextRequest) {
-  // ──────────────────────────────────────────────────────────
-  // ۱. CSRF سبک — روی mutation methods
-  // ──────────────────────────────────────────────────────────
   const method = req.method.toUpperCase();
   const isMutation = method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE";
 
+  // ──────────────────────────────────────────────────────────
+  // ۱. Rate limit ساده‌ی IP-based برای mutation methods
+  // ──────────────────────────────────────────────────────────
+  if (isMutation) {
+    const ip = getClientIp(req);
+    if (!checkIpRate(ip)) {
+      return NextResponse.json(
+        { error: "too_many_requests" },
+        { status: 429, headers: { "retry-after": "60" } },
+      );
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // ۲. CSRF سبک — روی mutation methods
+  // ──────────────────────────────────────────────────────────
   if (isMutation) {
     const origin = req.headers.get("origin");
     const host = req.headers.get("host");
 
     if (host) {
       if (origin === "null") {
-        // Origin: null می‌تواند از sandbox iframe یا data: URI بیاید.
-        // این درخواست‌ها نباید mutation انجام دهند — رد کن.
         return NextResponse.json(
           { error: "null_origin_forbidden" },
           { status: 403 },
         );
       }
       if (origin) {
-        // Origin آمد — با Host مقایسه کن
         try {
           const url = new URL(origin);
           if (url.host !== host) {
@@ -45,28 +85,19 @@ export function middleware(req: NextRequest) {
             );
           }
         } catch {
-          // Origin malformed — رد کن
           return NextResponse.json(
             { error: "invalid_origin" },
             { status: 400 },
           );
         }
       }
-      // اگر Origin نبود (مرورگر قدیمی یا API client بدون browser):
-      // SameSite=lax بقیه‌ی کار را می‌کند. API client (curl/Postman) کوکی
-      // نمی‌فرستد، پس مجاز است. نرم می‌گیریم.
     }
-    // اگر host نبود، نرم می‌گیریم تا اپراتور متوجه شود (در next.config.ts
-    // می‌توان hard fail گذاشت).
   }
 
   // ──────────────────────────────────────────────────────────
-  // ۲. CSP با nonce
+  // ۳. CSP با nonce
   // ──────────────────────────────────────────────────────────
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  // React در dev برای بازسازیِ stack trace از eval() استفاده می‌کند (خودِ خطای
-  // مرورگر این را می‌گوید) — production هیچ‌وقت eval نمی‌زند، پس unsafe-eval فقط
-  // در dev اضافه می‌شود، نه در چیزی که واقعاً کاربر می‌بیند.
   const scriptSrc = process.env.NODE_ENV === "development"
     ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
     : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
@@ -84,7 +115,7 @@ export function middleware(req: NextRequest) {
   res.headers.set("Content-Security-Policy", csp);
 
   // ──────────────────────────────────────────────────────────
-  // ۳. HSTS در production — فقط اگر پشتِ reverse proxy مورداعتماد است
+  // ۴. HSTS در production — فقط اگر پشتِ reverse proxy مورداعتماد است
   // ──────────────────────────────────────────────────────────
   // ⚠️ مهم: X-Forwarded-Proto فقط زمانی قابل اعتماد است که reverse proxy
   // آن را پاک‌سازی و بازنویسی کند. اگر اپ مستقیماً در معرض اینترنت باشد،
@@ -95,9 +126,6 @@ export function middleware(req: NextRequest) {
   //   - X-Forwarded-Proto را فقط از خروجیِ TLS خودش ست کند
   //   - هر X-Forwarded-Proto از سمت client را حذف کند
   //   - یا proxy_set_header X-Forwarded-Proto $scheme (Nginx)
-  //
-  // اگر اپ مستقیماً expose شود (بدون reverse proxy)، این HSTS نباید ست شود.
-  // در آن حالت، HSTS کارِ reverse proxy است که TLS را terminate می‌کند.
   if (process.env.NODE_ENV === "production") {
     const forwardedProto = req.headers.get("x-forwarded-proto");
     if (forwardedProto === "https") {
