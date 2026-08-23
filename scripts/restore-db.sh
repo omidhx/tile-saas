@@ -255,16 +255,41 @@ maybe_cleanup() {
     return
   fi
 
-  # Drop the temporary database (best effort)
-  # First, terminate any lingering connections (otherwise DROP fails with
-  # "database is being accessed by other users"). This is especially
-  # important if a previous run was killed mid-restore.
+  # Drop the temporary database.
+  #
+  # Strategy: try `WITH (FORCE)` first (PostgreSQL 13+). This is atomic —
+  # it terminates connections AND drops the database in one statement,
+  # eliminating the race between pg_terminate_backend and DROP.
+  #
+  # If `WITH (FORCE)` fails (e.g., older PostgreSQL), fall back to the
+  # two-step pattern: pg_terminate_backend + DROP DATABASE.
+  #
+  # Reference: https://www.postgresql.org/docs/16/sql-dropdatabase.html
   log "Cleanup: dropping ${RESTORE_DB_NAME} (if exists)"
-  psql_super -d postgres -c \
-    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" \
-    2>/dev/null || true
-  psql_super -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || \
+
+  local drop_succeeded=false
+
+  # Try WITH (FORCE) first (PG13+). RESTORE_DB_NAME is already validated
+  # against ^[a-zA-Z_][a-zA-Z0-9_]*$ so SQL injection is impossible.
+  if psql_super -d postgres -c \
+    "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\" WITH (FORCE);" 2>/dev/null; then
+    drop_succeeded=true
+  else
+    # Fallback for older PostgreSQL (or if WITH (FORCE) failed for any reason)
+    # Step 1: terminate lingering connections
+    psql_super -d postgres -c \
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" \
+      2>/dev/null || true
+    # Step 2: drop the database
+    if psql_super -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null; then
+      drop_succeeded=true
+    fi
+  fi
+
+  if [ "${drop_succeeded}" != true ]; then
     warn "Could not drop ${RESTORE_DB_NAME} (may need manual cleanup)"
+    warn "  Manual cleanup: docker compose exec postgres psql -U ${POSTGRES_USER} -d postgres -c 'DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\" WITH (FORCE);'"
+  fi
 }
 
 # Signal handler: cleanup + exit with signal-appropriate code

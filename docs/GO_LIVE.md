@@ -104,6 +104,57 @@ cd web && npm run migrate                     # اعمالِ migrationهای ا�
 > **Phase 8 تکمیل شد** — سیاست و اسکریپت‌ها آماده‌اند. این بخش چک‌لیستِ عملیاتیِ
 > فعال‌سازی روی VPS production است. مرجعِ کامل: `docs/BACKUP_POLICY.md`.
 
+### ۴.۰. محدودیتِ تست CI — مهم قبل از go-live
+
+> ⚠️ **CI سبز بودن necessary است ولی sufficient نیست.**
+
+CI در `.github/workflows/ci.yml` چرخه‌ی backup → verify → restore را در هر push اجرا می‌کند، ولی این تست در محیطِ host PostgreSQL است (نه Docker Compose). این فرق‌ها مهم‌اند:
+
+| مورد | CI (GitHub Actions) | Production (VPS) |
+|---|---|---|
+| PostgreSQL | service container روی localhost:5432 | `docker compose exec -T postgres` |
+| Volume mounts | ندارد | `./backups/status:/app/backups-status:ro` |
+| Off-site rsync | هرگز اجرا نمی‌شود | با `BACKUP_OFFSITE_TARGET` فعال |
+| Cron / signal handling | فقط یک‌بار اجرا، بدون cron | cron روزانه، SIGTERM از سمتِ cron |
+| `BACKUP_TEST_HOLD_SECONDS` | نمی‌تواند flock واقعی را با deps کامل تست کند | باید با همه deps اجرا شود |
+
+بنابراین قبل از go-live، این کارها باید روی staging/VPS هم اجرا شوند:
+
+```bash
+# ۱. نصبِ dependencyها روی VPS
+sudo apt-get install -y zstd gpg rsync flock postgresql-client
+
+# ۲. اجرایِ چرخه‌ی واقعی روی VPS (با Docker Compose بالا)
+bash scripts/backup-db.sh
+bash scripts/verify-backup.sh
+bash scripts/restore-db.sh --test-only
+
+# ۳. بررسیِ artifactها
+find backups -type f -printf '%M %u:%g %p\n'
+# انتظار: 0600 برای .gpg و .sha256، 0644 برای status file
+cat backups/status/backup-status.json
+# انتظار: last_success_at اخیر، last_failure_at = null
+
+# ۴. تستِ flock با BACKUP_TEST_HOLD_SECONDS
+BACKUP_TEST_HOLD_SECONDS=5 BACKUP_LOCK_FILE=/tmp/test.lock \
+  bash scripts/backup-db.sh &
+sleep 1
+bash scripts/backup-db.sh
+# انتظار: error "already running"
+rm -f /tmp/test.lock
+
+# ۵. تستِ cleanup روی signal (با SIGTERM)
+bash scripts/restore-db.sh --test-only &
+PID=$!
+sleep 2
+kill -TERM $PID
+wait $PID
+echo "Exit code: $? (expected: 143 = 128+15)"
+# انتظار: دیتابیس tile_restore_test drop شده باشد
+```
+
+### ۴.۱. چک‌لیستِ فعال‌سازی
+
 - [ ] `BACKUP_GPG_PASSPHRASE` در `.env` ست شده (حداقل ۳۲ کاراکتر — `openssl rand -base64 32`).
 - [ ] `BACKUP_OFFSITE_TARGET` در `.env` ست شده (rsync target روی VPS دوم یا NAS).
 - [ ] (اگر rsync به SSH key نیاز دارد) `BACKUP_OFFSITE_SSH_KEY` ست شده و key در place است.
@@ -119,6 +170,8 @@ cd web && npm run migrate                     # اعمالِ migrationهای ا�
 - [ ] RPO/RTO در `docs/BACKUP_POLICY.md` مکتوب شده (۲۴ ساعت / ۲ ساعت).
 - [ ] یک نفر (حداقل دو نفر) به passphrase دسترسی دارد و محلِ ذخیره‌اش مستند است.
 - [ ] `docs/DISASTER_RECOVERY.md` بخشِ Appendices (ب) و (ج) با اطلاعاتِ واقعی پر شده (off-site URL، contacts).
+- [ ] **runtime verification روی VPS انجام شده** (بخش ۴.۰ بالا) — نه فقط CI سبز.
+- [ ] نتیجه‌ی اولین restore test واقعی در `worklog.md` ثبت شده.
 
 ## ۵. مهاجرت schema
 

@@ -878,3 +878,96 @@ test("verify-backup.sh: does NOT reset traps in success path", () => {
     "should not reset traps (CLEANUP_DONE guard makes this unnecessary)",
   );
 });
+
+// ──────────────────────────────────────────────
+// 32. DROP DATABASE ... WITH (FORCE) for PostgreSQL 13+ atomicity
+// ──────────────────────────────────────────────
+
+test("restore-db.sh: uses DROP DATABASE ... WITH (FORCE) (PG13+ atomic)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "restore-db.sh"), "utf8");
+  assert.ok(
+    src.includes("WITH (FORCE)"),
+    "should use DROP DATABASE ... WITH (FORCE) for atomic drop+terminate (PG13+)",
+  );
+  // Should also have a fallback for older PG versions
+  assert.ok(
+    src.includes("pg_terminate_backend"),
+    "should have fallback pg_terminate_backend for older PostgreSQL versions",
+  );
+});
+
+test("ci-backup-test.sh: uses DROP DATABASE ... WITH (FORCE) with fallback", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("WITH (FORCE)"),
+    "should use DROP DATABASE ... WITH (FORCE) (PG13+)",
+  );
+  assert.ok(
+    src.includes("pg_terminate_backend"),
+    "should have fallback for older PostgreSQL",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 33. BACKUP_TEST_HOLD_SECONDS hook for deterministic flock testing
+// ──────────────────────────────────────────────
+
+test("backup-db.sh: has BACKUP_TEST_HOLD_SECONDS test hook for deterministic flock testing", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    src.includes("BACKUP_TEST_HOLD_SECONDS") &&
+    src.includes('BACKUP_TEST_HOLD_SECONDS:-0'),
+    "should have BACKUP_TEST_HOLD_SECONDS env var (defaults to 0)",
+  );
+  // The hook should be placed AFTER flock acquisition, BEFORE pre-flight checks
+  const flockIndex = src.indexOf("flock -n 200");
+  const hookIndex = src.indexOf("BACKUP_TEST_HOLD_SECONDS:-0");
+  const requireIndex = src.indexOf("Required command not found");
+  assert.ok(flockIndex > -1 && hookIndex > -1 && requireIndex > -1);
+  assert.ok(
+    flockIndex < hookIndex,
+    "BACKUP_TEST_HOLD_SECONDS hook should be AFTER flock acquisition",
+  );
+  assert.ok(
+    hookIndex < requireIndex,
+    "BACKUP_TEST_HOLD_SECONDS hook should be BEFORE require_command checks (so tests don't fail on missing zstd)",
+  );
+});
+
+test("ci-backup-test.sh: has BACKUP_TEST_HOLD_SECONDS test hook", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("BACKUP_TEST_HOLD_SECONDS") &&
+    src.includes('BACKUP_TEST_HOLD_SECONDS:-0'),
+    "should have BACKUP_TEST_HOLD_SECONDS env var",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 34. CI script documents its limitations vs production environment
+// ──────────────────────────────────────────────
+
+test("ci-backup-test.sh: documents CI vs production environment differences", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  // The header comment should explain what CI does NOT test:
+  assert.ok(
+    src.includes("Docker Compose") && src.includes("exec -T"),
+    "should mention Docker Compose and exec -T as a difference from production",
+  );
+  assert.ok(
+    src.includes("Volume mounts") || src.includes("backups-status"),
+    "should mention volume mounts as a difference from production",
+  );
+  assert.ok(
+    src.includes("Off-site rsync") || src.includes("BACKUP_OFFSITE_TARGET"),
+    "should mention off-site rsync as untested in CI",
+  );
+  assert.ok(
+    src.includes("Cron") || src.includes("signal handling"),
+    "should mention cron and signal handling as untested in CI",
+  );
+  assert.ok(
+    src.includes("necessary") && src.includes("sufficient"),
+    "should clearly state: CI green is necessary but not sufficient for production",
+  );
+});

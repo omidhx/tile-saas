@@ -12,6 +12,33 @@
 # ⚠️  این اسکریپت در محیطِ production استفاده نشود — فقط CI.
 #     در production از `scripts/backup-db.sh` و `scripts/restore-db.sh` استفاده کنید.
 #
+# ──────────────────────────────────────────────────────────
+# محدودیتِ تست CI — مهم برایِ production-readiness assessment
+# ──────────────────────────────────────────────────────────
+# این اسکریپت منطقِ backup/verify/restore را در محیطِ host PostgreSQL تست
+# می‌کند (GitHub Actions service container). این تستِ خوبی برایِ sanity است،
+# ولی در چند مورد با محیطِ production فرق دارد:
+#
+#   ۱. Docker Compose: production از `docker compose exec -T postgres` استفاده
+#      می‌کند تا pg_dump را داخلِ container اجرا کند. CI از pg_dump روی host.
+#      اگر کسی در Dockerfile یا docker-compose.yml تغییری داده باشد که pg_dump
+#      را در container خراب کند، CI آن را نمی‌بیند.
+#
+#   ۲. Volume mounts: production `./backups/status:/app/backups-status:ro` را
+#      mount می‌کند. CI این mount را ندارد — status file روی filesystemِ runner
+#      نوشته می‌شود.
+#
+#   ۳. Off-site rsync: CI هرگز `BACKUP_OFFSITE_TARGET` را ست نمی‌کند. مسیرِ
+#      rsync در production باید جداگانه روی staging/VPS تست شود.
+#
+#   ۴. Cron و signal handling: CI فقط یک‌بار اجرا می‌شود. رفتار cron در
+#      زمانِ SIGTERM (مثلاً وقتی cron kill می‌فرستد تا job بعدی شروع شود)
+#      باید روی staging/VPS تست شود.
+#
+# بنابراین: CI سبز بودن necessary است ولی sufficient نیست. قبل از go-live،
+# چرخه‌ی واقعی روی staging/VPS هم باید اجرا و verify شود.
+# ──────────────────────────────────────────────────────────
+#
 # Exit codes:
 #   0 — تمامِ مراحل موفق
 #   1 — خطای pg_dump / compress / encrypt
@@ -40,6 +67,16 @@ exec 200>"${LOCK_FILE}"
 if ! flock -n 200; then
   echo "ERROR: another ci-backup-test.sh is already running (lock: ${LOCK_FILE})" >&2
   exit 1
+fi
+
+# Test hook — sleep after acquiring flock, for deterministic concurrency tests.
+# ⚠️ ONLY FOR TESTING. In CI, leave this unset (defaults to 0).
+# این sleep قبل ازِ require_command قرار دارد تا تست flock بدونِ interference
+# از سمتِ command checks انجام شود.
+BACKUP_TEST_HOLD_SECONDS="${BACKUP_TEST_HOLD_SECONDS:-0}"
+if [ "${BACKUP_TEST_HOLD_SECONDS}" -gt 0 ] 2>/dev/null; then
+  echo "TEST MODE: holding lock for ${BACKUP_TEST_HOLD_SECONDS} seconds" >&2
+  sleep "${BACKUP_TEST_HOLD_SECONDS}"
 fi
 
 # ──────────────────────────────────────────────────────────
@@ -108,16 +145,22 @@ cleanup() {
     rm -rf "${TMP_DIR}" 2>/dev/null || true
   fi
 
-  # Drop the temporary restore test database (best effort)
-  # First terminate any lingering connections (otherwise DROP may fail).
+  # Drop the temporary restore test database.
+  # Try `WITH (FORCE)` first (PG13+ atomic), fall back to two-step.
+  # Reference: https://www.postgresql.org/docs/16/sql-dropdatabase.html
   if [ -n "${RESTORE_DB_NAME:-}" ]; then
-    PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+    if ! PGPASSWORD="${POSTGRES_PASSWORD}" psql \
       -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
-      -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" \
-      2>/dev/null || true
-    PGPASSWORD="${POSTGRES_PASSWORD}" psql \
-      -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
-      -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || true
+      -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\" WITH (FORCE);" 2>/dev/null; then
+      # Fallback for older PostgreSQL: terminate + drop
+      PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+        -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+        -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${RESTORE_DB_NAME}' AND pid <> pg_backend_pid();" \
+        2>/dev/null || true
+      PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+        -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+        -d postgres -c "DROP DATABASE IF EXISTS \"${RESTORE_DB_NAME}\";" 2>/dev/null || true
+    fi
   fi
 }
 

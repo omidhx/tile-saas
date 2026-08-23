@@ -5,6 +5,96 @@
 
 ## [Unreleased]
 
+### Production-Readiness Status — Honest Assessment
+
+> ⚠️ **Static verification: ✅ Done. Runtime verification: ⏳ Pending VPS.**
+
+This section honestly records what is verified vs what is pending, so
+production deployment decisions can be made with accurate information.
+
+| Verification Layer | Status | How Verified |
+|---|---|---|
+| Static syntax (bash) | ✅ Done | `bash -n` on all 5 scripts |
+| Static syntax (YAML) | ✅ Done | Python yaml.safe_load |
+| TypeScript typecheck | ✅ Done | `tsc --noEmit` |
+| Unit tests (backupStatus) | ✅ Done | 13 tests pass |
+| Hardening tests (regex) | ✅ Done | 72 tests pass |
+| Lock harness runtime test | ✅ Done | Custom harness with `BACKUP_TEST_HOLD_SECONDS` |
+| Signal exit codes runtime | ✅ Done | SIGTERM → 143, SIGHUP → 129 verified |
+| Double-cleanup guard runtime | ✅ Done | Signal mid-cleanup → cleanup ran once |
+| **CI runtime (host postgres)** | ⏳ Pending | Will run on first push to GitHub |
+| **CI runtime (with full deps)** | ⏳ Pending | CI has zstd/gpg/flock, should pass |
+| **Staging runtime (Docker Compose)** | ⏳ Pending | Must run on staging/VPS with full deps |
+| **Production VPS runtime** | ⏳ Pending | Must run on actual production VPS |
+| **First real backup on production** | ⏳ Pending | Must record in worklog |
+| **First real restore test on production** | ⏳ Pending | Must record in worklog |
+
+**What "CI green" actually proves:** the pg_dump → zstd → GPG → verify →
+restore pipeline works on host PostgreSQL (GitHub Actions service container).
+It does NOT prove: Docker Compose `exec -T` works, volume mounts work, cron
+signal handling works under real load, off-site rsync works.
+
+**Production go-live gate:** all rows above must be ✅, especially the
+"Production VPS runtime" row. See `docs/GO_LIVE.md` section 4.0 for the
+exact runtime verification commands to run on VPS.
+
+### Operational Hardening (Phase 8 — round 3: runtime semantics)
+
+بازبینیِ سومِ فاز ۸ — رفعِ ۴ findingِ تکمیلیِ runtime:
+
+- **DROP DATABASE ... WITH (FORCE) (PG13+):** restore-db.sh و ci-backup-test.sh
+  اکنون از `DROP DATABASE IF EXISTS "..." WITH (FORCE)` استفاده می‌کنند که
+  atomic است (هم connectionها را terminate می‌کند، هم database را drop).
+  اگر PG < 13 باشد، fallback به `pg_terminate_backend` + `DROP DATABASE`.
+  این race condition بین terminate و DROP را از بین می‌برد.
+- **BACKUP_TEST_HOLD_SECONDS hook:** متغیرِ env برای deterministic flock
+  testing. وقتی ست شود (> 0)، اسکریپت بعد از acquiring flock، به‌اندازه‌ی
+  ثانیه‌های مشخص sleep می‌کند. این اجازه می‌دهد تستِ هم‌زمانی واقعی بدونِ
+  timing injection انجام شود. در production، مقدار پیش‌فرض 0 است (تأثیری
+  ندارد). قرارگیری این hook قبل ازِ pre-flight checks مهم است تا تست بدونِ
+  interference از سمتِ require_command انجام شود.
+- **CI limitations documented:** scripts/ci-backup-test.sh و docs/GO_LIVE.md
+  بخش ۴.۰ حالا صریح توضیح می‌دهند که CI چه چیزی را تست می‌کند و چه چیزی
+  را نه. این مهم است چون CI سبز بودن می‌تواند false sense of security
+  ایجاد کند اگر production environment متفاوت باشد.
+- **Honest production-readiness table:** CHANGELOG و GO_LIVE حالا شاملِ یک
+  table هستند که نشان می‌دهد کدام لایه‌های verification done هستند و کدام
+  pending. این برایِ تصمیم‌گیریِ production deployment مهم است.
+
+### Tests Added (5 new, 72 total)
+
+- DROP DATABASE ... WITH (FORCE) در restore-db.sh و ci-backup-test.sh (۲ تست)
+- BACKUP_TEST_HOLD_SECONDS hook در backup-db.sh و ci-backup-test.sh (۲ تست)
+- CI script documents its limitations (۱ تست)
+
+### Runtime Verification (this round)
+
+- flock test با BACKUP_TEST_HOLD_SECONDS=3:
+  * PID1: lock را گرفت، ۳ ثانیه sleep کرد، سپس به‌خاطرِ نبودِ zstd fail شد
+  * PID2: فوراً با "already running" fail شد (lock در دستِ PID1 بود)
+  * نتیجه: flock واقعاً کار می‌کند، پیامِ واضح، cleanup کامل
+- قبلاً (round 2): double-cleanup guard، signal exit codes — همگی runtime verified
+
+### Files Changed
+
+- `scripts/restore-db.sh` — DROP DATABASE ... WITH (FORCE) + fallback
+- `scripts/ci-backup-test.sh` — DROP DATABASE ... WITH (FORCE) + fallback
+  + BACKUP_TEST_HOLD_SECONDS hook + CI limitations documented in header
+- `scripts/backup-db.sh` — BACKUP_TEST_HOLD_SECONDS hook (before pre-flight)
+- `docs/GO_LIVE.md` — بخش ۴.۰ (CI limitations) + ۴.۱ (چک‌لیست) به‌روزرسانی
+- `web/src/lib/backupHardening.test.ts` — ۵ تستِ جدید (۷۲ total)
+
+### Verification
+
+- TypeScript: tsc --noEmit clean
+- 95/95 lib tests pass (13 backupStatus + 72 hardening + 10 observability)
+- bash syntax check: 5/5 scripts OK
+- flock runtime test: PASS (با BACKUP_TEST_HOLD_SECONDS)
+- ⚠️ CI runtime test: pending (needs GitHub Actions run with full deps)
+- ⚠️ Staging/Production runtime test: pending (needs VPS)
+
+---
+
 ### Operational Hardening (Phase 8 — round 2)
 
 بازبینیِ عملیاتیِ دومِ فاز ۸ — رفعِ ۴ findingِ تکمیلی:

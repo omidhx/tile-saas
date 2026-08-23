@@ -87,6 +87,21 @@ fi
 # Lock به‌صورت خودکار با exitِ process آزاد می‌شود (FD 200 بسته می‌شود)
 
 # ──────────────────────────────────────────────────────────
+# Test hook — sleep after acquiring flock, for deterministic concurrency tests.
+# ⚠️ ONLY FOR TESTING. In production, leave this unset (defaults to 0).
+# Usage in tests:
+#   BACKUP_TEST_HOLD_SECONDS=5 bash scripts/backup-db.sh &  # acquires lock, sleeps 5s
+#   bash scripts/backup-db.sh &                              # should fail with "already running"
+# این sleep قبل ازِ pre-flight checks قرار دارد تا تست flock بدونِ interference
+# از سمتِ require_command یا docker checks انجام شود.
+# Note: log function is defined below, so we use plain echo here.
+BACKUP_TEST_HOLD_SECONDS="${BACKUP_TEST_HOLD_SECONDS:-0}"
+if [ "${BACKUP_TEST_HOLD_SECONDS}" -gt 0 ] 2>/dev/null; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] INFO  TEST MODE: holding lock for ${BACKUP_TEST_HOLD_SECONDS} seconds (BACKUP_TEST_HOLD_SECONDS)"
+  sleep "${BACKUP_TEST_HOLD_SECONDS}"
+fi
+
+# ──────────────────────────────────────────────────────────
 # Color codes (only if stdout is a TTY)
 # ──────────────────────────────────────────────────────────
 if [ -t 1 ]; then
