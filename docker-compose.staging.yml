@@ -56,6 +56,8 @@ services:
       - uploads-staging:/app/web/private/uploads
       # Phase 8 — backup status file (read-only mount for /api/metrics)
       - ./backups/status:/app/backups-status:ro
+      # Phase 9 — uploads backup status file (AUD-009)
+      - ./backups/status:/app/uploads-backups-status:ro
     # پورت مستقیم به اینترنت expose نمی‌شود — فقط Caddy به آن دسترسی دارد
     expose:
       - "3000"

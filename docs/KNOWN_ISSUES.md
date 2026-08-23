@@ -43,7 +43,7 @@
 
 ## باز — واقعاً کم است، نه تصمیم
 - ~~**CI نداریم.** تست‌ها فقط با `npm test` دستی معتبرند؛ هیچ‌چیز جلوی مرجِ کدِ تست‌نشکسته را نمی‌گیرد.~~ ✅ رفع شد (Phase 10-post): `.github/workflows/ci.yml` با PostgreSQL داکری، typecheck، test، build.
-- **AUD-009 (Phase 8):** فایل‌های آپلودشده در `private/uploads/` (عکسِ محصول، فاکتورها، اسناد) توسطِ سیستمِ backup فاز ۸ پشتیبانی **نمی‌شوند**. این فایل‌ها روی Docker named volume (`uploads`) ذخیره می‌شوند و اگر volume خراب شود، از بین می‌روند. استراتژیِ پیشنهادی برای فاز ۹: rsync هفتگی از volume به storage off-site (مانند بکاپِ دیتابیس) یا migration به S3-compatible storage (MinIO، Wasabi، Backblaze B2). تا زمانِ راه‌اندازیِ این، اگر volume از بین برود، عکس‌های محصولات باید دستی دوباره آپلود شوند. مرجع: `docs/BACKUP_POLICY.md` بخش ۲ و `docs/RESTORE_RUNBOOK.md` بخش ۱.
+- **AUD-009 (Phase 8→9):** فایل‌های آپلودشده در `private/uploads/` (عکسِ محصول، فاکتورها، اسناد) توسطِ سیستمِ backup فاز ۸ پشتیبانی **نمی‌شدند**. این فایل‌ها روی Docker named volume (`uploads`) ذخیره می‌شدند و اگر volume خراب شود، از بین می‌رفتند. **Phase 9 رفع شد:** اسکریپت‌های `scripts/backup-uploads.sh`، `scripts/verify-uploads.sh`، `scripts/restore-uploads.sh`، و `scripts/cleanup-old-uploads-backups.sh` ساخته شدند. این اسکریپت‌ها از الگوی backup دیتابیس پیروی می‌کنند (tar + zstd + GPG + SHA-256 + manifest + flock + CLEANUP_DONE guard). **وضعیت فعلی:** Implementation complete، static verification complete، CI runtime pending (نیازمند Docker برای تست واقعی). مرجع: `docs/BACKUP_POLICY.md` بخش uploads و `docs/UPLOADS_RESTORE_RUNBOOK.md`.
 
 ## تصمیم‌های آگاهانه (نه باگ)
 - **رزرو lot-based** (نماینده Lot را می‌بیند). auto-pickِ FIFO مقیدِ شید = v2. (spec ۱۴.۱۱)

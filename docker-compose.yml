@@ -69,6 +69,8 @@ services:
       # تا /api/metrics بتواند وضعیتِ backup را گزارش کند. این فایل فقط metadata
       # دارد (timestamp, size, checksum) — هرگز secret یا path حساس.
       - ./backups/status:/app/backups-status:ro
+      # Phase 9 — uploads backup status file (AUD-009) — برای /api/metrics
+      - ./backups/status:/app/uploads-backups-status:ro
     ports:
       - "${WEB_PORT:-3000}:3000"
 

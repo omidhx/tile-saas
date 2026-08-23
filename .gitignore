@@ -7,8 +7,10 @@ _backups/
 # چون با host-specific مقادیر پر می‌شود.)
 backups/daily/*
 backups/status/*
+backups/uploads/*
 !backups/daily/.gitkeep
 !backups/status/.gitkeep
+!backups/uploads/.gitkeep
 !backups/README.md
 
 # خروجی‌های قابلِ بازتولید

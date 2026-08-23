@@ -3,6 +3,7 @@ import { currentUserId } from "@/auth/session";
 import { sql } from "@/db/client";
 import { metrics } from "@/lib/metrics";
 import { readBackupStatus, computeLiveBackupAgeSeconds } from "@/lib/backupStatus";
+import { readUploadsBackupStatus, computeUploadsBackupAgeSeconds } from "@/lib/uploadsBackupStatus";
 
 /**
  * GET /api/metrics — metrics عملیاتی.
@@ -18,6 +19,7 @@ import { readBackupStatus, computeLiveBackupAgeSeconds } from "@/lib/backupStatu
  *   - uptime
  *   - DB connection pool status (if available)
  *   - backup status (last success, age, restore test) — Phase 8
+ *   - uploads backup status (AUD-009) — Phase 9
  */
 export async function GET() {
   // در production، فقط platform admin یا staff admin
@@ -52,5 +54,27 @@ export async function GET() {
       }
     : { configured: false, reason: "backup-status.json not found or unreadable" };
 
-  return NextResponse.json({ ...base, backup: backupSection }, { status: 200 });
+  // Phase 9 — uploads backup status (AUD-009)
+  const uploadsStatus = readUploadsBackupStatus();
+  const uploadsSection = uploadsStatus
+    ? {
+        last_success_at: uploadsStatus.last_success_at,
+        last_failure_at: uploadsStatus.last_failure_at,
+        last_failure_reason: uploadsStatus.last_failure_reason,
+        last_success_size_bytes: uploadsStatus.last_success_size_bytes,
+        last_success_sha256: uploadsStatus.last_success_sha256
+          ? uploadsStatus.last_success_sha256.substring(0, 16) + "..."
+          : null,
+        last_success_file_count: uploadsStatus.last_success_file_count,
+        backup_age_seconds: computeUploadsBackupAgeSeconds(uploadsStatus),
+        restore_test_last_success_at: uploadsStatus.restore_test_last_success_at,
+        restore_test_last_failure_at: uploadsStatus.restore_test_last_failure_at,
+        retention_days: uploadsStatus.retention_days,
+      }
+    : { configured: false, reason: "uploads-backup-status.json not found or unreadable" };
+
+  return NextResponse.json(
+    { ...base, backup: backupSection, uploads_backup: uploadsSection },
+    { status: 200 },
+  );
 }

@@ -173,6 +173,21 @@ echo "Exit code: $? (expected: 143 = 128+15)"
 - [ ] **runtime verification روی VPS انجام شده** (بخش ۴.۰ بالا) — نه فقط CI سبز.
 - [ ] نتیجه‌ی اولین restore test واقعی در `worklog.md` ثبت شده.
 
+### ۴.۲. Backup فایل‌های private/uploads/ (Phase 9 — AUD-009)
+
+> **Phase 9 تکمیل شد** — اسکریپت‌های backup فایل‌ها آماده‌اند. این بخش
+> چک‌لیستِ عملیاتیِ فعال‌سازی روی VPS production است.
+
+- [ ] **اولین uploads backup دستی اجرا شده:** `bash scripts/backup-uploads.sh` (با exit 0 تمام شد).
+- [ ] **اولین uploads verify اجرا شده:** `bash scripts/verify-uploads.sh` (با exit 0 تمام شد).
+- [ ] **اولین uploads restore test اجرا شده:** `bash scripts/restore-uploads.sh --test-only` (با exit 0 تمام شد).
+- [ ] `backups/status/uploads-backup-status.json` ساخته شده و `/api/metrics` بخش `uploads_backup` را برمی‌گرداند.
+- [ ] **cron روزانه uploads backup نصب شده:** `00 00 * * * cd /opt/tile-saas && bash scripts/backup-uploads.sh` (ساعت ۰۰:۰۰ UTC = ۰۳:۳۰ IRST).
+- [ ] **cron هفتگی uploads restore test نصب شده:** `30 01 * * 0 cd /opt/tile-saas && bash scripts/restore-uploads.sh --test-only`.
+- [ ] **cron cleanup uploads backups نصب شده:** `30 01 * * * cd /opt/tile-saas && bash scripts/cleanup-old-uploads-backups.sh`.
+- [ ] **runtime verification روی VPS انجام شده** — نه فقط CI سبز.
+- [ ] نتیجه‌ی اولین uploads restore test واقعی در `worklog.md` ثبت شده.
+
 ## ۵. مهاجرت schema
 
 - [ ] `db/schema.sql` فقط برای **نصب تازه** است. **هرگز روی prodِ داده‌دار دوباره اجرا نکن.**

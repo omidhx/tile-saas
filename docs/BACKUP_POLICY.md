@@ -58,9 +58,11 @@
 | بکاپ | فرکانس | زمانِ اجرا | طولِ متوسط |
 |---|---|---|---|
 | Daily DB backup | روزانه | 03:00 IRST (های ایران) | ۵–۳۰ ثانیه (بسته به حجم) |
-| Off-site sync | بعد از هر daily backup | 03:30 IRST | ۱–۵ دقیقه (بسته به پهنای باند) |
-| Cleanup (retention) | روزانه | 04:00 IRST | < ۱ ثانیه |
-| Restore test | هفتگی | یکشنبه 05:00 IRST | ۱–۲ دقیقه |
+| Daily uploads backup | روزانه | 03:30 IRST | ۱۰ ثانیه–۵ دقیقه (بسته به تعداد/حجم فایل‌ها) |
+| Off-site sync | بعد از هر backup | 04:00 IRST | ۱–۵ دقیقه (بسته به پهنای باند) |
+| Cleanup (retention) | روزانه | 04:30 IRST | < ۱ ثانیه |
+| Restore test (DB) | هفتگی | یکشنبه 05:00 IRST | ۱–۲ دقیقه |
+| Restore test (uploads) | هفتگی | یکشنبه 05:30 IRST | ۳۰ ثانیه–۲ دقیقه |
 
 > **زمان‌بندی با cron یا docker compose؟** اگر از `docker-compose.yml` استفاده
 > می‌کنید، **cron روی host** را راه بیندازید (نه داخل container). اسکریپت با
@@ -318,3 +320,154 @@ postgresql.conf:
 - اسکریپت‌ها مقادیر را از env vars می‌خوانند — این سند اسنادِ آن مقادیر است.
 - در صورتِ تناقضِ بینِ سند و کد، کد حاکم است ولی bug گزارش می‌شود.
 - **اگر passphrase گم شود:** همه‌ی بکاپ‌ها قابلِ بازیابی نیستند. این ریسکِ پذیرفته‌شده‌ست و در بخشِ ۹ مستند شده.
+
+---
+
+## ۱۲. Phase 9 — Backup فایل‌های private/uploads/ (AUD-009)
+
+### ۱۲.۱. زمینه
+
+فایل‌های آپلودشده (عکسِ محصول، لوگو، فاکتور) در `private/uploads/` ذخیره
+می‌شوند — روی Docker named volume (`uploads`)، جدا از کدِ اپلیکیشن. اگر این
+volume خراب شود یا حذف شود، همه‌ی فایل‌ها از بین می‌روند. backup دیتابیس
+این فایل‌ها را پوشش **نمی‌دهد** — فقط `product_image.url`، `product.image_url`
+و `tenant.logo_url` در دیتابیس ذخیره می‌شوند (نه خودِ فایل‌ها).
+
+**AUD-009:** این شکافِ Disaster Recovery بود. Phase 9 آن را رفع می‌کند.
+
+### ۱۲.۲. استراتژی
+
+مدلِ انتخاب‌شده: **tar + zstd + GPG + manifest + checksum**
+
+```text
+private/uploads/  →  tar (داخل container)  →  zstd -19  →  GPG AES-256  →  .gpg file
+                                                                              + .sha256
+                                                                              + .manifest (JSON)
+```
+
+این مدل همان الگوی backup دیتابیس است (Phase 8) — تفاوت‌ها:
+- به‌جای `pg_dump`، از `tar` استفاده می‌شود.
+- manifest اضافی تولید می‌شود (لیستِ فایل‌ها با size و checksum هرکدام).
+- restore به مسیرِ ایزوله‌ی `private/uploads_restore_test/` انجام می‌شود (نه production).
+
+### ۱۲.۳. artifact
+
+هر backup شامل ۴ فایل است:
+
+```text
+backups/uploads/
+├── uploads_YYYY-MM-DD_HHMM.tar.zst.gpg      ← encrypted backup
+├── uploads_YYYY-MM-DD_HHMM.tar.zst.gpg.sha256  ← checksum
+├── uploads_YYYY-MM-DD_HHMM.manifest         ← JSON: file list + individual checksums
+└── uploads_YYYY-MM-DD_HHMM.tar.zst.gpg.sha256 (همان checksum file)
+```
+
+**manifest format (JSON):**
+
+```json
+{
+  "backup_name": "uploads_2026-08-24_0330",
+  "created_at": "2026-08-24T03:30:00Z",
+  "file_count": 42,
+  "files": [
+    {
+      "path": "abc123-def456.jpg",
+      "size": 102400,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime": 1724473800
+    }
+  ]
+}
+```
+
+### ۱۲.۴. اسکریپت‌ها
+
+| اسکریپت | کاربرد |
+|---|---|
+| `scripts/backup-uploads.sh` | ایجاد backup از private/uploads/ (داخل container) |
+| `scripts/verify-uploads.sh` | verify بدونِ restore کامل (decrypt + tar --list + manifest check) |
+| `scripts/restore-uploads.sh` | restore به مسیرِ ایزوله‌ی `private/uploads_restore_test/` |
+| `scripts/cleanup-old-uploads-backups.sh` | retention policy enforcement |
+
+همه‌ی اسکریپت‌ها از الگوی backup دیتابیس پیروی می‌کنند:
+- `set -euo pipefail`
+- flock (concurrency guard)
+- `BACKUP_TEST_MODE` + `BACKUP_TEST_HOLD_SECONDS` (test hook)
+- `CLEANUP_DONE` guard (double-cleanup prevention)
+- signal handlers با `128 + signal_number` exit codes
+- passphrase via `--passphrase-fd 0` (نه argv)
+- `set +o history` (anti-leak)
+- `chmod 600` برای .gpg/.sha256/.manifest
+- `chmod 0644` برای status file
+
+### ۱۲.۵. consistency دیتابیس و فایل‌ها
+
+backup دیتابیس و backup فایل‌ها باید از نظر زمانی تا حد امکان سازگار باشند.
+این پروژه از الگوی زیر استفاده می‌کند:
+
+1. **backup دیتابیس** ساعت ۰۳:۰۰ اجرا می‌شود.
+2. **backup uploads** ساعت ۰۳:۳۰ اجرا می‌شود (۳۰ دقیقه بعد).
+3. اگر فایلی بین این دو زمان آپلود شود:
+   - در backup uploads خواهد بود (دیرتر).
+   - در backup دیتابیس **نخواهد بود** (زودتر).
+   - این حالت "تقریباً سازگار" است — restore دیتابیس + uploads به نقطه‌ی
+     زمانیِ uploads، یک فایلِ orphan در filesystem ایجاد می‌کند که در DB
+     reference ندارد. `cleanup-orphan-uploads.ts` این را پاک می‌کند.
+
+اگر سازگاریِ دقیق لازم باشد (مثلاً برای فاکتورهای مالی):
+- application باید در حالتِ maintenance قرار گیرد.
+- یا snapshot filesystem (LVM، ZFS) استفاده شود.
+- این over-engineering برای MVP فعلی است و در فازِ ۱۰ بررسی می‌شود.
+
+### ۱۲.۶. restore به production
+
+restore به production (نه restore test) نیاز به این مراحل دارد:
+
+1. تأییدِ checksum artifact (`.sha256`)
+2. تأییدِ passphrase (decrypt test)
+3. بررسی manifest (تعداد فایل‌ها)
+4. بررسی فضای دیسک کافی
+5. تأییدِ مسیرِ مقصد (`private/uploads/`، نه مسیرِ اشتباه)
+6. تأییدِ عدمِ path traversal در tar entries
+7. استخراج tar به مسیرِ موقت (مثلاً `private/uploads_restored/`)
+8. بررسیِ integrity (file count، MIME types، extensions)
+9. بررسیِ تطبیقِ فایل‌ها با رکوردهای دیتابیس
+10. swap: `mv private/uploads private/uploads.old && mv private/uploads_restored private/uploads`
+11. تأییدِ application
+12. پاک‌سازیِ `private/uploads.old`
+
+این مراحل در `docs/UPLOADS_RESTORE_RUNBOOK.md` مستند شده‌اند.
+
+### ۱۲.۷. محدودیت‌های فعلی
+
+- **runtime verification pending:** اسکریپت‌ها به Docker نیاز دارند — CI فقط
+  تستِ static انجام می‌دهد. staging و production runtime هنوز اجرا نشده‌اند.
+- **consistency تقریبی:** backup دیتابیس و uploads در زمان‌های متفاوت گرفته
+  می‌شوند (۳۰ دقیقه فاصله). این برای MVP قابل قبول است ولی برای فاکتورهای
+  حساس باید maintenance window استفاده شود.
+- **بدون incremental:** هر backup کامل است. برای حجم‌های بزرگ (>۱GB)، باید
+  به rsync با hardlinks یا BorgBackup مهاجرت شود.
+- **بدین deduplication:** اگر چند عکسِ یکسان آپلود شوند، هر کدام در backup
+  جداگانه ذخیره می‌شوند. برای مقیاسِ فعلی (چند صد کاشی) قابل قبول است.
+
+### ۱۲.۸. metrics
+
+`/api/metrics` حالا شامل بخش `uploads_backup` است:
+
+```json
+{
+  "uploads_backup": {
+    "last_success_at": "2026-08-24T03:30:42Z",
+    "last_failure_at": null,
+    "last_failure_reason": null,
+    "last_success_size_bytes": 5242880,
+    "last_success_sha256": "abc123def456...",
+    "last_success_file_count": 42,
+    "backup_age_seconds": 3600,
+    "restore_test_last_success_at": "2026-08-24T05:30:00Z",
+    "retention_days": 30
+  }
+}
+```
+
+اگر status file موجود نباشد: `{ "configured": false, "reason": "..." }`.
