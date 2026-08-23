@@ -7,40 +7,119 @@
 
 ### Production-Readiness Status — Honest Assessment
 
-> ⚠️ **Static verification: ✅ Done. Runtime verification: ⏳ Pending VPS.**
+> **Phase 8 is statically hardened and partially runtime-verified;
+> production backup readiness remains pending CI, staging, and VPS execution.**
 
 This section honestly records what is verified vs what is pending, so
 production deployment decisions can be made with accurate information.
 
-| Verification Layer | Status | How Verified |
-|---|---|---|
-| Static syntax (bash) | ✅ Done | `bash -n` on all 5 scripts |
-| Static syntax (YAML) | ✅ Done | Python yaml.safe_load |
-| TypeScript typecheck | ✅ Done | `tsc --noEmit` |
-| Unit tests (backupStatus) | ✅ Done | 13 tests pass |
-| Hardening tests (regex) | ✅ Done | 72 tests pass |
-| Lock harness runtime test | ✅ Done | Custom harness with `BACKUP_TEST_HOLD_SECONDS` |
-| Signal exit codes runtime | ✅ Done | SIGTERM → 143, SIGHUP → 129 verified |
-| Double-cleanup guard runtime | ✅ Done | Signal mid-cleanup → cleanup ran once |
-| **CI runtime (host postgres)** | ⏳ Pending | Will run on first push to GitHub |
-| **CI runtime (with full deps)** | ⏳ Pending | CI has zstd/gpg/flock, should pass |
-| **Staging runtime (Docker Compose)** | ⏳ Pending | Must run on staging/VPS with full deps |
-| **Production VPS runtime** | ⏳ Pending | Must run on actual production VPS |
-| **First real backup on production** | ⏳ Pending | Must record in worklog |
-| **First real restore test on production** | ⏳ Pending | Must record in worklog |
+| Verification Layer | Status | How Verified | What It Proves |
+|---|---|---|---|
+| Static syntax (bash) | ✅ Done | `bash -n` on all 5 scripts | No syntax errors; unsafe patterns not detected by static analysis |
+| Static syntax (YAML) | ✅ Done | Python yaml.safe_load | CI workflow parses correctly |
+| TypeScript typecheck | ✅ Done | `tsc --noEmit` | No type errors in TS code |
+| Unit tests (backupStatus) | ✅ Done | 13 tests pass | Status file parsing logic works |
+| Hardening tests (regex) | ✅ Done | 80 tests pass | Source code patterns match security requirements |
+| Lock harness runtime | ✅ Done | Custom harness with `BACKUP_TEST_MODE=1` + `BACKUP_TEST_HOLD_SECONDS` | flock contention behavior in controlled environment |
+| Signal exit codes runtime | ✅ Done | SIGTERM → 143, SIGHUP → 129 verified | Signal handlers use correct 128+sig pattern |
+| Double-cleanup guard runtime | ✅ Done | Signal mid-cleanup → cleanup ran once | CLEANUP_DONE guard works |
+| **CI runtime (host postgres)** | ⏳ Pending | Will run on first push to GitHub | Full pipeline on PG16 service container |
+| **CI runtime (with full deps)** | ⏳ Pending | CI installs postgresql-client-16 + all tools | PG16 client matches production server |
+| **Staging runtime (Docker Compose)** | ⏳ Pending | Must run on staging with `docker compose exec -T` | Production Docker path works |
+| **Production VPS runtime** | ⏳ Pending | Must run on actual production VPS | Secrets, off-site target, cron, permissions work |
+| **First real backup on production** | ⏳ Pending | Must record in worklog | Real production data is backed up |
+| **First real restore test on production** | ⏳ Pending | Must record in worklog | Real backup is restorable |
 
-**What "CI green" actually proves:** the pg_dump → zstd → GPG → verify →
-restore pipeline works on host PostgreSQL (GitHub Actions service container).
-It does NOT prove: Docker Compose `exec -T` works, volume mounts work, cron
-signal handling works under real load, off-site rsync works.
+**What "CI green" will prove:** the pg_dump → zstd → GPG → verify →
+restore pipeline works with PostgreSQL 16 client + server, full tool
+chain (zstd, gpg, rsync, flock), and the `WITH (FORCE)` atomic drop
+pattern. CI logs all tool versions for diagnosing mismatches.
+
+**What "CI green" does NOT prove:** Docker Compose `exec -T` path,
+volume mounts (`./backups/status:/app/backups-status:ro`), off-site
+rsync with real SSH credentials, cron signal handling under real load,
+production VPS end-to-end.
 
 **Production go-live gate:** all rows above must be ✅, especially the
 "Production VPS runtime" row. See `docs/GO_LIVE.md` section 4.0 for the
 exact runtime verification commands to run on VPS.
 
-### Operational Hardening (Phase 8 — round 3: runtime semantics)
+### Operational Hardening (Phase 8 — round 4: test hook + CI deps)
 
-بازبینیِ سومِ فاز ۸ — رفعِ ۴ findingِ تکمیلیِ runtime:
+بازبینیِ چهارمِ فاز ۸ — رفعِ ۳ findingِ تکمیلی:
+
+- **BACKUP_TEST_HOLD_SECONDS hardening:**
+  * Validation: باید عددِ غیرمنفی باشد (regex `^[0-9]+([.][0-9]+)?$`)
+  * Cap: حداکثر ۳۰۰ ثانیه (جلوگیری از قفل کردنِ cron یا CI برای مدتِ نامحدود)
+  * Defense-in-depth: فقط وقتی فعال می‌شود که `BACKUP_TEST_MODE=1` هم ست
+    شده باشد. اگر فقط `BACKUP_TEST_HOLD_SECONDS` ست شده باشد (بدون mode)،
+    sleep اجرا نمی‌شود. این جلویِ فعال‌شدنِ تصادفی در production را می‌گیرد.
+  * Documentation: header صریح توضیح می‌دهد که این hook عمداً pre-flight
+    checks را به تأخیر می‌اندازد و برای production نیست.
+  * Runtime verified:
+    - `BACKUP_TEST_MODE=1 BACKUP_TEST_HOLD_SECONDS=2` → lock held 2s ✅
+    - `BACKUP_TEST_HOLD_SECONDS=abc` → "must be a non-negative number" ✅
+    - `BACKUP_TEST_HOLD_SECONDS=999` → "exceeds 300 second cap" ✅
+    - `BACKUP_TEST_HOLD_SECONDS=5` (without BACKUP_TEST_MODE) → no sleep ✅
+
+- **CI installs PostgreSQL 16 client (matches production):**
+  * قبلاً CI از `apt-get install zstd gpg` استفاده می‌کرد — بدونِ
+    postgresql-client مشخص.
+  * حالا CI از official PostgreSQL apt repository استفاده می‌کند و
+    `postgresql-client-16` را نصب می‌کند (matching production PostgreSQL 16).
+  * این مهم است چون pg_dump/pg_restore از client server compatibility
+    پیروی می‌کنند — اگر client قدیمی‌تر باشد، ممکن است backup ناقص باشد.
+  * همه‌ی tool versions قبل ازِ اجرایِ ci-backup-test.sh چاپ می‌شوند:
+    psql، pg_dump، pg_restore، zstd، gpg، rsync، flock.
+  * این برایِ تشخیصِ version mismatch در اولین اجرای CI حیاتی است.
+
+- **CI logs all tool versions:**
+  * Section `=== Tool versions ===` در CI log چاپ می‌شود.
+  * اگر اولین CI run fail شود، می‌توان سریعاً تشخیص داد که کدام tool
+    version مشکل دارد.
+
+### Tests Added (8 new, 80 total)
+
+- BACKUP_TEST_HOLD_SECONDS requires BACKUP_TEST_MODE=1 (۲ test)
+- BACKUP_TEST_HOLD_SECONDS validates value (۲ test)
+- BACKUP_TEST_HOLD_SECONDS caps at 300s (۱ test)
+- Test hook documents it's NOT for production (۱ test)
+- CI installs PostgreSQL 16 client (۱ test)
+- CI logs all tool versions (۱ test)
+
+### Runtime Verification (this round)
+
+- flock test با BACKUP_TEST_MODE=1 + BACKUP_TEST_HOLD_SECONDS=2:
+  * PID1: lock را گرفت، ۲ ثانیه sleep کرد، سپس fail شد (نبودِ zstd در host)
+  * PID2: فوراً با "already running" fail شد
+  * نتیجه: flock واقعاً کار می‌کند، پیامِ واضح، cleanup کامل
+- Validation test:
+  * `BACKUP_TEST_HOLD_SECONDS=abc` → error "must be a non-negative number"
+  * `BACKUP_TEST_HOLD_SECONDS=999` → error "exceeds 300 second cap"
+  * بدونِ `BACKUP_TEST_MODE=1` → no sleep (defense-in-depth works)
+
+### Files Changed
+
+- `scripts/backup-db.sh` — BACKUP_TEST_MODE + validation + cap + docs
+- `scripts/ci-backup-test.sh` — same
+- `.github/workflows/ci.yml` — postgresql-client-16 + version logging
+- `web/src/lib/backupHardening.test.ts` — ۸ تستِ جدید (۸۰ total)
+- `CHANGELOG.md` — honest readiness table with "What It Proves" column
+
+### Verification
+
+- TypeScript: tsc --noEmit clean
+- 103/103 lib tests pass (13 backupStatus + 80 hardening + 10 observability)
+- bash syntax check: 5/5 scripts OK
+- flock runtime test: PASS (با BACKUP_TEST_MODE + BACKUP_TEST_HOLD_SECONDS)
+- validation runtime test: PASS (invalid value rejected, cap enforced)
+- defense-in-depth runtime test: PASS (no sleep without BACKUP_TEST_MODE)
+- ⚠️ CI runtime test: pending (needs GitHub Actions run with PG16 client)
+- ⚠️ Staging/Production runtime test: pending (needs VPS)
+
+---
+
+### Operational Hardening (Phase 8 — round 3: runtime semantics)
 
 - **DROP DATABASE ... WITH (FORCE) (PG13+):** restore-db.sh و ci-backup-test.sh
   اکنون از `DROP DATABASE IF EXISTS "..." WITH (FORCE)` استفاده می‌کنند که

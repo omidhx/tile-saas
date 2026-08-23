@@ -915,13 +915,16 @@ test("ci-backup-test.sh: uses DROP DATABASE ... WITH (FORCE) with fallback", () 
 test("backup-db.sh: has BACKUP_TEST_HOLD_SECONDS test hook for deterministic flock testing", () => {
   const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
   assert.ok(
-    src.includes("BACKUP_TEST_HOLD_SECONDS") &&
-    src.includes('BACKUP_TEST_HOLD_SECONDS:-0'),
-    "should have BACKUP_TEST_HOLD_SECONDS env var (defaults to 0)",
+    src.includes("BACKUP_TEST_HOLD_SECONDS"),
+    "should reference BACKUP_TEST_HOLD_SECONDS env var",
+  );
+  assert.ok(
+    src.includes("BACKUP_TEST_MODE"),
+    "should require BACKUP_TEST_MODE flag (defense-in-depth)",
   );
   // The hook should be placed AFTER flock acquisition, BEFORE pre-flight checks
   const flockIndex = src.indexOf("flock -n 200");
-  const hookIndex = src.indexOf("BACKUP_TEST_HOLD_SECONDS:-0");
+  const hookIndex = src.indexOf("BACKUP_TEST_MODE");
   const requireIndex = src.indexOf("Required command not found");
   assert.ok(flockIndex > -1 && hookIndex > -1 && requireIndex > -1);
   assert.ok(
@@ -937,9 +940,128 @@ test("backup-db.sh: has BACKUP_TEST_HOLD_SECONDS test hook for deterministic flo
 test("ci-backup-test.sh: has BACKUP_TEST_HOLD_SECONDS test hook", () => {
   const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
   assert.ok(
-    src.includes("BACKUP_TEST_HOLD_SECONDS") &&
-    src.includes('BACKUP_TEST_HOLD_SECONDS:-0'),
-    "should have BACKUP_TEST_HOLD_SECONDS env var",
+    src.includes("BACKUP_TEST_HOLD_SECONDS") && src.includes("BACKUP_TEST_MODE"),
+    "should have BACKUP_TEST_HOLD_SECONDS + BACKUP_TEST_MODE env vars",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 33b. BACKUP_TEST_HOLD_SECONDS requires BACKUP_TEST_MODE=1 (defense-in-depth)
+// ──────────────────────────────────────────────
+// بدونِ BACKUP_TEST_MODE=1، حتی اگر BACKUP_TEST_HOLD_SECONDS ست شده باشد،
+// sleep نباید اجرا شود. این جلویِ فعال‌شدنِ تصادفی در production را می‌گیرد.
+
+test("backup-db.sh: BACKUP_TEST_HOLD_SECONDS only activates when BACKUP_TEST_MODE=1", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    src.includes('BACKUP_TEST_MODE="${BACKUP_TEST_MODE:-0}"'),
+    "should read BACKUP_TEST_MODE env var (defaults to 0)",
+  );
+  assert.ok(
+    src.includes('"${BACKUP_TEST_MODE}" = "1"') ||
+    src.includes('"${BACKUP_TEST_MODE}" == "1"'),
+    "should check BACKUP_TEST_MODE == 1 before activating sleep",
+  );
+  // The condition should require BOTH vars
+  assert.ok(
+    /BACKUP_TEST_MODE.*=.*1.*BACKUP_TEST_HOLD_SECONDS/.test(src.replace(/\s+/g, " ")) ||
+    /BACKUP_TEST_HOLD_SECONDS.*BACKUP_TEST_MODE.*=.*1/.test(src.replace(/\s+/g, " ")),
+    "should require BOTH BACKUP_TEST_MODE=1 AND BACKUP_TEST_HOLD_SECONDS to activate",
+  );
+});
+
+test("ci-backup-test.sh: BACKUP_TEST_HOLD_SECONDS only activates when BACKUP_TEST_MODE=1", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes('BACKUP_TEST_MODE="${BACKUP_TEST_MODE:-0}"'),
+    "should read BACKUP_TEST_MODE env var",
+  );
+  assert.ok(
+    /BACKUP_TEST_MODE.*=.*1.*BACKUP_TEST_HOLD_SECONDS/.test(src.replace(/\s+/g, " ")) ||
+    /BACKUP_TEST_HOLD_SECONDS.*BACKUP_TEST_MODE.*=.*1/.test(src.replace(/\s+/g, " ")),
+    "should require BOTH vars",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 33c. BACKUP_TEST_HOLD_SECONDS validates value (non-negative number)
+// ──────────────────────────────────────────────
+
+test("backup-db.sh: validates BACKUP_TEST_HOLD_SECONDS is a non-negative number", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    src.includes("^[0-9]+([.][0-9]+)?$"),
+    "should validate BACKUP_TEST_HOLD_SECONDS against non-negative number regex",
+  );
+  assert.ok(
+    /must be a non-negative number/.test(src),
+    "should give clear error message for invalid value",
+  );
+});
+
+test("backup-db.sh: caps BACKUP_TEST_HOLD_SECONDS at 300 seconds", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    src.includes("300") && /exceeds 300 second cap/.test(src),
+    "should cap BACKUP_TEST_HOLD_SECONDS at 300 seconds (5 min) to prevent runaway locks",
+  );
+});
+
+test("ci-backup-test.sh: validates and caps BACKUP_TEST_HOLD_SECONDS", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("^[0-9]+([.][0-9]+)?$") && src.includes("300"),
+    "should validate and cap BACKUP_TEST_HOLD_SECONDS",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 33d. Test hook documents that it's NOT for production
+// ──────────────────────────────────────────────
+
+test("backup-db.sh: test hook documents it's NOT for production", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "backup-db.sh"), "utf8");
+  assert.ok(
+    /NOT for production/i.test(src),
+    "should clearly state the test hook is NOT for production",
+  );
+  assert.ok(
+    /deliberately delayed/i.test(src) || /DELIBERATELY delayed/i.test(src),
+    "should mention that pre-flight checks are deliberately delayed",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 35. CI installs PostgreSQL 16 client (matching production server)
+// ──────────────────────────────────────────────
+
+test("CI workflow installs PostgreSQL 16 client (matches production)", () => {
+  const ciYaml = readFileSync(join(PROJECT_ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  // Should install postgresql-client-16 specifically (not just postgresql-client)
+  assert.ok(
+    ciYaml.includes("postgresql-client-16"),
+    "CI should install postgresql-client-16 to match production PostgreSQL 16 server",
+  );
+  // Should add the official PostgreSQL apt repository
+  assert.ok(
+    ciYaml.includes("apt.postgresql.org"),
+    "CI should add the official PostgreSQL apt repository (not Ubuntu default)",
+  );
+});
+
+test("CI workflow logs all tool versions before running backup test", () => {
+  const ciYaml = readFileSync(join(PROJECT_ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  // Should print versions of all critical tools
+  for (const tool of ["psql --version", "pg_dump --version", "pg_restore --version",
+                       "zstd --version", "gpg --version", "rsync --version"]) {
+    assert.ok(
+      ciYaml.includes(tool),
+      `CI should log ${tool} for diagnosing version mismatch`,
+    );
+  }
+  assert.ok(
+    ciYaml.includes("Tool versions") || ciYaml.includes("tool versions"),
+    "CI should clearly label the version output section",
   );
 });
 

@@ -88,16 +88,42 @@ fi
 
 # ──────────────────────────────────────────────────────────
 # Test hook — sleep after acquiring flock, for deterministic concurrency tests.
-# ⚠️ ONLY FOR TESTING. In production, leave this unset (defaults to 0).
+# ──────────────────────────────────────────────────────────
+# ⚠️  ONLY FOR TESTING — این hook عمداً pre-flight checks را به تأخیر می‌اندازد.
+#     در production، هرگز این متغیرها را ست نکنید.
+#
+# فعال‌سازی: BACKUP_TEST_MODE=1 + BACKUP_TEST_HOLD_SECONDS=N
+#   (هر دو لازم است — defense-in-depth در برابرِ فعال‌شدنِ تصادفی)
+#
 # Usage in tests:
-#   BACKUP_TEST_HOLD_SECONDS=5 bash scripts/backup-db.sh &  # acquires lock, sleeps 5s
-#   bash scripts/backup-db.sh &                              # should fail with "already running"
-# این sleep قبل ازِ pre-flight checks قرار دارد تا تست flock بدونِ interference
-# از سمتِ require_command یا docker checks انجام شود.
-# Note: log function is defined below, so we use plain echo here.
-BACKUP_TEST_HOLD_SECONDS="${BACKUP_TEST_HOLD_SECONDS:-0}"
-if [ "${BACKUP_TEST_HOLD_SECONDS}" -gt 0 ] 2>/dev/null; then
+#   BACKUP_TEST_MODE=1 BACKUP_TEST_HOLD_SECONDS=5 bash scripts/backup-db.sh &  # holds lock 5s
+#   bash scripts/backup-db.sh &                                                 # should fail "already running"
+#
+# محدودیت‌ها:
+#   - BACKUP_TEST_HOLD_SECONDS باید عددِ غیرمنفی باشد (regex: ^[0-9]+([.][0-9]+)?$)
+#   - سقف: ۳۰۰ ثانیه (جلوگیری از قفل کردنِ cron یا CI برای مدتِ نامحدود)
+#   - این sleep قبل ازِ pre-flight checks قرار دارد — یعنی require_command و
+#     docker-compose check به تأخیر می‌افتند. این عمدی است (برایِ تستِ contention)
+#     ولی برایِ production مناسب نیست.
+BACKUP_TEST_MODE="${BACKUP_TEST_MODE:-0}"
+
+if [ "${BACKUP_TEST_MODE}" = "1" ] && [ -n "${BACKUP_TEST_HOLD_SECONDS:-}" ]; then
+  # Validate: must be a non-negative number (integer or decimal)
+  if ! [[ "${BACKUP_TEST_HOLD_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "ERROR: BACKUP_TEST_HOLD_SECONDS must be a non-negative number (got: '${BACKUP_TEST_HOLD_SECONDS}')" >&2
+    exit 1
+  fi
+
+  # Cap at 300 seconds (5 minutes) to prevent runaway locks
+  local_hold_int="${BACKUP_TEST_HOLD_SECONDS%.*}"
+  if [ "${local_hold_int}" -gt 300 ] 2>/dev/null; then
+    echo "ERROR: BACKUP_TEST_HOLD_SECONDS exceeds 300 second cap (got: ${BACKUP_TEST_HOLD_SECONDS})" >&2
+    echo "ERROR: this is a test-only hook; larger values risk blocking cron or CI indefinitely" >&2
+    exit 1
+  fi
+
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] INFO  TEST MODE: holding lock for ${BACKUP_TEST_HOLD_SECONDS} seconds (BACKUP_TEST_HOLD_SECONDS)"
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] INFO  TEST MODE: pre-flight checks are DELIBERATELY delayed — NOT for production" >&2
   sleep "${BACKUP_TEST_HOLD_SECONDS}"
 fi
 

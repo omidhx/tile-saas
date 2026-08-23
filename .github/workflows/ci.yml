@@ -196,14 +196,35 @@ jobs:
           fi
           kill $SERVER_PID
 
-      - name: Install backup tools (zstd, gpg)
-        # Phase 8 — ابزارهای لازم برایِ تستِ backup/restore
+      - name: Install backup tools (zstd, gpg, rsync, postgresql-client)
+        # Phase 8 — نصبِ صریحِ همه‌ی dependencyهای لازم برایِ تستِ backup/restore.
+        # نسخه‌ها در log چاپ می‌شوند تا در صورتِ mismatch سریع تشخیص داده شود.
+        # PostgreSQL client از apt repository رسمی نصب می‌شود (نه از Ubuntu default)
+        # تا با PostgreSQL 16 server سازگار باشد.
         run: |
+          set -e
+          # Install PostgreSQL 16 client (matching production server version)
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd gpg util-linux
+
+          sudo apt-get install -y -qq \
+            postgresql-client-16 \
+            zstd \
+            gnupg \
+            util-linux \
+            rsync
+
+          # Print all versions — critical for diagnosing version mismatch
+          echo "=== Tool versions ==="
+          psql --version
+          pg_dump --version
+          pg_restore --version
           zstd --version
           gpg --version | head -1
-          flock --version 2>&1 | head -1 || echo "flock bundled with util-linux"
+          rsync --version | head -1
+          flock --version 2>&1 | head -1 || echo "flock (from util-linux, no --version flag)"
+          echo "=== End tool versions ==="
 
       - name: Phase 8 — Backup + Verify + Restore test
         # این مرحله مهم‌ترین verification برایِ Phase 8 است. اسکریپتِ

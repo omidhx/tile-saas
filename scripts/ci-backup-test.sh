@@ -70,12 +70,27 @@ if ! flock -n 200; then
 fi
 
 # Test hook — sleep after acquiring flock, for deterministic concurrency tests.
-# ⚠️ ONLY FOR TESTING. In CI, leave this unset (defaults to 0).
+# ⚠️ ONLY FOR TESTING. Requires both BACKUP_TEST_MODE=1 AND BACKUP_TEST_HOLD_SECONDS=N.
 # این sleep قبل ازِ require_command قرار دارد تا تست flock بدونِ interference
-# از سمتِ command checks انجام شود.
-BACKUP_TEST_HOLD_SECONDS="${BACKUP_TEST_HOLD_SECONDS:-0}"
-if [ "${BACKUP_TEST_HOLD_SECONDS}" -gt 0 ] 2>/dev/null; then
+# از سمتِ command checks انجام شود. pre-flight checks عمداً به تأخیر می‌افتند.
+BACKUP_TEST_MODE="${BACKUP_TEST_MODE:-0}"
+
+if [ "${BACKUP_TEST_MODE}" = "1" ] && [ -n "${BACKUP_TEST_HOLD_SECONDS:-}" ]; then
+  # Validate: must be a non-negative number
+  if ! [[ "${BACKUP_TEST_HOLD_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "ERROR: BACKUP_TEST_HOLD_SECONDS must be a non-negative number (got: '${BACKUP_TEST_HOLD_SECONDS}')" >&2
+    exit 1
+  fi
+
+  # Cap at 300 seconds
+  local_hold_int="${BACKUP_TEST_HOLD_SECONDS%.*}"
+  if [ "${local_hold_int}" -gt 300 ] 2>/dev/null; then
+    echo "ERROR: BACKUP_TEST_HOLD_SECONDS exceeds 300 second cap (got: ${BACKUP_TEST_HOLD_SECONDS})" >&2
+    exit 1
+  fi
+
   echo "TEST MODE: holding lock for ${BACKUP_TEST_HOLD_SECONDS} seconds" >&2
+  echo "TEST MODE: pre-flight checks are DELIBERATELY delayed — NOT for production" >&2
   sleep "${BACKUP_TEST_HOLD_SECONDS}"
 fi
 
