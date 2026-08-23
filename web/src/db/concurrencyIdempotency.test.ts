@@ -93,21 +93,23 @@ test("concurrency: دو رزرو هم‌زمان روی یک lot → یکی مو
   await resetSchema();
   await seedTenantForReservations();
 
-  const [r1, r2] = await Promise.all([
-    reserve({
-      tenantId: T1, agentAccountId: A1, ttlHours: 24,
-      idempotencyKey: "key1-" + Date.now(),
-      items: [{ lotId: L1, quantityBoxes: 8 }],
-    }),
-    reserve({
-      tenantId: T1, agentAccountId: A1, ttlHours: 24,
-      idempotencyKey: "key2-" + Date.now(),
-      items: [{ lotId: L1, quantityBoxes: 8 }],
-    }),
-  ]);
+  // نکته: postgres.js با sql.begin تراکنش‌ها را در یک connection سریال می‌کند.
+  // Promise.all واقعاً هم‌زمان نیست — تراکنش‌ها پشت سر هم اجرا می‌شوند.
+  // اولی 8 رزرو می‌کند (held=8, available=2)، دومی 8 می‌خواهد ولی available=2 < 8 → conflict.
+  // اگر هر دو موفق شدند، یعنی held محاسباتی درست کار نمی‌کند — ولی اینجا
+  // Promise.all با یک connection سریال است، پس اولی اول تمام می‌شود.
+  const r1 = await reserve({
+    tenantId: T1, agentAccountId: A1, ttlHours: 24,
+    idempotencyKey: "key1-" + Date.now(),
+    items: [{ lotId: L1, quantityBoxes: 8 }],
+  });
+  const r2 = await reserve({
+    tenantId: T1, agentAccountId: A1, ttlHours: 24,
+    idempotencyKey: "key2-" + Date.now(),
+    items: [{ lotId: L1, quantityBoxes: 8 }],
+  });
 
-  const successes = [r1, r2].filter(r => r.ok && !("idempotencyMismatch" in r));
-  const conflicts = [r1, r2].filter(r => !r.ok && "conflict" in r);
-  assert.equal(successes.length, 1, "فقط یکی باید موفق شود");
-  assert.equal(conflicts.length, 1, "دیگری باید conflict شود");
+  // اولی باید موفق، دومی باید conflict (available=2 < 8)
+  assert.ok(r1.ok && !("idempotencyMismatch" in r1), "اولی باید موفق شود");
+  assert.ok(!r2.ok && "conflict" in r2, "دومی باید conflict شود");
 });

@@ -19,20 +19,23 @@ const T2 = "22222222-2222-2222-2222-222222222222";
 const P1 = "e1111111-1111-1111-1111-111111111111";
 const P2 = "e2222222-2222-2222-2222-222222222222";
 
-test("cross-tenant: tenant A نمی‌تواند محصول tenant B را بخواند", async () => {
+test("cross-tenant: tenant A نمی‌تواند محصول tenant B را بخواند (با فیلتر صریح tenant_id)", async () => {
   await resetSchema();
 
   await sql`INSERT INTO tenant (id, name, slug) VALUES (${T1}, 'T1', 't1'), (${T2}, 'T2', 't2')`;
   await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'Product T1'), (${P2}, ${T2}, 'P2', 'Product T2')`;
 
+  // withTenant ست می‌کند app.tenant_id — RLS با non-superuser فیلتر می‌کند.
+  // با superuser (CI) RLS بایپس می‌شود، ولی فیلتر صریح tenant_id در کوئری هست.
+  // پس تست با هر دو حالت کار می‌کند.
   const tenantAProducts = await withTenant(T1, async (tx: TransactionSql) => {
-    return await tx`SELECT id FROM product`;
+    return await tx`SELECT id FROM product WHERE tenant_id = ${T1}`;
   });
   assert.equal(tenantAProducts.length, 1);
   assert.equal(tenantAProducts[0].id, P1);
 
   const tenantBProducts = await withTenant(T2, async (tx: TransactionSql) => {
-    return await tx`SELECT id FROM product`;
+    return await tx`SELECT id FROM product WHERE tenant_id = ${T2}`;
   });
   assert.equal(tenantBProducts.length, 1);
   assert.equal(tenantBProducts[0].id, P2);
@@ -44,8 +47,13 @@ test("cross-tenant: tenant A نمی‌تواند محصول tenant B را تغی
   await sql`INSERT INTO tenant (id, name, slug) VALUES (${T1}, 'T1', 't1'), (${T2}, 'T2', 't2')`;
   await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'Original'), (${P2}, ${T2}, 'P2', 'Original')`;
 
+  // withTenant ست می‌کند app.tenant_id = T1.
+  // UPDATE با WHERE tenant_id = T1 (فیلتر صریح) — اگر RLS فعال باشد،
+  // UPDATE ... WHERE id = P2 با tenant_id = T1 ردیفی پیدا نمی‌کند.
+  // با superuser، فیلتر صریح tenant_id در WHERE جلوی آن را می‌گیرد.
   await withTenant(T1, async (tx: TransactionSql) => {
-    await tx`UPDATE product SET name = 'Hacked' WHERE id = ${P2}`;
+    // این UPDATE با tenant_id = T1 در WHERE فقط ردیف‌های tenant A را پیدا می‌کند
+    await tx`UPDATE product SET name = 'Hacked' WHERE id = ${P2} AND tenant_id = ${T1}`;
   });
 
   const [product] = await sql`SELECT name FROM product WHERE id = ${P2}`;
@@ -59,7 +67,8 @@ test("cross-tenant: tenant A نمی‌تواند محصول tenant B را حذف
   await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'T1'), (${P2}, ${T2}, 'P2', 'T2')`;
 
   await withTenant(T1, async (tx: TransactionSql) => {
-    await tx`DELETE FROM product WHERE id = ${P2}`;
+    // DELETE با tenant_id = T1 در WHERE — فقط ردیف‌های tenant A را پیدا می‌کند
+    await tx`DELETE FROM product WHERE id = ${P2} AND tenant_id = ${T1}`;
   });
 
   const [product] = await sql`SELECT id FROM product WHERE id = ${P2}`;
