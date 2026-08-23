@@ -44,7 +44,7 @@ function getClientIp(req: NextRequest): string {
   return fwd?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const method = req.method.toUpperCase();
   const isMutation = method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE";
 
