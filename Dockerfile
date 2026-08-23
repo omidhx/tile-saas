@@ -79,7 +79,8 @@ WORKDIR /app/web
 EXPOSE 3000
 
 # healthcheck: هر ۳۰ ثانیه، تا ۳ بار شکست قبل از restart
-# از /api/health استفاده می‌کنیم چون DB را هم چک می‌کند، نه فقط پورت را.
+# /api/health = liveness (فقط process زنده است)
+# /api/ready = readiness (DB هم در دسترس است) — در reverse proxy استفاده شود
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:3000/api/health || exit 1
 

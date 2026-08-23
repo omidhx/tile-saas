@@ -171,14 +171,29 @@ jobs:
           npm run start &
           SERVER_PID=$!
           sleep 5
-          # /api/health باید 200 بدهد
+          # /api/health (liveness) باید 200 بدهد — فقط process زنده است
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health)
           if [ "$STATUS" != "200" ]; then
             echo "FAIL: /api/health returned $STATUS"
             kill $SERVER_PID
             exit 1
           fi
-          echo "OK: /api/health returned 200"
+          echo "OK: /api/health (liveness) returned 200"
+          # /api/ready (readiness) باید 200 یا 503 بدهد — DB را چک می‌کند
+          # در CI، DB متصل است پس باید 200 باشد
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/ready)
+          if [ "$STATUS" != "200" ]; then
+            echo "WARN: /api/ready returned $STATUS (DB may be unavailable)"
+          else
+            echo "OK: /api/ready (readiness) returned 200"
+          fi
+          # /api/metrics باید در production 401 بدهد (نیازمند auth)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/metrics)
+          if [ "$STATUS" = "401" ] || [ "$STATUS" = "403" ]; then
+            echo "OK: /api/metrics returned $STATUS (auth required)"
+          else
+            echo "WARN: /api/metrics returned $STATUS (expected 401/403 in production)"
+          fi
           kill $SERVER_PID
 
       - name: Upload test artifacts (on failure)

@@ -1,35 +1,21 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/db/client";
 
 /**
- * GET /api/health — بررسیِ سلامتِ اپ.
+ * GET /api/health — Liveness probe.
  *
- * چرا این endpoint لازم است: Docker healthcheck و reverse proxy (Caddy/Nginx)
- * باید بتوانند تشخیص دهند که اپ واقعاً سالم است، نه فقط پورت باز است.
- * `GET /` هم می‌شود ولی آن redirect می‌زند و ممکن است با cache رفتار عجیب کند.
+ * فقط بررسی می‌کند که process زنده است و می‌تواند پاسخ HTTP بدهد.
+ * DB را چک نمی‌کند — برای تشخیصِ readiness از /api/ready استفاده کنید.
  *
- * این endpoint:
- *   - DB را با یک کوئریِ سبک (`SELECT 1`) چک می‌کند.
- *   - اگر DB در دسترس نباشد، 503 برمی‌گرداند (نه 500 — برای load balancerها).
- *   - احراز هویت لازم ندارد — اطلاعاتِ حساسی برنمی‌گرداند.
+ * تفاوت liveness و readiness:
+ *   - Liveness: آیا process زنده است؟ (load balancer اگر fail شود، restart می‌کند)
+ *   - Readiness: آیا سرویس واقعاً می‌تواند request معتبر پاسخ دهد؟ (load balancer
+ *     اگر fail شود، ترافیک را نمی‌فرستد ولی restart نمی‌کند)
  *
- * ponytail: این endpoint اطلاعاتِ version یا ساختارِ داخلی نمی‌دهد — فقط
- * "ok" یا "down". مهاجم نباید از این endpoint برای discovery استفاده کند.
+ * این endpoint احراز هویت لازم ندارد و اطلاعات حساسی نمی‌دهد.
  */
 export async function GET() {
-  try {
-    const [row] = await sql<{ ok: number }[]>`SELECT 1 AS ok`;
-    if (!row || row.ok !== 1) {
-      return NextResponse.json(
-        { status: "down", reason: "db_unexpected_response" },
-        { status: 503 },
-      );
-    }
-    return NextResponse.json({ status: "ok" }, { status: 200 });
-  } catch (err) {
-    return NextResponse.json(
-      { status: "down", reason: "db_unreachable" },
-      { status: 503 },
-    );
-  }
+  return NextResponse.json(
+    { status: "ok", timestamp: new Date().toISOString() },
+    { status: 200 },
+  );
 }

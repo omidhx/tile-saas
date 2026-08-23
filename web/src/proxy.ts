@@ -111,8 +111,18 @@ export function proxy(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-nonce", nonce);
 
+  // ──────────────────────────────────────────────────────────
+  // ۳.۵. Request ID — برای correlation در logها
+  // ──────────────────────────────────────────────────────────
+  // اگر reverse proxy یک requestId فرستاده باشد، از آن استفاده کن.
+  // در غیر این صورت، یک UUID تولید کن. این ID در کلِ زنجیره‌ی request
+  // (proxy log → app log → worker log) باید یکسان بماند.
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
+  requestHeaders.set("x-request-id", requestId);
+
   const res = NextResponse.next({ request: { headers: requestHeaders } });
   res.headers.set("Content-Security-Policy", csp);
+  res.headers.set("x-request-id", requestId);
 
   // ──────────────────────────────────────────────────────────
   // ۴. HSTS در production — فقط اگر پشتِ reverse proxy مورداعتماد است
