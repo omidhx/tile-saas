@@ -1,0 +1,125 @@
+# docker-compose.staging.yml — Staging Verification Environment
+#
+# این فایل یک staging environment کامل می‌سازد شامل:
+#   - PostgreSQL 16 با app_user (non-superuser)
+#   - Next.js app با DATABASE_URL به app_user
+#   - Caddy reverse proxy با HTTPS
+#   - Workerها
+#
+# استفاده:
+#   docker compose -f docker-compose.staging.yml up --build
+#
+# سپس تست‌ها را اجرا کنید:
+#   bash scripts/staging-verify.sh
+#
+# پیش‌نیاز:
+#   - دامنه یا localhost با self-signed cert
+#   - Caddy به‌صورت خودکار Let's Encrypt می‌گیرد (نیاز به دامنه واقعی)
+#   - برای localhost، self-signed cert بسازید:
+#     caddy trust  # یا mkcert localhost
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: stagingpw
+      POSTGRES_DB: tile_staging
+    volumes:
+      - pgdata-staging:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/create-app-user.sql:/docker-entrypoint-initdb.d/02-create-app-user.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # ⚠️ مهم: DATABASE_URL به app_user وصل می‌شود، نه postgres
+      # این همان چیزی است که DB-001 را تأیید می‌کند
+      DATABASE_URL: postgresql://app_user:TEMPORARY_CHANGE_ME@postgres:5432/tile_staging
+      AUTH_SECRET: staging-secret-must-be-at-least-32-characters-long
+      NODE_ENV: production
+      RATE_LIMIT_BACKEND: memory
+      SENTRY_DSN: ""
+    volumes:
+      - uploads-staging:/app/web/private/uploads
+    # پورت مستقیم به اینترنت expose نمی‌شود — فقط Caddy به آن دسترسی دارد
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  worker-expire:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://app_user:TEMPORARY_CHANGE_ME@postgres:5432/tile_staging
+      AUTH_SECRET: staging-secret-must-be-at-least-32-characters-long
+      NODE_ENV: production
+    entrypoint: []
+    command: >
+      /bin/sh -c "
+        echo 'Starting expire worker';
+        while true; do
+          node --import tsx scripts/expire.ts || true;
+          sleep 600;
+        done
+      "
+    working_dir: /app/web
+
+  worker-outbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://app_user:TEMPORARY_CHANGE_ME@postgres:5432/tile_staging
+      AUTH_SECRET: staging-secret-must-be-at-least-32-characters-long
+      NODE_ENV: production
+      SMS_PROVIDER: log
+    entrypoint: []
+    command: >
+      /bin/sh -c "
+        echo 'Starting outbox worker';
+        while true; do
+          node --import tsx scripts/outbox.ts || true;
+          sleep 120;
+        done
+      "
+    working_dir: /app/web
+
+volumes:
+  pgdata-staging:
+  uploads-staging:
+  caddy-data:
+  caddy-config:

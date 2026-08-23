@@ -17,12 +17,23 @@ test("download route: URL عمومی دیگر دسترسی مستقیم ندار
 
 test("download route: path traversal در id پارامتر رد می‌شود", () => {
   // id در URL باید فقط UUID.ext باشد — هر کاراکتر غیرمجاز رد می‌شود
-  const sanitize = (id: string) => id.replace(/[^a-zA-Z0-9.\-]/g, "");
+  // UUID فقط شامل hex + dash است، و یک dot قبل از extension
+  const sanitize = (id: string) => {
+    // فقط حروف alphanumeric، dash، و یک dot (برای extension) مجاز است
+    const cleaned = id.replace(/[^a-zA-Z0-9\-]/g, "");
+    // بررسی فرمت: UUID.ext — فقط یک dot مجاز است
+    const parts = id.split(".");
+    if (parts.length > 2) return ""; // بیش از یک dot → رد
+    // بخش اول UUID (فقط hex + dash)، بخش دوم extension (فقط alpha)
+    if (parts.length === 2 && !/^[a-zA-Z0-9\-]+$/.test(parts[0])) return "";
+    if (parts.length === 2 && !/^[a-zA-Z]+$/.test(parts[1])) return "";
+    return parts.length === 2 ? `${parts[0]}.${parts[1]}` : cleaned;
+  };
 
   assert.equal(sanitize("550e8400-e29b-41d4-a716-446655440000.jpg"), "550e8400-e29b-41d4-a716-446655440000.jpg");
-  assert.equal(sanitize("../../../etc/passwd"), "etcpasswd");
-  assert.equal(sanitize("..\\..\\windows"), "windows");
-  assert.equal(sanitize("file<script>alert(1)</script>.jpg"), "filescriptalert1script.jpg");
+  assert.equal(sanitize("../../../etc/passwd"), "");
+  assert.equal(sanitize("..\\..\\windows"), "");
+  assert.equal(sanitize("file<script>alert(1)</script>.jpg"), "");
 });
 
 test("download route: Content-Type بر اساس پسوند", () => {

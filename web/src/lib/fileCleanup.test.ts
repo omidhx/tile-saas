@@ -12,7 +12,7 @@ import { deleteUploadFile, deleteUploadFiles } from "./fileCleanup";
 
 async function makeUploadsDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "tile-test-"));
-  const uploadsDir = join(dir, "public", "uploads");
+  const uploadsDir = join(dir, "private", "uploads");
   await mkdir(uploadsDir, { recursive: true });
   return dir;
 }
@@ -45,13 +45,13 @@ test("deleteUploadFile: فایل موجود را حذف می‌کند", async ()
   try {
     process.chdir(dir);
     const filename = "test-file-" + Date.now() + ".jpg";
-    const filePath = join(dir, "public", "uploads", filename);
+    const filePath = join(dir, "private", "uploads", filename);
     await writeFile(filePath, "test content");
 
     await deleteUploadFile(`/uploads/${filename}`);
 
     // فایل باید حذف شده باشد
-    const files = await readdir(join(dir, "public", "uploads"));
+    const files = await readdir(join(dir, "private", "uploads"));
     assert.ok(!files.includes(filename), "فایل باید حذف شده باشد");
   } finally {
     process.chdir(originalCwd);
@@ -70,12 +70,12 @@ test("deleteUploadFiles: چند فایل با هم", async () => {
       "test-batch-3-" + Date.now() + ".webp",
     ];
     for (const f of filenames) {
-      await writeFile(join(dir, "public", "uploads", f), "test");
+      await writeFile(join(dir, "private", "uploads", f), "test");
     }
 
     await deleteUploadFiles(filenames.map((f) => `/uploads/${f}`));
 
-    const files = await readdir(join(dir, "public", "uploads"));
+    const files = await readdir(join(dir, "private", "uploads"));
     for (const f of filenames) {
       assert.ok(!files.includes(f), `${f} باید حذف شده باشد`);
     }

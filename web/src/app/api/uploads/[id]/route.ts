@@ -36,11 +36,28 @@ export async function GET(
   }
 
   // path traversal defense — id فقط باید UUID.ext باشد
-  // حذف هر کاراکتر غیر از alphanumeric، dash، و dot
-  const safeId = id.replace(/[^a-zA-Z0-9.\-]/g, "");
-  if (safeId !== id) {
+  // فرمت معتبر: hex-dashes.ext (یک dot فقط)
+  // هر کاراکتر غیرمجاز → 404
+  const parts = id.split(".");
+  if (parts.length > 2) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  if (parts.length === 2) {
+    // بخش اول: UUID (hex + dash فقط)
+    if (!/^[a-zA-Z0-9\-]+$/.test(parts[0])) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    // بخش دوم: extension (alpha فقط)
+    if (!/^[a-zA-Z]+$/.test(parts[1])) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+  } else {
+    // بدون extension — فقط hex + dash
+    if (!/^[a-zA-Z0-9\-]+$/.test(id)) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+  }
+  const safeId = id;
 
   // ۲. جستجوی فایل در DB — product_image یا tenant.logo_url
   const fileUrl = `/uploads/${safeId}`;

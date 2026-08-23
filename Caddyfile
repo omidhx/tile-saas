@@ -1,0 +1,31 @@
+# Caddyfile — Reverse proxy برای staging
+#
+# این فایل Caddy را به‌عنوان reverse proxy با HTTPS تنظیم می‌کند.
+# Caddy به‌صورت خودکار Let's Encrypt certificate می‌گیرد (نیاز به دامنه واقعی).
+# برای localhost، از internal CA استفاده می‌کند (caddy trust).
+
+# برای دامنه واقعی، این خط را به‌روزرسانی کنید:
+# staging.example.com {
+# برای localhost:
+:443 {
+    # Reverse proxy به Next.js app
+    reverse_proxy web:3000 {
+        # ⚠️ مهم: X-Forwarded-Proto را از client پاک می‌کنیم و خودمان ست می‌کنیم
+        # این جلوی spoofing را می‌گیرد — client نمی‌تواند این header را بفرستد
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # HSTS در سطح Caddy (defense-in-depth کنار middleware)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # لاگ
+    log {
+        output stdout
+        format console
+    }
+}
