@@ -268,12 +268,28 @@ export async function reserveIn(
           : { ok: false, idempotencyMismatch: true };
       }
       // بسیار نادر: INSERT شکست خورد ولی ردیف هم پیدا نشد (مثلاً rollback هم‌زمان).
-      // در این حالت fallback به INSERT ساده بدون ON CONFLICT:
-      const [resv] = await tx<{ id: string }[]>`
+      // دوباره با ON CONFLICT تلاش کن — اگر باز هم ۰ ردیف برگرداند، SELECT کن.
+      // هرگز INSERT بدون ON CONFLICT نزن چون ممکن است UNIQUE constraint بخورد و 500 بدهد.
+      const retryInserted = await tx<{ id: string }[]>`
         INSERT INTO reservation (tenant_id, agent_account_id, expires_at, idempotency_key, idempotency_request_hash)
         VALUES (${tenantId}, ${agentAccountId}, now() + make_interval(hours => ${ttlHours}), ${idempotencyKey}, ${requestHash})
+        ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
         RETURNING id`;
-      var resvId = resv.id;
+      if (retryInserted.length > 0) {
+        var resvId = retryInserted[0].id;
+      } else {
+        // هنوز ۰ ردیف — یعنی بین دو INSERT، تراکنش دیگری commit کرده.
+        const [retryExisting] = await tx<{ id: string; idempotency_request_hash: string | null }[]>`
+          SELECT id, idempotency_request_hash FROM reservation
+          WHERE tenant_id = ${tenantId} AND idempotency_key = ${idempotencyKey}`;
+        if (retryExisting) {
+          return retryExisting.idempotency_request_hash === requestHash
+            ? { ok: true, reservationId: retryExisting.id, deduped: true }
+            : { ok: false, idempotencyMismatch: true };
+        }
+        // این نباید رخ دهد —但如果 رخ داد، خطای صریح بده نه 500 تصادفی.
+        throw new Error("idempotency: ردیف پیدا نشد بعد از دو INSERT و دو SELECT");
+      }
     } else {
       var resvId = inserted[0].id;
     }

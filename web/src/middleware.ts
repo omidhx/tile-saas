@@ -26,6 +26,14 @@ export function middleware(req: NextRequest) {
     const host = req.headers.get("host");
 
     if (host) {
+      if (origin === "null") {
+        // Origin: null می‌تواند از sandbox iframe یا data: URI بیاید.
+        // این درخواست‌ها نباید mutation انجام دهند — رد کن.
+        return NextResponse.json(
+          { error: "null_origin_forbidden" },
+          { status: 403 },
+        );
+      }
       if (origin) {
         // Origin آمد — با Host مقایسه کن
         try {
@@ -76,12 +84,20 @@ export function middleware(req: NextRequest) {
   res.headers.set("Content-Security-Policy", csp);
 
   // ──────────────────────────────────────────────────────────
-  // ۳. HSTS در production — فقط اگر پشتِ reverse proxy با HTTPS است
+  // ۳. HSTS در production — فقط اگر پشتِ reverse proxy مورداعتماد است
   // ──────────────────────────────────────────────────────────
-  // HSTS فقط روی HTTPS معنا دارد. اگر کاربر مستقیم روی HTTP وصل شود،
-  // HSTS نباید ست شود چون مرورگر آن را نادیده می‌گیرد و ممکن است
-  // رفتار عجیبی ایجاد کند. reverse proxy (Caddy/Nginx) X-Forwarded-Proto
-  // می‌فرستد که نشان می‌دهد درخواست HTTPS بوده.
+  // ⚠️ مهم: X-Forwarded-Proto فقط زمانی قابل اعتماد است که reverse proxy
+  // آن را پاک‌سازی و بازنویسی کند. اگر اپ مستقیماً در معرض اینترنت باشد،
+  // مهاجم می‌تواند این header را بفرستد و HSTS را روی HTTP فعال کند.
+  //
+  // مدلِ deploymentِ این پروژه: اپ همیشه پشتِ Caddy/Nginx اجرا می‌شود
+  // (نگاه کن به GO_LIVE.md). Caddy/Nginx باید:
+  //   - X-Forwarded-Proto را فقط از خروجیِ TLS خودش ست کند
+  //   - هر X-Forwarded-Proto از سمت client را حذف کند
+  //   - یا proxy_set_header X-Forwarded-Proto $scheme (Nginx)
+  //
+  // اگر اپ مستقیماً expose شود (بدون reverse proxy)، این HSTS نباید ست شود.
+  // در آن حالت، HSTS کارِ reverse proxy است که TLS را terminate می‌کند.
   if (process.env.NODE_ENV === "production") {
     const forwardedProto = req.headers.get("x-forwarded-proto");
     if (forwardedProto === "https") {
