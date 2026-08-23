@@ -2,6 +2,15 @@
 # حجیم‌اند، تاریخچه‌ی .git را تودرتو تکرار می‌کنند، و web/.env رازدار داخلشان است.
 _backups/
 
+# بکاپ‌های روزانه‌ی Phase 8 — فایل‌های رمزنگاری‌شده + status file
+# (status file فقط timestamp/size/checksum دارد — نه secret. ولی بیرون از git می‌ماند
+# چون با host-specific مقادیر پر می‌شود.)
+backups/daily/*
+backups/status/*
+!backups/daily/.gitkeep
+!backups/status/.gitkeep
+!backups/README.md
+
 # خروجی‌های قابلِ بازتولید
 node_modules/
 .next/

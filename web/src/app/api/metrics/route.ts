@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { sql } from "@/db/client";
 import { metrics } from "@/lib/metrics";
+import { readBackupStatus, computeLiveBackupAgeSeconds } from "@/lib/backupStatus";
 
 /**
  * GET /api/metrics — metrics عملیاتی.
@@ -16,6 +17,7 @@ import { metrics } from "@/lib/metrics";
  *   - error rate
  *   - uptime
  *   - DB connection pool status (if available)
+ *   - backup status (last success, age, restore test) — Phase 8
  */
 export async function GET() {
   // در production، فقط platform admin یا staff admin
@@ -30,5 +32,25 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json(metrics.toJSON(), { status: 200 });
+  const base = metrics.toJSON();
+
+  // Phase 8 — backup status (read from mounted volume, no secrets exposed)
+  const backupStatus = readBackupStatus();
+  const backupSection = backupStatus
+    ? {
+        last_success_at: backupStatus.last_success_at,
+        last_failure_at: backupStatus.last_failure_at,
+        last_failure_reason: backupStatus.last_failure_reason,
+        last_success_size_bytes: backupStatus.last_success_size_bytes,
+        last_success_sha256: backupStatus.last_success_sha256
+          ? backupStatus.last_success_sha256.substring(0, 16) + "..."
+          : null,
+        backup_age_seconds: computeLiveBackupAgeSeconds(backupStatus),
+        restore_test_last_success_at: backupStatus.restore_test_last_success_at,
+        restore_test_last_failure_at: backupStatus.restore_test_last_failure_at,
+        retention_days: backupStatus.retention_days,
+      }
+    : { configured: false, reason: "backup-status.json not found or unreadable" };
+
+  return NextResponse.json({ ...base, backup: backupSection }, { status: 200 });
 }

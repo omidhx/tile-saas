@@ -5,7 +5,115 @@
 
 ## [Unreleased]
 
-### Added (حسابرسیِ فاز ۱۰–پسین — رفعِ ایراداتِ بازبینیِ امنیتی)
+### Added (Phase 8 — Backup, Restore & Disaster Recovery)
+
+> **وضعیت: «پیاده‌سازی شد، آماده‌ی فعال‌سازی روی VPS»** — اسکریپت‌ها، تست‌ها و
+> مستندات آماده‌اند. CI در هر push چرخه‌ی کاملِ backup → verify → restore را
+> اجرا می‌کند و ثابت می‌کند بکاپ قابلِ بازیابی است. فعال‌سازی روی VPS
+> production نیازمند تنظیمِ متغیرهای محیطی + نصبِ cron است (مرجع:
+> `docs/GO_LIVE.md` بخش ۴).
+
+- **`scripts/backup-db.sh`** — بکاپِ روزانه با شش مرحله:
+  1. `pg_dump` با فرمتِ custom (شامل RLS policies + SECURITY DEFINER functions)
+  2. فشرده‌سازی با `zstd -19`
+  3. رمزنگاری با GPG symmetric AES-256 (passphrase از env)
+  4. محاسبه‌ی SHA-256 checksum
+  5. Sanity check: decrypt + verify PGDMP magic
+  6. Off-site copy با rsync (اگر `BACKUP_OFFSITE_TARGET` ست شده باشد)
+  - در پایان، فایل خام و فشرده‌ی رمزنگاری‌نشده به‌صورتِ امن پاک می‌شوند.
+  - اگر هر مرحله شکست بخورد، `backup-status.json` با `last_failure_reason` نوشته می‌شود.
+- **`scripts/verify-backup.sh`** — Verify بدونِ restore کامل: decrypt + checksum
+  + PGDMP magic + `pg_restore --list`. سریع (۲–۵ ثانیه)، مناسب برای monitoring
+  روزانه.
+- **`scripts/restore-db.sh`** — Restore به دیتابیسِ موقت (`tile_restore_test`،
+  نه production) با ۵ مرحله:
+  1. Decrypt + decompress
+  2. Drop و recreate دیتابیس موقت
+  3. `pg_restore` با `--exit-on-error`
+  4. Integrity checks (table count ≥ ۳۸، migrations ≥ ۴، tenant ≥ ۱، platform
+     admin ≥ ۱، RLS policies، SECURITY DEFINER functions)
+  5. Smoke queries (user_contexts، expire_due_reservations،
+     claim_pending_notifications، _rate_limit_hits، app_user schema)
+  - در صورتِ موفقیت، `restore_test_last_success_at` در status file ثبت می‌شود.
+- **`scripts/cleanup-old-backups.sh`** — Retention policy enforcement. فایل‌های
+  قدیمی‌تر از `BACKUP_RETENTION_DAYS` (پیش‌فرض ۳۰) را حذف می‌کند. کمتر از ۷ روز
+  مجاز نیست (fail-loud).
+- **`web/src/lib/backupStatus.ts`** — خواندنِ `backup-status.json` از mount
+  point (`/app/backups-status/backup-status.json`) و parse آن به typed object.
+  اگر فایل نبود یا parse نشد، `null` برمی‌گرداند (metrics endpoint همچنان ۲۰۰
+  برمی‌گرداند).
+- **`/api/metrics` به‌بود** — حالا شامل بخش `backup` است با این فیلدها:
+  `last_success_at`، `last_failure_at`، `last_failure_reason`،
+  `last_success_size_bytes`، `last_success_sha256` (تنها ۱۶ کاراکتر اول —
+  exposure minimization)، `backup_age_seconds` (محاسبه‌ی زنده)،
+  `restore_test_last_success_at`، `retention_days`.
+  اگر فایلِ status موجود نباشد: `{ configured: false, reason: "..." }`.
+- **`web/src/lib/backupStatus.test.ts`** — ۱۳ تست برایِ backup status reader
+  (file missing، invalid JSON، partial fields، failure-only status، array
+  rejection، live age computation با null/zero/positive/unparseable).
+- **Docker Compose mount** — `./backups/status:/app/backups-status:ro` در
+  `docker-compose.yml` و `docker-compose.staging.yml`. فقط status file
+  (metadata) mount می‌شود، نه خودِ بکاپ‌ها (حفاظت در برابرِ leak).
+- **CI step** — `.github/workflows/ci.yml` حالا شامل مرحله‌ی "Phase 8 — Backup
+  + Verify + Restore test" است که چرخه‌ی کامل را روی دیتابیسِ CI اجرا می‌کند:
+  pg_dump → zstd → GPG → SHA-256 → verify → restore به `tile_restore_test` →
+  integrity checks (table count، migrations، RLS، SECURITY DEFINER functions،
+  user_contexts) → cleanup.
+- **`docs/BACKUP_POLICY.md`** — سیاستِ کامل: RPO ۲۴h، RTO ۲h، retention ۳۰ روز،
+  encryption (GPG symmetric AES-256)، off-site (rsync)، restore test هفتگی،
+  upgrade path به WAL/PITR، roles & responsibilities.
+- **`docs/RESTORE_RUNBOOK.md`** — دستورالعملِ عملیاتی برایِ اپراتورهای on-call:
+  restore کاملِ production، restore test (safe)، selective restore یک جدول،
+  troubleshooting، post-restore checklist.
+- **`docs/DISASTER_RECOVERY.md`** — DR runbook کامل: trigger conditions، roles،
+  incident classification، VPS rebuild، secrets recovery، database restore،
+  application deployment، DNS/TLS recovery، verification checklist، rollback،
+  postmortem template، communication plan، exercise schedule.
+
+### Changed (Phase 8)
+
+- **`.gitignore`** — `backups/daily/*` و `backups/status/*` اضافه شد (با
+  `!backups/daily/.gitkeep` و `!backups/status/.gitkeep` و `!backups/README.md`
+  استثنا). هیچ بکاپی هرگز واردِ git نمی‌شود.
+- **`docs/ALERTING.md`** — ۵ alert threshold جدید برایِ backup (age > ۲۶h،
+  failure، size anomaly، restore test age > ۸ روز، status file missing). ۳ مورد
+  به manual monitoring checklist هفتگی اضافه شد.
+- **`docs/GO_LIVE.md` بخش ۴** — چک‌لیستِ عملیاتیِ فعال‌سازی روی VPS: تنظیمِ
+  متغیرها، اجرایِ دستیِ اولیه، نصبِ cron، verification.
+- **`.env.example`** — ۴ متغیرِ Phase 8 اضافه شد: `BACKUP_GPG_PASSPHRASE`،
+  `BACKUP_OFFSITE_TARGET`، `BACKUP_OFFSITE_SSH_KEY`، `BACKUP_RETENTION_DAYS`.
+- **`web/src/app/api/metrics/route.ts`** — import `readBackupStatus` و
+  `computeLiveBackupAgeSeconds`، embed در خروجیِ metrics.
+
+## [Phase 7] — Observability and Monitoring
+
+### Added (Phase 7 — Observability)
+
+- **`/api/health`** (liveness probe) — فقط بررسی می‌کند process زنده است.
+- **`/api/ready`** (readiness probe) — DB را با `SELECT 1` چک می‌کند. ۵۰۳ اگر
+  DB پایین باشد (reverse proxy ترافیک را قطع می‌کند).
+- **`web/src/lib/logger.ts`** — structured JSON logger با redaction (password،
+  token، cookie، session، authorization، apiKey، JWT).
+- **`web/src/lib/metrics.ts`** — in-memory metrics: request count per route،
+  latency (avg/min/max)، 4xx/5xx count، error rate، uptime.
+- **`web/src/app/api/metrics/route.ts`** — JSON endpoint (production: platform
+  admin only).
+- **`docs/ALERTING.md`** — ۱۲ alert threshold با severity و action.
+- **`proxy.ts`** — `x-request-id` header propagation (از reverse proxy یا
+  generated).
+- **CI** — smoke test حالا `/api/health`، `/api/ready`، `/api/metrics` را چک
+  می‌کند.
+
+## [Phase 6] — Node 22 + Next.js 16 Migration
+
+### Changed (Phase 6)
+
+- **Node 20 → 22** (Active LTS تا آوریل ۲۰۲۷) در همه‌ی جا: Dockerfile، CI،
+  package.json، tsconfig، .nvmrc.
+- **`middleware.ts` → `proxy.ts`** + function `middleware` → `proxy` (Next.js 16
+  requirement).
+- **tsconfig target** — ES2017 → ES2024.
+- **`docs/KNOWN-WARNINGS.md`** — ۵ هشدارِ شناخته‌شده‌ی non-blocking مستند شد.
 
 > **وضعیت: «اضافه شد، اجرا نشده»** — تا اولین push روی GitHub، CI سبز نشده و
 > migration 0004 روی دیتابیسِ موجود اعمال نشده. این موارد را به‌عنوانِ «نیت

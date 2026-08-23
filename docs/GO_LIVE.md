@@ -101,10 +101,24 @@ cd web && npm run migrate                     # اعمالِ migrationهای ا�
 
 ## ۴. بک‌آپ و بازیابی (spec ۳.۴ و ۱۴.۱۰)
 
-- [ ] `pg_dump` روزانه‌ی **رمزنگاری‌شده**.
-- [ ] استراتژی ایران: اول روی **VPS ایرانِ دوم در دیتاسنتر متفاوت**، بعد کرونِ ساعتِ خلوت به مقصد خارجی با retry (شبکه‌ی بین‌الملل ناپایدار است).
-- [ ] **تست Restore ماهانه** — بک‌آپِ تست‌نشده بک‌آپ نیست.
-- [ ] RPO/RTO را مکتوب کن (MVP: بک‌آپ روزانه، نگهداری ۱۴-۳۰ روز).
+> **Phase 8 تکمیل شد** — سیاست و اسکریپت‌ها آماده‌اند. این بخش چک‌لیستِ عملیاتیِ
+> فعال‌سازی روی VPS production است. مرجعِ کامل: `docs/BACKUP_POLICY.md`.
+
+- [ ] `BACKUP_GPG_PASSPHRASE` در `.env` ست شده (حداقل ۳۲ کاراکتر — `openssl rand -base64 32`).
+- [ ] `BACKUP_OFFSITE_TARGET` در `.env` ست شده (rsync target روی VPS دوم یا NAS).
+- [ ] (اگر rsync به SSH key نیاز دارد) `BACKUP_OFFSITE_SSH_KEY` ست شده و key در place است.
+- [ ] `BACKUP_RETENTION_DAYS` ست شده (پیش‌فرض ۳۰).
+- [ ] **اولین backup دستی اجرا شده:** `bash scripts/backup-db.sh` (با exit 0 تمام شد).
+- [ ] **اولین verify اجرا شده:** `bash scripts/verify-backup.sh` (با exit 0 تمام شد).
+- [ ] **اولین restore test اجرا شده:** `bash scripts/restore-db.sh --test-only` (با exit 0 تمام شد).
+- [ ] `backups/status/backup-status.json` ساخته شده و `/api/metrics` بخش `backup` را برمی‌گرداند.
+- [ ] **cron روزانه نصب شده** (روی host، نه داخل container): `30 23 * * * cd /opt/tile-saas && bash scripts/backup-db.sh`.
+- [ ] **cron هفتگی restore test نصب شده:** `00 01 * * 0 cd /opt/tile-saas && bash scripts/restore-db.sh --test-only`.
+- [ ] **cron cleanup نصب شده:** `00 00 * * * cd /opt/tile-saas && bash scripts/cleanup-old-backups.sh`.
+- [ ] استراتژیِ ایران: اگر خارج از کشور rsync ناپایدار است، ابتدا روی **VPS ایرانِ دوم در دیتاسنتر متفاوت** کپی کنید، بعد کرونِ ساعتِ خلوت به مقصدِ خارجی با retry.
+- [ ] RPO/RTO در `docs/BACKUP_POLICY.md` مکتوب شده (۲۴ ساعت / ۲ ساعت).
+- [ ] یک نفر (حداقل دو نفر) به passphrase دسترسی دارد و محلِ ذخیره‌اش مستند است.
+- [ ] `docs/DISASTER_RECOVERY.md` بخشِ Appendices (ب) و (ج) با اطلاعاتِ واقعی پر شده (off-site URL، contacts).
 
 ## ۵. مهاجرت schema
 

@@ -65,6 +65,10 @@ services:
     volumes:
       # آپلودها روی volume ماندگار — با redeploy از بین نمی‌رود
       - uploads:/app/web/private/uploads
+      # Phase 8 — backup status file به‌صورتِ read-only در container mount می‌شود
+      # تا /api/metrics بتواند وضعیتِ backup را گزارش کند. این فایل فقط metadata
+      # دارد (timestamp, size, checksum) — هرگز secret یا path حساس.
+      - ./backups/status:/app/backups-status:ro
     ports:
       - "${WEB_PORT:-3000}:3000"
 

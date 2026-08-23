@@ -22,6 +22,11 @@
 | 403 spike | > ۵۰ در دقیقه | **Medium** | احتمال IDOR attempt — بررسی Sentry tags |
 | 429 spike | > ۱۰۰ در دقیقه | **Low** | احتمال DoS — بررسی IP در logs |
 | upload failures | > ۵ در ساعت | **Medium** | بررسی disk space + permissions |
+| **backup_last_success_age** (Phase 8) | > ۲۶ ساعت | **Critical** | بررسی cron + script + disk space |
+| **backup_last_failure_at** (Phase 8) | وجود دارد (not null) | **Critical** | بررسی backup script log |
+| **backup_size_bytes** (Phase 8) | < ۱ KB یا کمتر از ۵۰% میانگینِ ۷ روز | **High** | احتمال partial backup |
+| **restore_test_last_success_age** (Phase 8) | > ۸ روز | **High** | اجرای دستی `scripts/restore-db.sh --test-only` |
+| **backup_status file missing** (Phase 8) | `configured: false` در `/api/metrics` | **High** | بررسی mount + script هرگز اجرا نشده |
 
 ---
 
@@ -35,6 +40,9 @@
 ۶. `/staff/ledger` را چک کن — drift detection
 ۷. Disk usage را چک کن — `df -h`
 ۸. Worker logs را چک کن — خطا یا هنگی؟
+۹. **Phase 8:** `/api/metrics` بخش `backup` را چک کن — `last_success_at` و `restore_test_last_success_at` هر دو جدید هستند
+۱۰. **Phase 8:** `ls -lh backups/daily/` را چک کن — فایلِ امروز موجود است؟ size معقول است؟
+۱۱. **Phase 8:** اگر restore test هفتگی اجرا نشده، دستی اجرا کن: `bash scripts/restore-db.sh --test-only`
 
 ---
 
