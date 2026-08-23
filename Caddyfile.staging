@@ -1,0 +1,16 @@
+:8443 {
+    reverse_proxy localhost:3000 {
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

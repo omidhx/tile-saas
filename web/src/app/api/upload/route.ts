@@ -5,6 +5,7 @@ import { join, resolve, normalize } from "node:path";
 import * as Sentry from "@sentry/nextjs";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { checkRateAsync, tooMany } from "@/auth/rateLimit";
 import { matchesMagicBytes } from "@/lib/magicBytes";
 
 /**
@@ -58,6 +59,11 @@ export async function POST(req: Request) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
   }
+
+  // ۳.۵. Rate limit — ۱۰ upload در دقیقه per user
+  // (کمتر از ۶۰ چون upload سنگین‌تر از CRUD عادی است)
+  const rl = await checkRateAsync(`upload:${userId}`, 10, 60_000, { failPolicy: "open" });
+  if (!rl.ok) return tooMany(rl.retryAfterSec);
 
   // ۴. اعتبارسنجی حجم
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "too_large" }, { status: 413 });

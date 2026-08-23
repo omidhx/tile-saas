@@ -1,21 +1,16 @@
 import { NextResponse } from "next/server";
-import { currentUserId } from "@/auth/session";
-import { authorizePlatformAdmin, AuthzError } from "@/auth/authz";
+import { platformAdminCtx } from "@/auth/httpCtx";
 import { createTenant } from "@/db/platform";
 
 /**
  * POST /api/platform/tenants — ساختِ کارخانه‌ی تازه + اولین مدیرش.
  * فقط مدیرِ پلتفرم (app_user.is_platform_admin) — نه admin هیچ tenantی.
+ *
+ * Rate limit: 20/min per user (platformAdminCtx)
  */
 export async function POST(req: Request) {
-  const userId = await currentUserId();
-  if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  try {
-    await authorizePlatformAdmin(userId);
-  } catch (e) {
-    if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    throw e;
-  }
+  const c = await platformAdminCtx();
+  if ("err" in c) return c.err;
 
   const body = await req.json().catch(() => ({}));
   const { name, slug, adminPhone, adminEmail, adminFullName } = body ?? {};
