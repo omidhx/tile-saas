@@ -243,17 +243,11 @@ mkdir -p "${BACKUP_DIR}" "${STATUS_DIR}"
 #
 # We also seed a minimal tenant + platform admin if none exist, because the
 # integrity checks (4.4, 4.5) expect at least 1 tenant and 1 platform admin.
+#
+# Note: we do NOT re-run schema.sql here because it uses CREATE TABLE (not
+# CREATE TABLE IF NOT EXISTS for all tables) and would fail with "relation
+# already exists". apply.ts is idempotent and safe to re-run.
 log "--- Step 0/9: Re-apply migrations + seed minimal data ---"
-
-# Re-run schema.sql to ensure clean state (tests may have left partial data)
-PGPASSWORD="${POSTGRES_PASSWORD}" psql \
-  -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
-  -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f "${PROJECT_ROOT}/db/schema.sql" \
-  2>"${TMP_DIR}/schema_apply.log" || {
-  error "schema.sql re-apply failed"
-  cat "${TMP_DIR}/schema_apply.log" >&2
-  exit 1
-}
 
 # Run apply.ts to populate _migrations table (needs node + tsx from web/)
 if [ -f "${PROJECT_ROOT}/db/migrations/apply.ts" ]; then
