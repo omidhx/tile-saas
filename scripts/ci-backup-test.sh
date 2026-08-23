@@ -231,6 +231,80 @@ done
 mkdir -p "${BACKUP_DIR}" "${STATUS_DIR}"
 
 # ──────────────────────────────────────────────────────────
+# Step 0: Re-apply migrations (test suite resets schema, wiping _migrations data)
+# ──────────────────────────────────────────────────────────
+# The test suite (web/src/db/_testdb.ts resetSchema) does DROP SCHEMA + recreates
+# from schema.sql. schema.sql creates the _migrations table but does NOT populate
+# it — that's apply.ts's job. So after tests, _migrations exists but is empty.
+#
+# In production, apply.ts runs at deploy time and populates _migrations. To make
+# the CI backup test realistic, we re-run apply.ts here so the backup captures
+# a realistic state (with migration history).
+#
+# We also seed a minimal tenant + platform admin if none exist, because the
+# integrity checks (4.4, 4.5) expect at least 1 tenant and 1 platform admin.
+log "--- Step 0/9: Re-apply migrations + seed minimal data ---"
+
+# Re-run schema.sql to ensure clean state (tests may have left partial data)
+PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+  -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+  -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f "${PROJECT_ROOT}/db/schema.sql" \
+  2>"${TMP_DIR}/schema_apply.log" || {
+  error "schema.sql re-apply failed"
+  cat "${TMP_DIR}/schema_apply.log" >&2
+  exit 1
+}
+
+# Run apply.ts to populate _migrations table (needs node + tsx from web/)
+if [ -f "${PROJECT_ROOT}/db/migrations/apply.ts" ]; then
+  cd "${PROJECT_ROOT}/web"
+  DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}" \
+    AUTH_SECRET="ci-secret-must-be-at-least-32-characters-long-for-tests-only" \
+    node --import tsx "${PROJECT_ROOT}/db/migrations/apply.ts" \
+    2>"${TMP_DIR}/migrations_apply.log" || {
+    error "apply.ts failed"
+    cat "${TMP_DIR}/migrations_apply.log" >&2
+    exit 1
+  }
+  cd "${PROJECT_ROOT}"
+  ok "Migrations re-applied"
+else
+  warn "apply.ts not found — skipping migration re-apply (migrations table may be empty)"
+fi
+
+# Seed minimal data: at least 1 tenant + 1 platform admin (if none exist)
+# This is needed because the integrity checks expect them.
+# Note: app_user.phone (not mobile), app_user.password_hash is NOT NULL
+# We use a dummy bcrypt hash for the test admin (never used for login)
+SEED_SQL="
+-- Insert a test tenant if none exists
+INSERT INTO tenant (id, name, slug, created_at)
+SELECT '11111111-1111-1111-1111-111111111111', 'Test Tenant', 'test-tenant', now()
+WHERE NOT EXISTS (SELECT 1 FROM tenant);
+
+-- Insert a platform admin user if none exists
+-- password_hash is a dummy bcrypt hash (test-only, never used for real login)
+INSERT INTO app_user (id, phone, password_hash, is_platform_admin, created_at)
+SELECT '11111111-1111-1111-1111-111111111112', '09999999999',
+       '\$2a\$10\$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', true, now()
+WHERE NOT EXISTS (SELECT 1 FROM app_user WHERE is_platform_admin);
+
+-- Link admin to tenant
+INSERT INTO tenant_membership (tenant_id, user_id, role, is_active, created_at)
+SELECT '11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111112', 'admin', true, now()
+WHERE NOT EXISTS (SELECT 1 FROM tenant_membership);
+"
+
+PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+  -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" \
+  -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -c "${SEED_SQL}" \
+  2>"${TMP_DIR}/seed.log" || {
+  warn "Seed data insertion had issues (may be OK if data already exists)"
+  cat "${TMP_DIR}/seed.log" >&2 || true
+}
+ok "Minimal data verified"
+
+# ──────────────────────────────────────────────────────────
 # Step 1: pg_dump (direct, host postgres — no docker compose)
 # ──────────────────────────────────────────────────────────
 log "--- Step 1/9: pg_dump (custom format) ---"
