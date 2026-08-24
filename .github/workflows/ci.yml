@@ -242,6 +242,17 @@ jobs:
           PGPASSWORD: pw
         run: bash scripts/ci-backup-test.sh
 
+      - name: Phase 9 — Uploads Backup + Verify + Restore test
+        # این مرحله verification برایِ Phase 9 (AUD-009) است. اسکریپتِ
+        # `scripts/ci-uploads-backup-test.sh` چرخه‌ی کاملِ backup → verify →
+        # restore را برایِ فایل‌های private/uploads/ اجرا می‌کند. فایل‌های فیک
+        # با ساختارِ UUID (jpg, png, webp) ساخته می‌شوند و بعد از تست پاک
+        # می‌شوند.
+        env:
+          BACKUP_GPG_PASSPHRASE: ci-test-passphrase-only-not-for-production
+          BACKUP_RETENTION_DAYS: "30"
+        run: bash scripts/ci-uploads-backup-test.sh
+
       - name: Upload backup artifacts (on failure)
         if: failure()
         uses: actions/upload-artifact@v4

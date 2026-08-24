@@ -1066,6 +1066,176 @@ test("CI workflow logs all tool versions before running backup test", () => {
 });
 
 // ──────────────────────────────────────────────
+// 36. Phase 9: ci-uploads-backup-test.sh hardening
+// ──────────────────────────────────────────────
+
+test("ci-uploads-backup-test.sh: bash syntax is valid", () => {
+  const result = runBash("-n", {}, [join(SCRIPTS_DIR, "ci-uploads-backup-test.sh")]);
+  assert.equal(result.exitCode, 0, `Syntax error: ${result.stderr}`);
+});
+
+test("ci-uploads-backup-test.sh: has set -euo pipefail (catches pipe failures)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(src.includes("set -euo pipefail"), "should have 'set -euo pipefail'");
+});
+
+test("ci-uploads-backup-test.sh: has flock for concurrency guard", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(src.includes("flock -n 200"), "should use flock -n 200");
+  assert.ok(src.includes("exec 200>"), "should allocate FD 200");
+});
+
+test("ci-uploads-backup-test.sh: has CLEANUP_DONE guard (double-cleanup prevention)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("CLEANUP_DONE=0") &&
+    src.includes('if [ "${CLEANUP_DONE}" -eq 1 ]'),
+    "should define CLEANUP_DONE guard pattern",
+  );
+});
+
+test("ci-uploads-backup-test.sh: has on_signal with 128 + signal_number pattern", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    /on_signal\(\)/.test(src) &&
+    /exit \$\(\(128 \+ sig\)\)/.test(src),
+    "should have on_signal function with 128 + signal_number exit pattern",
+  );
+  assert.ok(
+    /trap\s+'on_signal 2'\s+INT/.test(src) &&
+    /trap\s+'on_signal 15'\s+TERM/.test(src) &&
+    /trap\s+'on_signal 1'\s+HUP/.test(src),
+    "should trap INT/TERM/HUP with correct signal numbers",
+  );
+});
+
+test("ci-uploads-backup-test.sh: passphrase via stdin (--passphrase-fd 0), never as arg", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(src.includes("--passphrase-fd 0"));
+  assert.ok(!/--passphrase\s+["']?\$/.test(src));
+});
+
+test("ci-uploads-backup-test.sh: disables shell history (anti-leak)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(src.includes("set +o history"));
+});
+
+test("ci-uploads-backup-test.sh: refuses to run with set -x (passphrase leak risk)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes('*x*') &&
+    src.includes("must not run with 'set -x'"),
+    "should refuse to run with set -x",
+  );
+});
+
+test("ci-uploads-backup-test.sh: has BACKUP_TEST_MODE + BACKUP_TEST_HOLD_SECONDS hook", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(src.includes("BACKUP_TEST_MODE"));
+  assert.ok(src.includes("BACKUP_TEST_HOLD_SECONDS"));
+  assert.ok(src.includes("^[0-9]+([.][0-9]+)?$"), "should validate HOLD_SECONDS");
+  assert.ok(src.includes("300"), "should cap at 300 seconds");
+});
+
+test("ci-uploads-backup-test.sh: creates fixture files with UUID naming", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("uuid.uuid4()") &&
+    src.includes(".jpg") && src.includes(".png") && src.includes(".webp"),
+    "should create fixture files with UUID.{jpg,png,webp} naming",
+  );
+});
+
+test("ci-uploads-backup-test.sh: verifies per-file checksums against fixture", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("FIXTURE_CHECKSUMS") &&
+    src.includes("restored_checksum") &&
+    src.includes("fixture_checksum"),
+    "should verify per-file checksums of restored files against fixture",
+  );
+});
+
+test("ci-uploads-backup-test.sh: tests wrong passphrase rejection (failure-path)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("wrong-passphrase") &&
+    src.includes("Wrong passphrase correctly rejected"),
+    "should test wrong passphrase rejection",
+  );
+});
+
+test("ci-uploads-backup-test.sh: tests checksum mismatch detection (failure-path)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("corrupted") &&
+    src.includes("Corrupted file detected"),
+    "should test checksum mismatch detection",
+  );
+});
+
+test("ci-uploads-backup-test.sh: verifies file permissions (0600 for .gpg, 0644 for status)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(src.includes("chmod 600"), "should chmod 600 encrypted files");
+  assert.ok(src.includes("chmod 0644"), "should chmod 0644 status file");
+  assert.ok(src.includes("GPG_PERMS") && src.includes("600"), "should verify .gpg permissions");
+  assert.ok(src.includes("STATUS_PERMS") && src.includes("644"), "should verify status permissions");
+});
+
+test("ci-uploads-backup-test.sh: verifies no plaintext files remain", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("PLAINTEXT_COUNT") &&
+    src.includes("No plaintext files in backup directory"),
+    "should verify no plaintext files remain after backup",
+  );
+});
+
+test("ci-uploads-backup-test.sh: documents CI vs production limitations", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  assert.ok(
+    src.includes("Docker Compose") &&
+    src.includes("necessary") && src.includes("sufficient"),
+    "should document CI limitations vs production",
+  );
+});
+
+test("ci-uploads-backup-test.sh: uses tar on host (not docker exec)", () => {
+  const src = readFileSync(join(SCRIPTS_DIR, "ci-uploads-backup-test.sh"), "utf8");
+  // Should use tar directly, not docker exec tar
+  assert.ok(
+    src.includes("--create") && src.includes("--sort=name") && src.includes("--numeric-owner"),
+    "should use tar with --create --sort=name --numeric-owner on host",
+  );
+  // Check that docker exec is NOT used for tar (ignore comments)
+  const codeLines = src.split("\n").filter((l) => {
+    const trimmed = l.trimStart();
+    return !trimmed.startsWith("#") && !trimmed.startsWith("//");
+  });
+  const codeOnly = codeLines.join("\n");
+  assert.ok(
+    !/docker\s+exec.*tar/.test(codeOnly),
+    "should NOT use docker exec tar in code (host-based for CI) — comments are OK",
+  );
+});
+
+// ──────────────────────────────────────────────
+// 37. CI workflow includes Phase 9 uploads test
+// ──────────────────────────────────────────────
+
+test("CI workflow includes Phase 9 uploads backup/restore test step", () => {
+  const ciYaml = readFileSync(join(PROJECT_ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  assert.ok(
+    ciYaml.includes("Phase 9 — Uploads Backup + Verify + Restore test"),
+    "CI should have a Phase 9 uploads test step",
+  );
+  assert.ok(
+    ciYaml.includes("bash scripts/ci-uploads-backup-test.sh"),
+    "CI should invoke scripts/ci-uploads-backup-test.sh (not inline logic)",
+  );
+});
+
+// ──────────────────────────────────────────────
 // 34. CI script documents its limitations vs production environment
 // ──────────────────────────────────────────────
 
