@@ -684,7 +684,9 @@ ok "Status file written"
 log "--- Step 8/8: Cleanup verification ---"
 
 # Verify no plaintext files remain in backup directory
-PLAINTEXT_COUNT=$(find "${BACKUP_DIR}" -name "*.tar" -o -name "*.tar.zst" 2>/dev/null | grep -v ".gpg" | wc -l)
+# Use -type f to match only files, and group the -name patterns with \( \)
+# so find doesn't exit non-zero when one pattern has no matches
+PLAINTEXT_COUNT=$(find "${BACKUP_DIR}" -type f \( -name "*.tar" -o -name "*.tar.zst" \) 2>/dev/null | grep -v ".gpg" | wc -l || echo "0")
 if [ "${PLAINTEXT_COUNT}" -gt 0 ]; then
   error "Plaintext files remain in backup directory: ${PLAINTEXT_COUNT}"
   find "${BACKUP_DIR}" -name "*.tar" -o -name "*.tar.zst" 2>/dev/null | grep -v ".gpg" | head -5 >&2
