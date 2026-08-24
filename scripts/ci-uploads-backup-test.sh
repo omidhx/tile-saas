@@ -509,8 +509,11 @@ fi
 ok "4a File count matches: ${RESTORED_FILE_COUNT} files"
 
 # 4b. Path traversal check
-TRAVERSAL_COUNT=$(find "${EXTRACTED_UPLOADS_DIR}" -type f | grep -c "\.\." || echo "0")
-if [ "${TRAVERSAL_COUNT}" -gt 0 ]; then
+TRAVERSAL_COUNT=$(find "${EXTRACTED_UPLOADS_DIR}" -type f | grep -c "\.\." || true)
+TRAVERSAL_COUNT=${TRAVERSAL_COUNT:-0}
+TRAVERSAL_COUNT=$(echo "${TRAVERSAL_COUNT}" | head -1 | tr -d '[:space:]')
+TRAVERSAL_COUNT=${TRAVERSAL_COUNT:-0}
+if [ "${TRAVERSAL_COUNT}" -gt 0 ] 2>/dev/null; then
   error "Path traversal detected in restored files"
   exit 5
 fi
@@ -686,8 +689,10 @@ log "--- Step 8/8: Cleanup verification ---"
 # Verify no plaintext files remain in backup directory
 # Use -type f to match only files, and group the -name patterns with \( \)
 # so find doesn't exit non-zero when one pattern has no matches
-PLAINTEXT_COUNT=$(find "${BACKUP_DIR}" -type f \( -name "*.tar" -o -name "*.tar.zst" \) 2>/dev/null | grep -v ".gpg" | wc -l || echo "0")
-if [ "${PLAINTEXT_COUNT}" -gt 0 ]; then
+PLAINTEXT_COUNT=$(find "${BACKUP_DIR}" -type f \( -name "*.tar" -o -name "*.tar.zst" \) 2>/dev/null | grep -v ".gpg" | wc -l || true)
+PLAINTEXT_COUNT=$(echo "${PLAINTEXT_COUNT}" | head -1 | tr -d '[:space:]')
+PLAINTEXT_COUNT=${PLAINTEXT_COUNT:-0}
+if [ "${PLAINTEXT_COUNT}" -gt 0 ] 2>/dev/null; then
   error "Plaintext files remain in backup directory: ${PLAINTEXT_COUNT}"
   find "${BACKUP_DIR}" -name "*.tar" -o -name "*.tar.zst" 2>/dev/null | grep -v ".gpg" | head -5 >&2
   exit 6
