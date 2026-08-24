@@ -37,6 +37,12 @@ const REDACTED_KEYS = [
   "AUTH_SECRET",
   "jwt",
   "refresh_token",
+  "backup_gpg_passphrase",
+  "BACKUP_GPG_PASSPHRASE",
+  "postgres_password",
+  "POSTGRES_PASSWORD",
+  "sentry_dsn",
+  "SENTRY_DSN",
 ];
 
 function redact(obj: Record<string, unknown>): Record<string, unknown> {
