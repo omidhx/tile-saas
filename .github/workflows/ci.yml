@@ -253,6 +253,15 @@ jobs:
           BACKUP_RETENTION_DAYS: "30"
         run: bash scripts/ci-uploads-backup-test.sh
 
+      - name: Secret scanning + API contract verification
+        # Phase P1/P3: Verify no secrets in repo and all API routes documented
+        run: |
+          echo "=== Secret Scanning ==="
+          bash scripts/scan-secrets.sh
+          echo ""
+          echo "=== API Contract Drift Check ==="
+          bash scripts/test-api-contract.sh
+
       - name: Upload backup artifacts (on failure)
         if: failure()
         uses: actions/upload-artifact@v4

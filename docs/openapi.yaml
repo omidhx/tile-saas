@@ -1,0 +1,1100 @@
+# openapi.yaml — Tile SaaS API Specification
+# =============================================================================
+# OpenAPI 3.1 specification for Tile SaaS API.
+# This spec documents all 47 API routes with authentication, authorization,
+# error payloads, and request/response schemas.
+#
+# CI Verification: scripts/test-api-contract.sh checks that all route.ts
+# files are documented in this file.
+# =============================================================================
+openapi: 3.1.0
+info:
+  title: Tile SaaS API
+  version: "1.0.0"
+  description: |
+    Vertical SaaS for tile/ceramic inventory, reservation, and dispatch management.
+    Multi-tenant with PostgreSQL Row-Level Security (RLS).
+  contact:
+    name: Tile SaaS Team
+servers:
+  - url: https://localhost
+    description: Staging
+  - url: https://tile-saas.example.com
+    description: Production
+
+# ──────────────────────────────────────────────
+# Security Schemes
+# ──────────────────────────────────────────────
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: JWT session cookie (httpOnly, secure, sameSite=lax, 7-day expiry)
+
+  # ──────────────────────────────────────────────
+  # Standard Error Response
+  # ──────────────────────────────────────────────
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  # ──────────────────────────────────────────────
+  # Schemas
+  # ──────────────────────────────────────────────
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code (see docs/ERROR_REGISTRY.md)
+          examples:
+            - unauthenticated
+            - forbidden
+            - invalid
+            - too_many
+        retryAfter:
+          type: integer
+          description: Seconds to wait (only for 429)
+          example: 60
+
+    # ─── Auth ───
+    LoginRequest:
+      type: object
+      required: [phone, password]
+      properties:
+        phone: { type: string, example: "09999999999" }
+        password: { type: string }
+        tenantId: { type: string, format: uuid }
+    LoginResponse:
+      type: object
+      properties:
+        redirect: { type: string, example: "/staff" }
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            isPlatformAdmin: { type: boolean }
+
+    # ─── Reservation ───
+    Reservation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [active, converted, expired, cancelled] }
+        expiresAt: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReservationItem" }
+    ReservationItem:
+      type: object
+      properties:
+        lotId: { type: string, format: uuid }
+        quantityBoxes: { type: integer, minimum: 1 }
+
+    # ─── SalesRequest ───
+    SalesRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [draft, submitted, approved, rejected, cancelled, fulfilled] }
+        approvalMode: { type: string, enum: [manual, auto] }
+        reservationId: { type: string, format: uuid }
+
+    # ─── SalesDispatch ───
+    SalesDispatch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        dispatchCode: { type: string }
+        status: { type: string, enum: [registered, ready_for_loading, loaded, delivered, cancelled] }
+        customerName: { type: string }
+        destination: { type: string }
+
+    # ─── Product ───
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        code: { type: string }
+        imageUrl: { type: string }
+
+    # ─── Inventory ───
+    Lot:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lotNumber: { type: string }
+        onHandQtyBoxes: { type: integer }
+        availableQtyBoxes: { type: integer }
+
+    # ─── Metrics ───
+    Metrics:
+      type: object
+      properties:
+        uptime_seconds: { type: integer }
+        total_requests: { type: integer }
+        count_4xx: { type: integer }
+        count_5xx: { type: integer }
+        error_rate: { type: string }
+        backup:
+          type: object
+          properties:
+            last_success_at: { type: string, format: date-time, nullable: true }
+            backup_age_seconds: { type: integer, nullable: true }
+            restore_test_last_success_at: { type: string, format: date-time, nullable: true }
+        uploads_backup:
+          type: object
+          properties:
+            last_success_at: { type: string, format: date-time, nullable: true }
+            last_success_file_count: { type: integer, nullable: true }
+
+# ──────────────────────────────────────────────
+# Tags
+# ──────────────────────────────────────────────
+tags:
+  - name: Auth
+    description: Authentication and session management
+  - name: Catalog
+    description: Product catalog and inventory
+  - name: Reservations
+    description: Reservation management
+  - name: Sales
+    description: Sales requests and dispatches
+  - name: Pricing
+    description: Price lists, discounts, and overrides
+  - name: Team
+    description: Team and agent management
+  - name: Settings
+    description: Tenant settings
+  - name: Platform
+    description: Platform admin operations
+  - name: Uploads
+    description: File upload and download
+  - name: Operations
+    description: Health, readiness, and metrics
+
+# ──────────────────────────────────────────────
+# Paths
+# ──────────────────────────────────────────────
+paths:
+  # ─── Auth ───
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with phone and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200": { description: Login successful, $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (clear session cookie)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Logged out }
+
+  /api/auth/logout-all:
+    post:
+      tags: [Auth]
+      summary: Logout from all devices (session_epoch++)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: All sessions invalidated }
+
+  /api/auth/password:
+    post:
+      tags: [Auth]
+      summary: Change password
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string }
+      responses:
+        "200": { description: Password changed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/auth/reset:
+    post:
+      tags: [Auth]
+      summary: Request password reset code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string }
+      responses:
+        "200": { description: Reset code sent (if account exists) }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    patch:
+      tags: [Auth]
+      summary: Reset password with code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code, newPassword]
+              properties:
+                phone: { type: string }
+                code: { type: string }
+                newPassword: { type: string }
+      responses:
+        "200": { description: Password reset successful }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  # ─── Catalog ───
+  /api/catalog:
+    get:
+      tags: [Catalog]
+      summary: Get agent catalog (inventory + prices)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Catalog items
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/products:
+    get:
+      tags: [Catalog]
+      summary: List products (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+    post:
+      tags: [Catalog]
+      summary: Create product (staff)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Product" }
+      responses:
+        "201": { description: Product created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    patch:
+      tags: [Catalog]
+      summary: Update product (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Product updated }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Catalog]
+      summary: Delete product (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Product deleted }
+
+  /api/product-images:
+    post:
+      tags: [Catalog]
+      summary: Add image to product gallery (staff)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, productId, url]
+              properties:
+                tenantId: { type: string, format: uuid }
+                productId: { type: string, format: uuid }
+                url: { type: string }
+      responses:
+        "201": { description: Image added }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Catalog]
+      summary: Remove product image (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Image removed }
+    patch:
+      tags: [Catalog]
+      summary: Reorder product images (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Images reordered }
+
+  /api/lots:
+    get:
+      tags: [Catalog]
+      summary: List inventory lots
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Lot list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lot" }
+
+  /api/substitutes:
+    get:
+      tags: [Catalog]
+      summary: List product substitutes
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Substitute list }
+    post:
+      tags: [Catalog]
+      summary: Create substitute (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Substitute created }
+    delete:
+      tags: [Catalog]
+      summary: Remove substitute (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Substitute removed }
+
+  # ─── Reservations ───
+  /api/reservations:
+    get:
+      tags: [Reservations]
+      summary: List reservations (agent or staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Reservation list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Reservation" }
+    post:
+      tags: [Reservations]
+      summary: Create reservation with idempotency key
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, items, idempotencyKey]
+              properties:
+                tenantId: { type: string, format: uuid }
+                idempotencyKey: { type: string }
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/ReservationItem" }
+      responses:
+        "201":
+          description: Reservation created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/reservations/{id}/approve:
+    post:
+      tags: [Reservations]
+      summary: Approve reservation → convert to SalesRequest (staff)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Reservation approved, SalesRequest created }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/reservations/{id}/cancel:
+    post:
+      tags: [Reservations]
+      summary: Cancel reservation (agent or staff)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Reservation cancelled }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ─── Sales ───
+  /api/sales-requests:
+    get:
+      tags: [Sales]
+      summary: List sales requests (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Sales request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalesRequest" }
+    post:
+      tags: [Sales]
+      summary: Create sales request from reservation
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Sales request created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/sales-dispatches:
+    get:
+      tags: [Sales]
+      summary: List sales dispatches (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Dispatch list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalesDispatch" }
+    post:
+      tags: [Sales]
+      summary: Create sales dispatch from approved request (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Dispatch created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/sales-dispatches/{id}:
+    get:
+      tags: [Sales]
+      summary: Get dispatch details
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Dispatch details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesDispatch" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Sales]
+      summary: Update dispatch
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Dispatch updated }
+
+  /api/sales-dispatches/{id}/status:
+    patch:
+      tags: [Sales]
+      summary: Change dispatch status (staff)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toStatus]
+              properties:
+                toStatus:
+                  type: string
+                  enum: [registered, ready_for_loading, loaded, delivered, cancelled]
+      responses:
+        "200": { description: Status changed }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/backorders:
+    get:
+      tags: [Sales]
+      summary: List backorders
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Backorder list }
+    post:
+      tags: [Sales]
+      summary: Create backorder (out-of-stock product)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Backorder created }
+
+  /api/backorders/{itemId}/status:
+    patch:
+      tags: [Sales]
+      summary: Update backorder item status
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Status updated }
+
+  # ─── Pricing ───
+  /api/prices:
+    get:
+      tags: [Pricing]
+      summary: List prices (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Price list }
+    post:
+      tags: [Pricing]
+      summary: Create/update price (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Price set }
+    patch:
+      tags: [Pricing]
+      summary: Update price (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Price updated }
+    delete:
+      tags: [Pricing]
+      summary: Delete price (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Price deleted }
+
+  /api/prices/import:
+    post:
+      tags: [Pricing]
+      summary: Import prices from Excel (staff)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                tenantId: { type: string, format: uuid }
+      responses:
+        "200": { description: Import results }
+        "413": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/price-lists:
+    get:
+      tags: [Pricing]
+      summary: List price lists
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Price list catalog }
+    post:
+      tags: [Pricing]
+      summary: Create price list (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Price list created }
+
+  /api/volume-discounts:
+    get:
+      tags: [Pricing]
+      summary: List volume discounts
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Discount list }
+    post:
+      tags: [Pricing]
+      summary: Create volume discount (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Discount created }
+    patch:
+      tags: [Pricing]
+      summary: Update volume discount (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Discount updated }
+    delete:
+      tags: [Pricing]
+      summary: Delete volume discount (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Discount deleted }
+
+  /api/agent-overrides:
+    get:
+      tags: [Pricing]
+      summary: List agent price overrides
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Override list }
+    post:
+      tags: [Pricing]
+      summary: Create agent price override (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Override created }
+    patch:
+      tags: [Pricing]
+      summary: Update agent price override (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Override updated }
+    delete:
+      tags: [Pricing]
+      summary: Delete agent price override (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Override deleted }
+
+  # ─── Team ───
+  /api/team:
+    get:
+      tags: [Team]
+      summary: List team members (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Team member list }
+    post:
+      tags: [Team]
+      summary: Invite team member (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Member invited }
+    patch:
+      tags: [Team]
+      summary: Update team member (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Member updated }
+    delete:
+      tags: [Team]
+      summary: Remove team member (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Member removed }
+
+  /api/agents:
+    get:
+      tags: [Team]
+      summary: List agent accounts (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Agent list }
+    post:
+      tags: [Team]
+      summary: Create agent account (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Agent created }
+        "409": { $ref: "#/components/responses/Conflict" }
+    patch:
+      tags: [Team]
+      summary: Update agent account (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Agent updated }
+    delete:
+      tags: [Team]
+      summary: Delete agent account (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Agent deleted }
+
+  /api/warehouses:
+    get:
+      tags: [Team]
+      summary: List warehouses
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Warehouse list }
+    post:
+      tags: [Team]
+      summary: Create warehouse (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Warehouse created }
+    patch:
+      tags: [Team]
+      summary: Update warehouse (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Warehouse updated }
+    delete:
+      tags: [Team]
+      summary: Delete warehouse (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Warehouse deleted }
+
+  /api/customers:
+    get:
+      tags: [Team]
+      summary: List customers (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Customer list }
+    post:
+      tags: [Team]
+      summary: Create customer (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Customer created }
+
+  # ─── Settings ───
+  /api/settings/tenant:
+    get:
+      tags: [Settings]
+      summary: Get tenant settings (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Tenant settings }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Settings]
+      summary: Update tenant settings (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Settings updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/settings/sms:
+    get:
+      tags: [Settings]
+      summary: Get SMS config (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: SMS config (masked) }
+    patch:
+      tags: [Settings]
+      summary: Update SMS config (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: SMS config updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/settings/auto-approve:
+    get:
+      tags: [Settings]
+      summary: Get auto-approve threshold (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Auto-approve settings }
+    patch:
+      tags: [Settings]
+      summary: Update auto-approve threshold (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Threshold updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  # ─── Uploads ───
+  /api/upload:
+    post:
+      tags: [Uploads]
+      summary: Upload product image (staff, catalog page)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [tenantId, file]
+              properties:
+                tenantId: { type: string, format: uuid }
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, example: "/uploads/uuid.jpg" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/BadRequest" }
+
+  /api/uploads/{id}:
+    get:
+      tags: [Uploads]
+      summary: Download uploaded file (auth + tenant ownership)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Filename (UUID.ext)
+      responses:
+        "200":
+          description: File content
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Platform ───
+  /api/platform/tenants:
+    post:
+      tags: [Platform]
+      summary: Create new tenant + first admin (platform admin only)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug, adminPhone]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                adminPhone: { type: string }
+                adminFullName: { type: string }
+      responses:
+        "201": { description: Tenant + admin created }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─── Operations ───
+  /api/health:
+    get:
+      tags: [Operations]
+      summary: Liveness probe (no auth)
+      security: []
+      responses:
+        "200":
+          description: Process alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+                  timestamp: { type: string, format: date-time }
+
+  /api/ready:
+    get:
+      tags: [Operations]
+      summary: Readiness probe (DB check, no auth)
+      security: []
+      responses:
+        "200":
+          description: Service ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ready" }
+                  checks:
+                    type: object
+                    properties:
+                      db: { type: string, enum: [ok, fail] }
+        "503":
+          description: Service not ready (DB unavailable)
+
+  /api/metrics:
+    get:
+      tags: [Operations]
+      summary: Operational metrics (platform admin only in production)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Metrics JSON
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Metrics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─── Reports ───
+  /api/dashboard:
+    get:
+      tags: [Operations]
+      summary: Staff dashboard KPIs
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Dashboard data }
+
+  /api/reports:
+    get:
+      tags: [Operations]
+      summary: Management reports
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Report data }
+
+  /api/ledger:
+    get:
+      tags: [Operations]
+      summary: Inventory ledger (append-only)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Ledger entries }
+
+  /api/audit:
+    get:
+      tags: [Operations]
+      summary: Audit log
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Audit entries }
+
+  /api/alerts:
+    get:
+      tags: [Operations]
+      summary: Stock alerts
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Alert list }
+    post:
+      tags: [Operations]
+      summary: Create stock alert
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Alert created }
+
+  # ─── Misc ───
+  /api/me:
+    get:
+      tags: [Auth]
+      summary: Get current user info
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: User info }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/imports:
+    post:
+      tags: [Catalog]
+      summary: Import inventory from Excel (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Import results }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/incoming:
+    get:
+      tags: [Catalog]
+      summary: List incoming stock
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Incoming stock list }
+    post:
+      tags: [Catalog]
+      summary: Add incoming stock (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Incoming stock added }
+
+  /api/shared-catalog:
+    get:
+      tags: [Catalog]
+      summary: List shared catalogs
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Shared catalog list }
+    post:
+      tags: [Catalog]
+      summary: Create shared catalog (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Shared catalog created }
+
+  /api/waitlist:
+    get:
+      tags: [Sales]
+      summary: List waitlist entries
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Waitlist }
