@@ -48,7 +48,7 @@ PATTERNS=(
   # Database URLs with passwords
   'postgresql?://[^:]+:[^@]+@[^/]+/\w+'
   # Redis URLs with passwords
-  'redis://:[^@]+@'
+  'redis://:[^@\s]+@'
 )
 
 # Files/directories to exclude from scanning
@@ -76,6 +76,7 @@ EXCLUDES=(
   "CLAUDE.md"
   "MEMORY.md"
   "tile-saas-comprehensive-spec.md"
+  "scripts/scan-secrets.sh"
 )
 
 EXCLUDE_ARGS=""
