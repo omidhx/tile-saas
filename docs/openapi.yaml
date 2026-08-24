@@ -572,7 +572,7 @@ paths:
         "200": { description: Dispatch updated }
 
   /api/sales-dispatches/{id}/status:
-    patch:
+    post:
       tags: [Sales]
       summary: Change dispatch status (staff)
       security: [{ sessionCookie: [] }]
@@ -1043,6 +1043,12 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "201": { description: Alert created }
+    delete:
+      tags: [Operations]
+      summary: Delete stock alert
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Alert deleted }
 
   # ─── Misc ───
   /api/me:
@@ -1076,6 +1082,12 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "201": { description: Incoming stock added }
+    patch:
+      tags: [Catalog]
+      summary: Update incoming stock status (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Incoming stock updated }
 
   /api/shared-catalog:
     get:
@@ -1090,6 +1102,18 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "201": { description: Shared catalog created }
+    patch:
+      tags: [Catalog]
+      summary: Update shared catalog (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Shared catalog updated }
+    delete:
+      tags: [Catalog]
+      summary: Delete shared catalog (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Shared catalog deleted }
 
   /api/waitlist:
     get:
@@ -1098,3 +1122,15 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "200": { description: Waitlist }
+    post:
+      tags: [Sales]
+      summary: Create waitlist entry
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Waitlist entry created }
+    delete:
+      tags: [Sales]
+      summary: Delete waitlist entry
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Waitlist entry deleted }

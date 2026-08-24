@@ -1,5 +1,5 @@
 // =============================================================================
-// scripts/reconcile-inventory.ts — CLI for inventory reconciliation (P2)
+// web/scripts/reconcile-inventory.ts — CLI for inventory reconciliation (P2)
 // =============================================================================
 // Usage:
 //   DATABASE_URL=postgres://... node --import tsx scripts/reconcile-inventory.ts
@@ -8,6 +8,9 @@
 //
 // Output:
 //   Human-readable summary (default) or JSON (--json flag)
+//
+// Side effect: CRITICAL discrepancies are logged to audit_log.
+// No auto-repair is ever performed.
 // =============================================================================
 
 import { reconcileInventory } from "../src/lib/reconciliation";
@@ -19,14 +22,12 @@ async function main() {
     process.exit(1);
   }
 
-  // Parse args
   const args = process.argv.slice(2);
   const jsonOutput = args.includes("--json");
   const tenantArg = args.find((a) => a.startsWith("--tenant="));
   const tenantId = tenantArg ? tenantArg.split("=")[1] : undefined;
 
   if (tenantId) {
-    // Validate UUID format
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
       console.error("--tenant must be a valid UUID");
       process.exit(1);
@@ -49,14 +50,15 @@ async function main() {
   console.log(`✅ Clean:     ${report.clean}`);
   console.log(`⚠️  Warnings:  ${report.warnings}`);
   console.log(`❌ Critical:  ${report.critical}`);
+  console.log(`📝 Audit entries: ${report.audit_entries_inserted}`);
   console.log("");
 
   if (report.critical > 0) {
     console.log("═══════════ Critical Discrepancies ═══════════");
     for (const d of report.discrepancies.filter((x) => x.level === "CRITICAL")) {
       console.log(`  Lot ${d.lot_number ?? d.lot_id} (tenant ${d.tenant_id}):`);
-      console.log(`    on_hand=${d.on_hand}, held=${d.expected_held}, allocated=${d.expected_allocated}, blocked=${d.blocked}`);
-      console.log(`    calculated_available=${d.calculated_available}`);
+      console.log(`    on_hand=${d.on_hand}, computed_held=${d.computed_held}, stored_allocated=${d.stored_allocated}, blocked=${d.blocked}`);
+      console.log(`    computed_available=${d.computed_available}`);
       console.log(`    ${d.message}`);
       console.log("");
     }
@@ -75,6 +77,7 @@ async function main() {
   } else {
     console.log("❌ Discrepancies found — see details above.");
     console.log("   Critical discrepancies have been logged to audit_log.");
+    console.log("   No auto-repair performed — manual intervention required.");
     process.exit(1);
   }
 }
