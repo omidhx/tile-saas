@@ -414,13 +414,18 @@ fi
 ok "Valid tar archive"
 
 # 2d. tar --list (validate structure)
+# Count only FILES (not directories) — tar includes the uploads/ directory
+# entry itself, which we don't want to count against the manifest.
 TAR_ENTRIES=$(tar -tf "${TMP_DIR}/verify.tar" 2>/dev/null)
-TAR_ENTRY_COUNT=$(echo "${TAR_ENTRIES}" | grep -c "^uploads/" || echo "0")
+# Filter: entries that start with uploads/ but are NOT the directory itself
+# (uploads/ with trailing slash is the directory entry)
+TAR_FILE_ENTRIES=$(echo "${TAR_ENTRIES}" | grep "^uploads/[^/]" || true)
+TAR_ENTRY_COUNT=$(echo "${TAR_FILE_ENTRIES}" | grep -c . || echo "0")
 if [ "${TAR_ENTRY_COUNT}" -eq 0 ]; then
-  error "tar archive does not contain any uploads/ entries"
+  error "tar archive does not contain any uploads/ file entries"
   exit 3
 fi
-ok "tar --list: ${TAR_ENTRY_COUNT} entries starting with uploads/"
+ok "tar --list: ${TAR_ENTRY_COUNT} file entries (excluding directory)"
 
 # 2e. Path traversal check
 if echo "${TAR_ENTRIES}" | grep -q "\.\."; then
