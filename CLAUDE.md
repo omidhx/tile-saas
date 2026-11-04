@@ -57,10 +57,6 @@ v1 و v2 کامل‌اند (spec بخش ۹). برای اینکه **چه چیزی
 دو مسدودکننده‌ی go-live که به کد ربط ندارند: پنلِ پیامکِ واقعی، و کلیدِ طبیعیِ Lot
 برای import (هر دو در `docs/GO_LIVE.md`).
 
-**Phase 10-post (حسابرسیِ خارجی):** شش مورد از هشت ایرادِ یک مدل AI دیگر رفع شد:
-SECURITY DEFINER `search_path`، `db/migrations/`، orphan cleanup، rate limiter
-multi-instance، CI/CD، Dockerfile. جزئیات در `docs/AUDIT_SUMMARY.md` بخشِ دورِ سوم.
-
 **بکاپ داریم.** اسنپ‌شاتِ کاملِ پروژه (همراه `.git`) در `_backups/` نگه داشته می‌شود —
 فهرست، روشِ گرفتن و روشِ بازگرداندن در `docs/BACKUPS.md`. قبل از تغییرِ بزرگ/ریسکی
 یک بکاپِ تازه بگیر و ردیفش را همان‌جا اضافه کن. `_backups/` هرگز کامیت نمی‌شود
@@ -90,7 +86,6 @@ multi-instance، CI/CD، Dockerfile. جزئیات در `docs/AUDIT_SUMMARY.md` �
 - `web/src/auth/rateLimit.ts` — rate limiter دو-حالته (`RATE_LIMIT_BACKEND=memory|postgres`).
 - `web/src/lib/fileCleanup.ts` — حذفِ امنِ فایل‌های آپلودشده از دیسک.
 - `docs/ux-wireframes.md` — قرارداد رفتاریِ صفحه‌های نماینده.
-- `MEMORY.md` — حافظه‌ی کاریِ پروژه (چه کاری انجام شده، کجا ایستاده‌ایم).
 
 ```bash
 # schema روی یه Postgres محلی/تازه (نصب مرجع). هرگز روی prodِ داده‌دار دوباره اجرا نکن —
