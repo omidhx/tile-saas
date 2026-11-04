@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import postgres from "postgres";
 import { AGENT, STAFF, login } from "./helpers";
 
 /**
@@ -10,6 +11,14 @@ import { AGENT, STAFF, login } from "./helpers";
  * کالا) هردو پوشش داده می‌شوند — قفل‌کردنِ تست به یکی از آن‌ها شکننده بود.
  */
 test("ورود → رزرو → تأیید/خودکار → حواله → بارگیری", async ({ page }) => {
+  // oracle مستقل از UI: اگر سرور بارگیری را رد کند، موجودی کم نمی‌شود و تست باید قرمز شود.
+  const admin = postgres(process.env.E2E_ADMIN_DATABASE_URL!, { max: 1 });
+  const totalOnHand = async () => {
+    const [{ total }] = await admin<{ total: number }[]>`SELECT SUM(on_hand_qty_boxes)::int AS total FROM inventory_balance`;
+    return total;
+  };
+  const onHandBefore = await totalOnHand();
+
   // ۱. نماینده: افزودن به سبد + ثبتِ رزرو
   await login(page, AGENT);
   await page.goto("/reserve");
@@ -53,13 +62,18 @@ test("ورود → رزرو → تأیید/خودکار → حواله → با�
   const dispatchList = page.getByTestId("dispatch-list");
   const dispatchCard = dispatchList.locator(".card").first();
   await expect(dispatchCard).toBeVisible({ timeout: 15_000 });
-  await expect(dispatchCard.getByText("ثبت‌شده")).toBeVisible();
+  await expect(dispatchCard.locator(".badge").filter({ hasText: "ثبت‌شده" })).toBeVisible();
 
+  // متن وضعیت روی دکمه هم هست، پس badge را چک می‌کنیم؛ getByText با خود دکمه هم پاس می‌شد.
+  const status = dispatchCard.locator(".badge");
   await dispatchCard.getByRole("button", { name: "آماده بارگیری" }).click();
-  await expect(dispatchCard.getByText("آماده بارگیری")).toBeVisible({ timeout: 15_000 });
+  await expect(status.filter({ hasText: "آماده بارگیری" })).toBeVisible({ timeout: 15_000 });
 
   await dispatchCard.getByRole("button", { name: "بارگیری‌شده" }).click();
-  await expect(dispatchCard.getByText("بارگیری‌شده")).toBeVisible({ timeout: 15_000 });
+  await expect(status.filter({ hasText: "بارگیری‌شده" })).toBeVisible({ timeout: 15_000 });
+
+  expect(await totalOnHand()).toBe(onHandBefore - 7);
+  await admin.end();
 });
 
 test("ورود با رمزِ غلط رد می‌شود", async ({ page }) => {

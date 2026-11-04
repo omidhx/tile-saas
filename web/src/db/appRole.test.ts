@@ -24,9 +24,11 @@ test("نقش تست superuser نیست و BYPASSRLS ندارد", async () => {
 });
 
 test("هر جدول دارای tenant_id: RLS فعال، FORCE و دارای policy", async () => {
+  // policy باید واقعاً به app.tenant_id بسته باشد؛ USING (true) هم یک policy است.
   const rows = await sql<{ table: string; enabled: boolean; forced: boolean; policies: number }[]>`
     SELECT c.relname AS table, c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced,
-           (SELECT count(*)::int FROM pg_policy p WHERE p.polrelid = c.oid) AS policies
+           (SELECT count(*)::int FROM pg_policy p WHERE p.polrelid = c.oid
+              AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app.tenant_id%') AS policies
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped

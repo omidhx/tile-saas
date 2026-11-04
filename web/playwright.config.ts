@@ -10,8 +10,9 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const PORT = 3100;
 const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgres://app_user:test_app_pw@localhost:55434/tile_e2e_test";
-const E2E_ADMIN_DATABASE_URL =
-  process.env.E2E_ADMIN_DATABASE_URL ?? "postgres://postgres:test_admin_pw@localhost:55434/tile_e2e_test";
+// در process.env می‌ماند چون spec برای خواندن مستقل موجودی به آن نیاز دارد.
+const E2E_ADMIN_DATABASE_URL = (process.env.E2E_ADMIN_DATABASE_URL ??=
+  "postgres://postgres:test_admin_pw@localhost:55434/tile_e2e_test");
 
 export default defineConfig({
   testDir: "./e2e",

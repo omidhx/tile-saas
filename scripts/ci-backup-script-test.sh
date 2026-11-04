@@ -4,7 +4,8 @@
 # =============================================================================
 # ci-backup-test.sh منطق را جدا بازنویسی کرده و backup-db.sh را صدا نمی‌زند. این اسکریپت
 # فایلی را تست می‌کند که production اجرا می‌کند: docker با یک shim عوض می‌شود که pg_dump را
-# مستقیم اجرا کند، و نتیجه واقعاً باز و restore می‌شود.
+# مستقیم اجرا کند، و نتیجه واقعاً باز و restore می‌شود. کپی اسکریپت در پوشه‌ی موقت اجرا می‌شود
+# تا backups/ واقعی پروژه هرگز دست نخورد، حتی اگر کسی این را روی سرور اجرا کند.
 #
 # نیاز: TEST_ADMIN_DATABASE_URL (superuser)، psql، pg_dump، pg_restore، gpg، zstd، flock.
 # =============================================================================
@@ -32,7 +33,6 @@ psql_admin() { psql -v ON_ERROR_STOP=1 -q -U "$ADMIN_USER" "$@"; }
 
 cleanup() {
   psql_admin -d postgres -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "DROP DATABASE IF EXISTS $RESTORED WITH (FORCE)"
-  rm -f "$ROOT"/backups/daily/*.gpg "$ROOT"/backups/daily/*.sha256 "$ROOT"/backups/status/backup-status.json
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -53,12 +53,15 @@ exit 1
 SHIM
 chmod +x "$TMP/bin/docker"
 
+mkdir -p "$TMP/project"
+cp -r "$ROOT/scripts" "$TMP/project/scripts"
+
 PATH="$TMP/bin:$PATH" \
   POSTGRES_USER="$ADMIN_USER" POSTGRES_DB="$DB" POSTGRES_PASSWORD="$PGPASSWORD" \
   BACKUP_GPG_PASSPHRASE="$PASSPHRASE" BACKUP_LOCK_FILE="$TMP/lock" \
-  bash "$ROOT/scripts/backup-db.sh"
+  bash "$TMP/project/scripts/backup-db.sh"
 
-BACKUP="$(ls -t "$ROOT"/backups/daily/*.gpg | head -1)"
+BACKUP="$(ls -t "$TMP"/project/backups/daily/*.gpg | head -1)"
 
 mode="$(stat -c %a "$BACKUP")"
 if [ "$mode" != "600" ]; then echo "FAIL: بکاپ باید 600 باشد، شد $mode" >&2; exit 1; fi

@@ -4,10 +4,10 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PATTERN='\|\|[[:space:]]*(echo|true|:)([[:space:]]|$)|continue-on-error|SKIP_ROLE_CHECK|\bWARN\b|set \+e\b|exit 0'
+PATTERN='\|\|[[:space:]]*(echo|printf|true|:)([[:space:]]|$)|;[[:space:]]*(true|:)[[:space:]]*$|\|[[:space:]]*tee\b|continue-on-error|SKIP_ROLE_CHECK|\bWARN\b|set \+e\b|set \+o errexit|exit 0|if:[[:space:]]*(false|always)'
 
 # خود الگو باید کار کند؛ اگر کسی آن را خراب کند این‌جا می‌فهمیم
-for bad in 'psql -c x || echo skipped' 'npm test || true' 'continue-on-error: true' 'SKIP_ROLE_CHECK: "1"' 'echo "WARN: x"' 'set +e' 'exit 0'; do
+for bad in 'psql -c x || echo skipped' 'npm test || true' 'continue-on-error: true' 'SKIP_ROLE_CHECK: "1"' 'echo "WARN: x"' 'set +e' 'exit 0' 'x || printf y' 'x; true' 'x | tee y.log' 'set +o errexit' 'if: false' 'if: always()'; do
   if ! grep -qE "$PATTERN" <<<"$bad"; then echo "lint-ci خراب است: «$bad» را نگرفت" >&2; exit 1; fi
 done
 
