@@ -71,6 +71,7 @@ jobs:
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-16 zstd gnupg util-linux
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
 
       - name: Run mutation check
         run: node scripts/mutation-check.mjs
