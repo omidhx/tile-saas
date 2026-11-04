@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
@@ -41,7 +41,6 @@ before(async () => {
       ('${T}','${LOT_A}',60), ('${T}','${LOT_B}',40);
   `);
 });
-after(async () => { await sql.end(); });
 
 /** رزرو → تأیید → حواله. آرایه‌ی حواله‌ها را برمی‌گرداند. */
 async function chain(items: { lotId: string; quantityBoxes: number }[], code: string) {

@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { T, seedTenant } from "./_fixtures";
@@ -27,7 +27,6 @@ before(async () => {
   `);
 });
 
-after(async () => { await sql.end(); });
 
 const base = { tenantId: T, agentAccountId: AG, ttlHours: 24 };
 

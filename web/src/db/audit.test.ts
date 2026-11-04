@@ -1,6 +1,7 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql, withTenant } from "./client";
+import { withTenant } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { writeAudit, listAudit } from "./audit";
 
@@ -28,7 +29,6 @@ before(async () => {
     INSERT INTO customer (id,tenant_id,name) VALUES ('${CUSTOMER_ID}','${T}','مشتری نمونه');
   `);
 });
-after(async () => { await sql.end(); });
 beforeEach(async () => { await sql`DELETE FROM audit_log WHERE tenant_id = ${T}`; });
 
 test("ردپا با مقدارِ قبلی و بعدی ثبت می‌شود", async () => {

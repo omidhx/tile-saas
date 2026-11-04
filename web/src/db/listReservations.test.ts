@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve, listReservations } from "./reservations";
@@ -31,7 +31,6 @@ before(async () => {
     INSERT INTO price_list_item (tenant_id,price_list_id,variant_id,price) VALUES ('${T}','${PL}','${V}',1000000);
   `);
 });
-after(async () => { await sql.end(); });
 
 test("رزروِ active: بدونِ purchaseValue، با estimatedValue از قیمتِ زنده", async () => {
   const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "k1", items: [{ lotId: LOT, quantityBoxes: 10 }] });

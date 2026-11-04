@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { applySnapshot } from "./imports";
@@ -34,7 +34,6 @@ before(async () => {
       ('${T}','${LB1}',10,5), ('${T}','${LC1}',10,5), ('${T}','${LD1}',40,0);
   `);
 });
-after(async () => { await sql.end(); });
 
 const onHand = async (lot: string) =>
   Number((await sql<{ v: number }[]>`SELECT on_hand_qty_boxes AS v FROM inventory_balance WHERE lot_id = ${lot}`)[0].v);

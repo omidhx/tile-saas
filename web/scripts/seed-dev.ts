@@ -29,9 +29,17 @@ function must<T extends { ok: boolean }>(r: T, step: string): T & { ok: true } {
 }
 
 async function main() {
-  // این اسکریپت `TRUNCATE tenant CASCADE` می‌زند — یعنی همه‌چیز.
+  // این اسکریپت `DROP SCHEMA public CASCADE` می‌زند — یعنی همه‌چیز.
   if (process.env.NODE_ENV === "production") {
-    throw new Error("seed:dev روی production اجرا نمی‌شود (TRUNCATE tenant CASCADE).");
+    throw new Error("seed:dev روی production اجرا نمی‌شود (DROP SCHEMA public CASCADE).");
+  }
+  // فقط DB تست یا DB توسعه‌ای که صریحاً نام برده شده. نام دیگر یعنی DATABASE_URL اشتباه است.
+  const dbName = new URL(process.env.DATABASE_URL!).pathname.slice(1);
+  if (!dbName.endsWith("_test") && dbName !== "tile_dev" && dbName !== process.env.SEED_ALLOW_DB) {
+    throw new Error(
+      `seed:dev پایگاه‌داده را پاک می‌کند و روی «${dbName}» اجرا نمی‌شود. فقط نام‌های *_test و tile_dev مجازند؛ ` +
+      `برای DB توسعه با نام دیگر، SEED_ALLOW_DB=${dbName} را صریحاً ست کن.`,
+    );
   }
 
   // postgres.js تراکنشِ صریح روی pool را رد می‌کند (UNSAFE_TRANSACTION)

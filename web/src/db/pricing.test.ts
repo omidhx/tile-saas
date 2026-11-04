@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import {
   resolvePrices, applyVolumeDiscount, createPriceList, applyPriceImport,
@@ -33,7 +33,6 @@ before(async () => {
       ('${T}','${PL}','${V1}',1000000), ('${T}','${PL}','${V2}',2000000);
   `);
 });
-after(async () => { await sql.end(); });
 
 test("قیمت از لیستِ نماینده خوانده می‌شود", async () => {
   const p = await resolvePrices({ tenantId: T, agentAccountId: AG, variantIds: [V1, V2] });

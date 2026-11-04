@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { suggestSubstitutes, addSubstitute, listSubstitutes, removeSubstitute } from "./substitutes";
 import { T, seedTenant } from "./_fixtures";
@@ -48,7 +48,6 @@ before(async () => {
       ('${T}','a4444444-4444-4444-4444-44444444440c',80);
   `);
 });
-after(async () => { await sql.end(); });
 beforeEach(async () => { await sql`DELETE FROM product_substitute WHERE tenant_id = ${T}`; });
 
 const suggest = () => suggestSubstitutes({ tenantId: T, agentAccountId: AG, variantIds: [V_WANT] });

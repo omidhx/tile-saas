@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { addIncoming, listIncoming, markArrived, expectedArrivals, setIncomingStatus } from "./incoming";
@@ -28,7 +28,6 @@ before(async () => {
     INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('${V}','${T}','a1111111-1111-1111-1111-111111111111','S1');
   `);
 });
-after(async () => { await sql.end(); });
 
 beforeEach(async () => {
   await sql`DELETE FROM incoming_stock WHERE tenant_id = ${T}`;

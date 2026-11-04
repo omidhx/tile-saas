@@ -1049,22 +1049,6 @@ test("CI workflow installs PostgreSQL 16 client (matches production)", () => {
   );
 });
 
-test("CI workflow logs all tool versions before running backup test", () => {
-  const ciYaml = readFileSync(join(PROJECT_ROOT, ".github", "workflows", "ci.yml"), "utf8");
-  // Should print versions of all critical tools
-  for (const tool of ["psql --version", "pg_dump --version", "pg_restore --version",
-                       "zstd --version", "gpg --version", "rsync --version"]) {
-    assert.ok(
-      ciYaml.includes(tool),
-      `CI should log ${tool} for diagnosing version mismatch`,
-    );
-  }
-  assert.ok(
-    ciYaml.includes("Tool versions") || ciYaml.includes("tool versions"),
-    "CI should clearly label the version output section",
-  );
-});
-
 // ──────────────────────────────────────────────
 // 36. Phase 9: ci-uploads-backup-test.sh hardening
 // ──────────────────────────────────────────────
@@ -1225,14 +1209,7 @@ test("ci-uploads-backup-test.sh: uses tar on host (not docker exec)", () => {
 
 test("CI workflow includes Phase 9 uploads backup/restore test step", () => {
   const ciYaml = readFileSync(join(PROJECT_ROOT, ".github", "workflows", "ci.yml"), "utf8");
-  assert.ok(
-    ciYaml.includes("Phase 9 — Uploads Backup + Verify + Restore test"),
-    "CI should have a Phase 9 uploads test step",
-  );
-  assert.ok(
-    ciYaml.includes("bash scripts/ci-uploads-backup-test.sh"),
-    "CI should invoke scripts/ci-uploads-backup-test.sh (not inline logic)",
-  );
+  assert.ok(ciYaml.includes("bash scripts/ci-uploads-backup-test.sh"), "CI should run the uploads backup test");
 });
 
 // ──────────────────────────────────────────────

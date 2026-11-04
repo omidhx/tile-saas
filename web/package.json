@@ -10,14 +10,14 @@
     "build": "next build",
     "start": "next start",
     "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
-    "test:ci": "find src -name '*.test.ts' -print0 | xargs -0 node --env-file=.env.test --import tsx --test --test-concurrency=1 --test-force-exit",
-    "test:e2e": "playwright test",
+    "test:e2e": "next build && playwright test",
     "db:pull": "drizzle-kit pull",
-    "seed:dev": "node --env-file=.env --import tsx scripts/seed-dev.ts",
+    "seed:dev": "node --env-file-if-exists=.env --import tsx scripts/seed-dev.ts",
     "worker:expire": "node --env-file-if-exists=.env --import tsx scripts/expire.ts",
     "worker:outbox": "node --env-file-if-exists=.env --import tsx scripts/outbox.ts",
     "cleanup:uploads": "node --env-file-if-exists=.env --import tsx scripts/cleanup-orphan-uploads.ts",
     "migrate": "node --env-file-if-exists=.env --import tsx ../db/migrations/apply.ts",
+    "lint": "eslint .",
     "test:migration": "node --import tsx scripts/test-migration-0004.ts"
   },
   "dependencies": {
@@ -33,14 +33,18 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@electric-sql/pglite": "^0.5.5",
     "@playwright/test": "^1.62.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "tsx": "^4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.72.1"
   },
   "overrides": {
     "fast-uri": "^3.1.5"

@@ -1,0 +1,6 @@
+# مقادیر ساختگی تست و اسکریپت در تاریخچه؛ در فاز ۰ یکی‌یکی بررسی شدند و راز واقعی نیستند.
+92596ec7927162bb4b2e2ac88e79e77d431e01f5:scripts/scan-secrets.sh:stripe-access-token:137
+1b4791fb83c8511a0d9b3d1a2234c1e075c205d4:web/src/db/smsConfig.test.ts:generic-api-key:31
+1b4791fb83c8511a0d9b3d1a2234c1e075c205d4:web/src/db/smsConfig.test.ts:generic-api-key:39
+4fab2e368457e5ceec9160972a3b21bafc3c90e0:web/src/auth/passwordFlows.test.ts:generic-api-key:83
+82da21c422b9196a6e1f87139f78dd01c02479dd:scripts/prodlike-smoke.sh:generic-api-key:46

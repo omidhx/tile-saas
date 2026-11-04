@@ -104,11 +104,19 @@ node --env-file=web/.env --import tsx db/migrations/apply.ts
 cd web
 npm run dev        # سرور توسعه
 npm run build      # بیلد پروڈاکشن
-npm test           # تست یکپارچه‌ی رزرو (نیازمند DATABASE_URL به Postgres تازه)
+npm test           # تست‌ها با نقش محدود app_user، روی کلاستر جدا (web/.env.test دستور ساختش را دارد)
+npm run lint       # ESLint: فقط قواعدی که باگ واقعی می‌گیرند
+npm run test:e2e   # بیلد production + Playwright روی tile_e2e_test؛ هرگز web/.env را نمی‌خواند
 npm run db:pull    # introspect اسکیمای typed از دیتابیس → src/db/generated/
 npm run migrate    # اجرای migrationها
 npm run cleanup:uploads  # حذف فایل‌های یتیم (dry-run؛ --commit برای حذف واقعی)
+
+# از ریشه: باگ عمدی می‌کارد و باید تست قرمز شود (روی لینوکس، با DATABASE_URL تست)
+node scripts/mutation-check.mjs
 ```
+
+تست‌ها با دو اتصال کار می‌کنند: کد محصول با `DATABASE_URL` (نقش `app_user`، RLS فعال) و reset/seed
+تست با `TEST_ADMIN_DATABASE_URL`. در `web/src/db/_testdb.ts`، `sql` نقش admin است و `appSql` نقش محدود.
 
 اپ باید با نقشِ **non-superuser** به Postgres وصل شه، وگرنه RLS بایپس می‌شه.
 `DATABASE_URL` در `web/.env` (gitignored)؛ نمونه در `.env.example` (ریشه‌ی پروژه).
@@ -120,7 +128,8 @@ docker compose up -d  # postgres + web + worker-expire + worker-outbox
 ```
 
 ### CI/CD
-`.github/workflows/ci.yml` — هر push/PR: PostgreSQL داکری + migration + typecheck + test + build.`.
+`.github/workflows/ci.yml` — هر push/PR سه job دارد: `lint`، `test` و `e2e`؛ هر مرحله باید بتواند شکست بخورد
+(`scripts/lint-ci.sh` الگوهایی مثل `|| true` را رد می‌کند). `mutation.yml` هفتگی و روی تغییر کد محافظت‌شده اجرا می‌شود.
 
 ## مرجع کامل
 

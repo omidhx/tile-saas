@@ -1,0 +1,77 @@
+# باگ عمدی می‌کارد و باید تست‌ها قرمز شوند. حدود ۱۵ دقیقه طول می‌کشد، پس هفتگی و وقتی
+# کد محافظت‌شده یا خود چک عوض شود اجرا می‌شود، نه روی هر push. جزو required checks نیست
+# چون با path filter همیشه اجرا نمی‌شود.
+
+name: Mutation check
+
+on:
+  schedule:
+    - cron: "0 2 * * 5"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/mutation-check.mjs"
+      - ".github/workflows/mutation.yml"
+      - "web/src/db/reservations.ts"
+      - "web/src/db/dispatches.ts"
+      - "web/src/db/customers.ts"
+      - "web/src/db/_testdb.ts"
+      - "web/src/auth/**"
+      - "web/src/proxy.ts"
+      - "db/schema.sql"
+      - "db/create-app-user.sql"
+      - "scripts/backup-db.sh"
+      - "scripts/restore-db.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pw
+          POSTGRES_DB: tile_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://app_user:ci_app_pw@localhost:5432/tile_test
+      TEST_ADMIN_DATABASE_URL: postgres://postgres:pw@localhost:5432/tile_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Postgres client and backup tools
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16 zstd gnupg util-linux
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+
+      - name: Run mutation check
+        run: node scripts/mutation-check.mjs

@@ -420,7 +420,7 @@ TAR_ENTRIES=$(tar -tf "${TMP_DIR}/verify.tar" 2>/dev/null)
 # Filter: entries that start with uploads/ but are NOT the directory itself
 # (uploads/ with trailing slash is the directory entry)
 TAR_FILE_ENTRIES=$(echo "${TAR_ENTRIES}" | grep "^uploads/[^/]" || true)
-TAR_ENTRY_COUNT=$(echo "${TAR_FILE_ENTRIES}" | grep -c . || echo "0")
+TAR_ENTRY_COUNT=$(echo "${TAR_FILE_ENTRIES}" | grep -c . || true)
 if [ "${TAR_ENTRY_COUNT}" -eq 0 ]; then
   error "tar archive does not contain any uploads/ file entries"
   exit 3

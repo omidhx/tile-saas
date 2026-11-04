@@ -259,7 +259,7 @@ export async function assertNonSuperuserRole(): Promise<void> {
 ```
 
 این تابع در `instrumentation.ts` در startup اجرا می‌شود:
-- اگر `NODE_ENV=production` و `SKIP_ROLE_CHECK` ست نباشد.
+- اگر `NODE_ENV=production` باشد.
 - اگر نقش superuser یا BYPASSRLS باشد → throw → اپ بالا نمی‌آید (fail-loud).
 
 ### ۲.۳. تفکیک جداول: ۳۹ جدول

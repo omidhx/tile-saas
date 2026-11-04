@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { inviteTeamMember, setTeamMember, listTeam, deleteTeamMember } from "./team";
 import { T, seedTenant } from "./_fixtures";
@@ -20,7 +20,6 @@ before(async () => {
     INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${T}','${U_ADMIN}','admin',true);
   `);
 });
-after(async () => { await sql.end(); });
 
 test("inviteTeamMember: کاربرِ تازه با موبایل — رمزِ یک‌بارمصرف ساخته می‌شود", async () => {
   const r = await inviteTeamMember({ tenantId: T, phone: "09130000001", role: "staff" });

@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { createAgent, updateAgent, addAgentUser, listAgentsFull, deleteAgent } from "./agents";
 import { T, seedTenant } from "./_fixtures";
@@ -18,7 +18,6 @@ before(async () => {
   await seedTenant();
   await sql.unsafe(`INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');`);
 });
-after(async () => { await sql.end(); });
 
 test("createAgent: نمایندگیِ تازه با کاربرِ تازه — رمزِ یک‌بارمصرف ساخته می‌شود", async () => {
   const r = await createAgent({

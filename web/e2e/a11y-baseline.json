@@ -1,0 +1,18 @@
+{
+  "/login": {
+    "color-contrast": 1
+  },
+  "/reset": {},
+  "/reserve": {
+    "color-contrast": 1
+  },
+  "/reservations": {},
+  "/staff": {
+    "color-contrast": 1
+  },
+  "/staff/catalog": {},
+  "/staff/customers": {},
+  "/staff/reports": {
+    "color-contrast": 1
+  }
+}

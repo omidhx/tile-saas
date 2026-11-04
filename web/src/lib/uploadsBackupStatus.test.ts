@@ -9,7 +9,6 @@ const STATUS_FILE = join(TMP_DIR, "uploads-backup-status.json");
 
 process.env.UPLOADS_STATUS_PATH = STATUS_FILE;
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { readUploadsBackupStatus, computeUploadsBackupAgeSeconds } = require("./uploadsBackupStatus") as typeof import("./uploadsBackupStatus");
 
 // ──────────────────────────────────────────────

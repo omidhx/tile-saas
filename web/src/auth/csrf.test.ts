@@ -1,113 +1,51 @@
-import { test, beforeEach } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resetRates } from "@/auth/rateLimit";
+import { NextRequest } from "next/server";
+import { assertSameOrigin } from "./csrf";
+import { proxy } from "@/proxy";
 
-// این تست‌ها برای middleware CSRF هستند.
-// middleware در Node.js test runner مستقیماً قابل صدا زدن نیست (چون NextRequest
-// نیاز به Next.js runtime دارد)، ولی منطقِ CSRF را می‌توان با mock کردن
-// بررسی کرد.
+// دو چک مستقل CSRF: proxy روی همه‌ی mutationها و assertSameOrigin در routeهای حساس auth.
+// جدول هر دو یکسان است مگر جایی که رفتارشان عمداً فرق دارد (Origin: null).
 
-// منطقِ CSRF در middleware.ts:
-// ۱. اگر method GET/HEAD/OPTIONS → مجاز (بدون CSRF check)
-// ۲. اگر mutation:
-//    a. Origin: null → 403
-//    b. Origin ≠ Host → 403
-//    c. Origin malformed → 400
-//    d. Origin = Host → مجاز
-//    e. Origin نبود → مجاز (نرم، SameSite=lax بقیه‌ی کار)
-//    f. Host نبود → مجاز (نرم)
-
-// این تابع منطقِ CSRF middleware را شبیه‌سازی می‌کند.
-// اگر middleware.ts تغییر کرد، این تابع هم باید به‌روز شود.
-function csrfCheck(method: string, origin: string | null, host: string | null): { status: number; error?: string } | null {
-  const isMutation = ["POST", "PATCH", "PUT", "DELETE"].includes(method.toUpperCase());
-  if (!isMutation) return null; // مجاز
-
-  if (host) {
-    if (origin === "null") {
-      return { status: 403, error: "null_origin_forbidden" };
-    }
-    if (origin) {
-      try {
-        const url = new URL(origin);
-        if (url.host !== host) {
-          return { status: 403, error: "cross_origin_forbidden" };
-        }
-      } catch {
-        return { status: 400, error: "invalid_origin" };
-      }
-    }
-    // Origin نبود → مجاز (نرم)
-  }
-  // Host نبود → مجاز (نرم)
-  return null; // مجاز
+function req(method: string, headers: Record<string, string>) {
+  return new NextRequest("http://example.com/api/x", { method, headers });
 }
 
-beforeEach(() => resetRates());
+/** وضعیتی که هر چک برمی‌گرداند؛ null یعنی درخواست عبور کرد. */
+const viaProxy = (method: string, headers: Record<string, string>) => {
+  const res = proxy(req(method, headers));
+  return res.headers.get("x-middleware-next") ? null : res.status;
+};
+const viaHelper = (method: string, headers: Record<string, string>) =>
+  assertSameOrigin(req(method, headers))?.status ?? null;
 
-test("CSRF: GET مجاز است (بدون CSRF check)", () => {
-  const result = csrfCheck("GET", null, "example.com");
-  assert.equal(result, null);
+const HOST = "example.com";
+const cases: [name: string, method: string, headers: Record<string, string>, expected: number | null][] = [
+  ["GET بدون بررسی", "GET", { host: HOST, origin: "https://evil.com" }, null],
+  ["HEAD بدون بررسی", "HEAD", { host: HOST, origin: "https://evil.com" }, null],
+  ["OPTIONS بدون بررسی", "OPTIONS", { host: HOST, origin: "https://evil.com" }, null],
+  ["POST هم‌مبدأ", "POST", { host: HOST, origin: "https://example.com" }, null],
+  ["POST هم‌نام با scheme متفاوت", "POST", { host: HOST, origin: "http://example.com" }, null],
+  ["POST بدون Origin (API client)", "POST", { host: HOST }, null],
+  ["POST با port یکسان", "POST", { host: "example.com:3000", origin: "http://example.com:3000" }, null],
+  ["POST بین‌مبدأ", "POST", { host: HOST, origin: "https://evil.com" }, 403],
+  ["POST با port متفاوت", "POST", { host: HOST, origin: "https://example.com:8443" }, 403],
+  ["POST با subdomain مهاجم", "POST", { host: HOST, origin: "https://evil.example.com" }, 403],
+  ["PATCH بین‌مبدأ", "PATCH", { host: HOST, origin: "https://evil.com" }, 403],
+  ["PUT بین‌مبدأ", "PUT", { host: HOST, origin: "https://evil.com" }, 403],
+  ["DELETE بین‌مبدأ", "DELETE", { host: HOST, origin: "https://evil.com" }, 403],
+  ["POST با Origin خراب", "POST", { host: HOST, origin: "not a url" }, 400],
+];
+
+for (const [name, method, headers, expected] of cases) {
+  test(`proxy CSRF: ${name}`, () => assert.equal(viaProxy(method, headers), expected));
+  test(`assertSameOrigin: ${name}`, () => assert.equal(viaHelper(method, headers), expected));
+}
+
+test("proxy CSRF: Origin برابر null رد می‌شود", () => {
+  assert.equal(viaProxy("POST", { host: HOST, origin: "null" }), 403);
 });
 
-test("CSRF: HEAD مجاز است", () => {
-  const result = csrfCheck("HEAD", null, "example.com");
-  assert.equal(result, null);
-});
-
-test("CSRF: OPTIONS مجاز است", () => {
-  const result = csrfCheck("OPTIONS", null, "example.com");
-  assert.equal(result, null);
-});
-
-test("CSRF: POST same-origin مجاز است", () => {
-  const result = csrfCheck("POST", "https://example.com", "example.com");
-  assert.equal(result, null);
-});
-
-test("CSRF: POST cross-origin رد می‌شود (403)", () => {
-  const result = csrfCheck("POST", "https://evil.com", "example.com");
-  assert.deepEqual(result, { status: 403, error: "cross_origin_forbidden" });
-});
-
-test("CSRF: POST با Origin: null رد می‌شود (403)", () => {
-  const result = csrfCheck("POST", "null", "example.com");
-  assert.deepEqual(result, { status: 403, error: "null_origin_forbidden" });
-});
-
-test("CSRF: POST با Origin malformed رد می‌شود (400)", () => {
-  const result = csrfCheck("POST", "not-a-url", "example.com");
-  assert.deepEqual(result, { status: 400, error: "invalid_origin" });
-});
-
-test("CSRF: POST بدون Origin مجاز است (API client / مرورگر قدیمی)", () => {
-  const result = csrfCheck("POST", null, "example.com");
-  assert.equal(result, null);
-});
-
-test("CSRF: PATCH cross-origin رد می‌شود", () => {
-  const result = csrfCheck("PATCH", "https://evil.com", "example.com");
-  assert.deepEqual(result, { status: 403, error: "cross_origin_forbidden" });
-});
-
-test("CSRF: DELETE بدون Host مجاز است (نرم)", () => {
-  const result = csrfCheck("DELETE", "https://example.com", null);
-  assert.equal(result, null);
-});
-
-test("CSRF: POST با Origin و Host هم‌نام ولی scheme متفاوت مجاز است", () => {
-  // http vs https — مهم Host است نه scheme
-  const result = csrfCheck("POST", "http://example.com", "example.com");
-  assert.equal(result, null);
-});
-
-test("CSRF: POST با Origin شامل port و Host بدون port", () => {
-  // اگر Origin پورت دارد ولی Host ندارد → mismatch
-  const result = csrfCheck("POST", "https://example.com:8080", "example.com");
-  assert.deepEqual(result, { status: 403, error: "cross_origin_forbidden" });
-});
-
-test("CSRF: POST با Origin و Host هم‌نام با port مجاز است", () => {
-  const result = csrfCheck("POST", "https://example.com:3000", "example.com:3000");
-  assert.equal(result, null);
+test("assertSameOrigin: Origin برابر null به‌عنوان Origin خراب رد می‌شود", () => {
+  assert.equal(viaHelper("POST", { host: HOST, origin: "null" }), 400);
 });

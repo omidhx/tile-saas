@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
@@ -47,7 +47,6 @@ before(async () => {
   await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "ready_for_loading", actorUserId: U });
   await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "loaded", actorUserId: U });
 });
-after(async () => { await sql.end(); });
 
 test("عملکرد نماینده: تعداد، کارتن، و ارزشِ ریالی از قیمتِ snapshot", async () => {
   const rep = await buildReports({ tenantId: T, ...range() });

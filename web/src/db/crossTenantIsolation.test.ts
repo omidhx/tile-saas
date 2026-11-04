@@ -1,17 +1,7 @@
-// =============================================================================
-// web/src/db/crossTenantIsolation.test.ts
-// =============================================================================
-// تستِ cross-tenant isolation روی PostgreSQL واقعی.
-//
-// ⚠️ در CI فعلی، با superuser اجرا می‌شود — RLS بایپس می‌شود.
-// برای go-live، باید با `app_user` (non-superuser) اجرا شود.
-// =============================================================================
-
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { TransactionSql } from "postgres";
 import { sql, resetSchema } from "./_testdb";
-import { withTenant } from "./client";
+import { listCustomers } from "./customers";
 
 // UUID‌های ثابت برای تست
 const T1 = "11111111-1111-1111-1111-111111111111";
@@ -19,72 +9,16 @@ const T2 = "22222222-2222-2222-2222-222222222222";
 const P1 = "e1111111-1111-1111-1111-111111111111";
 const P2 = "e2222222-2222-2222-2222-222222222222";
 
-test("cross-tenant: tenant A نمی‌تواند محصول tenant B را بخواند (با فیلتر صریح tenant_id)", async () => {
+// قواعد خودِ RLS در appRole.test.ts است. اینجا لایه‌ی دوم: فیلتر صریح tenant_id در کد باید
+// بدون RLS هم کافی باشد (قانون ۶ هر دو لایه را می‌خواهد؛ یکی نباید خرابی دیگری را پنهان کند).
+test("cross-tenant: listCustomers با RLS خاموش هم فقط مشتریان همان tenant را برمی‌گرداند", async () => {
   await resetSchema();
-
   await sql`INSERT INTO tenant (id, name, slug) VALUES (${T1}, 'T1', 't1'), (${T2}, 'T2', 't2')`;
-  await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'Product T1'), (${P2}, ${T2}, 'P2', 'Product T2')`;
+  await sql`INSERT INTO customer (tenant_id, name) VALUES (${T1}, 'C-T1'), (${T2}, 'C-T2')`;
+  await sql`ALTER TABLE customer DISABLE ROW LEVEL SECURITY`;
 
-  // withTenant ست می‌کند app.tenant_id — RLS با non-superuser فیلتر می‌کند.
-  // با superuser (CI) RLS بایپس می‌شود، ولی فیلتر صریح tenant_id در کوئری هست.
-  // پس تست با هر دو حالت کار می‌کند.
-  const tenantAProducts = await withTenant(T1, async (tx: TransactionSql) => {
-    return await tx`SELECT id FROM product WHERE tenant_id = ${T1}`;
-  });
-  assert.equal(tenantAProducts.length, 1);
-  assert.equal(tenantAProducts[0].id, P1);
-
-  const tenantBProducts = await withTenant(T2, async (tx: TransactionSql) => {
-    return await tx`SELECT id FROM product WHERE tenant_id = ${T2}`;
-  });
-  assert.equal(tenantBProducts.length, 1);
-  assert.equal(tenantBProducts[0].id, P2);
-});
-
-test("cross-tenant: tenant A نمی‌تواند محصول tenant B را تغییر دهد", async () => {
-  await resetSchema();
-
-  await sql`INSERT INTO tenant (id, name, slug) VALUES (${T1}, 'T1', 't1'), (${T2}, 'T2', 't2')`;
-  await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'Original'), (${P2}, ${T2}, 'P2', 'Original')`;
-
-  // withTenant ست می‌کند app.tenant_id = T1.
-  // UPDATE با WHERE tenant_id = T1 (فیلتر صریح) — اگر RLS فعال باشد،
-  // UPDATE ... WHERE id = P2 با tenant_id = T1 ردیفی پیدا نمی‌کند.
-  // با superuser، فیلتر صریح tenant_id در WHERE جلوی آن را می‌گیرد.
-  await withTenant(T1, async (tx: TransactionSql) => {
-    // این UPDATE با tenant_id = T1 در WHERE فقط ردیف‌های tenant A را پیدا می‌کند
-    await tx`UPDATE product SET name = 'Hacked' WHERE id = ${P2} AND tenant_id = ${T1}`;
-  });
-
-  const [product] = await sql`SELECT name FROM product WHERE id = ${P2}`;
-  assert.equal(product.name, "Original", "tenant A نباید بتواند محصول tenant B را تغییر دهد");
-});
-
-test("cross-tenant: tenant A نمی‌تواند محصول tenant B را حذف کند", async () => {
-  await resetSchema();
-
-  await sql`INSERT INTO tenant (id, name, slug) VALUES (${T1}, 'T1', 't1'), (${T2}, 'T2', 't2')`;
-  await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'T1'), (${P2}, ${T2}, 'P2', 'T2')`;
-
-  await withTenant(T1, async (tx: TransactionSql) => {
-    // DELETE با tenant_id = T1 در WHERE — فقط ردیف‌های tenant A را پیدا می‌کند
-    await tx`DELETE FROM product WHERE id = ${P2} AND tenant_id = ${T1}`;
-  });
-
-  const [product] = await sql`SELECT id FROM product WHERE id = ${P2}`;
-  assert.ok(product, "محصول tenant B نباید حذف شود");
-});
-
-test("cross-tenant: بدون SET app.tenant_id با non-superuser هیچ داده‌ای برنمی‌گردد", async () => {
-  await resetSchema();
-
-  await sql`INSERT INTO tenant (id, name, slug) VALUES (${T1}, 'T1', 't1')`;
-  await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P1}, ${T1}, 'P1', 'Product')`;
-
-  // بدون withTenant — اگر نقش non-superuser باشد، RLS باید همه را فیلتر کند
-  // ⚠️ در CI با superuser، این تست RLS را تست نمی‌کند!
-  const products = await sql`SELECT id FROM product`;
-  assert.ok(Array.isArray(products));
+  const { items } = await listCustomers({ tenantId: T1 });
+  assert.deepEqual(items.map((c) => c.name), ["C-T1"]);
 });
 
 test("cross-tenant: رزرو tenant A تأثیری روی موجودی tenant B ندارد", async () => {

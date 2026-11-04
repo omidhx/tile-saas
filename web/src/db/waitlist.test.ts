@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve, cancelReservation } from "./reservations";
 import { joinWaitlist, leaveWaitlist, listMyWaitlist } from "./waitlist";
@@ -39,7 +39,6 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',100);
   `);
 });
-after(async () => { await sql.end(); });
 
 // هر تست از وضعیتِ تمیز: بدون رزرو، بدون صف، موجودی کامل
 beforeEach(async () => {

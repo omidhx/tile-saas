@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { createWarehouse, updateWarehouse, listWarehouses, deleteWarehouse } from "./warehouses";
 import { T, seedTenant } from "./_fixtures";
@@ -9,7 +9,6 @@ before(async () => {
   await resetSchema();
   await seedTenant();
 });
-after(async () => { await sql.end(); });
 
 test("createWarehouse: ساخته می‌شود و در فهرست دیده می‌شود", async () => {
   const r = await createWarehouse({ tenantId: T, name: "انبار جدید", code: "W-NEW", type: "regional" });

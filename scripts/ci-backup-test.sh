@@ -409,7 +409,7 @@ fi
 ok "PGDMP magic OK"
 
 # pg_restore --list to validate schema integrity
-TABLE_COUNT=$(pg_restore --list "${TMP_DIR}/verify.sql" 2>/dev/null | grep -c "; " || echo "0")
+TABLE_COUNT=$(pg_restore --list "${TMP_DIR}/verify.sql" 2>/dev/null | grep -c "; " || true)
 if [ "${TABLE_COUNT}" -lt 10 ]; then
   error "pg_restore --list returned too few entries (${TABLE_COUNT})"
   exit 2

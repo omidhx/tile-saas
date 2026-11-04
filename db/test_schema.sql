@@ -5,7 +5,11 @@
 -- =============================================================================
 
 -- نقش اپ برای تست RLS (non-superuser تا RLS واقعاً اعمال شه)
-CREATE ROLE app_role NOLOGIN;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_role') THEN
+        CREATE ROLE app_role NOLOGIN;
+    END IF;
+END $$;
 GRANT USAGE ON SCHEMA public TO app_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_role;
 
@@ -185,6 +189,7 @@ END $$;
 
 -- =========================================================================
 -- تست ۷: worker انقضا — active منقضی‌شده → expired، و رزروِ زنده دست‌نخورده
+-- تابع به ازای هر (tenant, variant) آزادشده یک ردیف برمی‌گرداند، نه تعداد رزروها.
 -- =========================================================================
 DO $$
 DECLARE v_n INT; v_expired TEXT; v_live TEXT;
@@ -196,8 +201,12 @@ BEGIN
            ('e2e2e2e2-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111',
             'a5555555-5555-5555-5555-555555555555', 'active', now(), now() + interval '1 day');
 
-    SELECT expire_due_reservations() INTO v_n;
-    ASSERT v_n >= 1, format('حداقل ۱ رزرو باید expired شود، شد %s', v_n);
+    INSERT INTO reservation_item (tenant_id, reservation_id, lot_id, quantity_boxes)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'e1e1e1e1-1111-1111-1111-111111111111',
+            'a4444444-4444-4444-4444-444444444444', 1);
+
+    SELECT count(*) INTO v_n FROM expire_due_reservations();
+    ASSERT v_n = 1, format('باید ۱ واریانت آزاد شود، شد %s', v_n);
 
     SELECT status INTO v_expired FROM reservation WHERE id = 'e1e1e1e1-1111-1111-1111-111111111111';
     SELECT status INTO v_live    FROM reservation WHERE id = 'e2e2e2e2-2222-2222-2222-222222222222';
