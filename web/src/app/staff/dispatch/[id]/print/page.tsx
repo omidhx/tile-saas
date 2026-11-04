@@ -98,7 +98,7 @@ export default function DispatchPrintPage() {
       {detail.totalValue != null && (
         <div className="row" style={{ marginTop: "var(--sp-4)", justifyContent: "flex-end" }}>
           <div style={{ textAlign: "start" }}>
-            <div><span className="subtle">جمعِ فاکتور: </span><strong className="metric">{formatMoney(detail.totalValue, ctx.currencyUnit)}</strong></div>
+            <div><span className="subtle">جمع مبلغ: </span><strong className="metric">{formatMoney(detail.totalValue, ctx.currencyUnit)}</strong></div>
             <div className="subtle">{formatMoneyWords(detail.totalValue, ctx.currencyUnit)}</div>
           </div>
         </div>

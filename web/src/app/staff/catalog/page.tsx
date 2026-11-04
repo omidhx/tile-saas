@@ -357,11 +357,11 @@ export default function CatalogPage() {
                 {p.sku ? ` · sku: ${p.sku}` : ""}
               </div>
 
-              <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
+              {features.pricing && <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
                 {p.basePrice !== null
                   ? <>قیمتِ پایه: <span className="metric">{formatMoney(p.basePrice, ctx.currencyUnit)}</span> / کارتن</>
                   : <span className="subtle">قیمتی ثبت نشده</span>}
-              </div>
+              </div>}
 
               {/* بسته‌بندی: تبدیلِ کارتن⇄پالت⇄مترمربعی که نماینده در سفارش می‌بیند، همیشه دیده می‌شود
                   تا پشتیبان بدونِ بازکردنِ ویرایش هم بتواند فرمول را ببیند. */}
