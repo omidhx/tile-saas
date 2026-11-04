@@ -1,0 +1,9 @@
+# همه‌ی فایل‌های متنی در ریپو و در checkout با LF — اسکریپت‌های CRLF روی لینوکس می‌شکنند
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff2 binary
+*.xlsx binary
