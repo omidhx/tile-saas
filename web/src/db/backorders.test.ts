@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { createBackorderDispatch, setBackorderItemStatus, listBackorderItems } from "./dispatches";
@@ -21,7 +21,6 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',100);
   `);
 });
-after(async () => { await sql.end(); });
 
 async function itemIdOf(dispatchId: string) {
   const [row] = await sql<{ id: string; backorder_status: string; lot_id: string | null; fulfillment_type: string }[]>`

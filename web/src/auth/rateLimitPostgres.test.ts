@@ -1,21 +1,18 @@
-import { test } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
+import { resetSchema } from "@/db/_testdb";
 
-// این تست‌ها فقط وقتی RATE_LIMIT_BACKEND=postgres است معنا دارند. در CI،
-// RATE_LIMIT_BACKEND=memory است (پیش‌فرض)، پس این تست‌ها skip می‌شوند.
-//
-// نکته: به‌جای test.skip() داخل test function (که در Node.js test runner
-// ممکنه باعث هنگ کردن بشه)، از شرطِ ساده استفاده می‌کنیم و اگر backend
-// postgres نیست، تست را بدون assert رد می‌کنیم.
+// BACKEND هنگام import خوانده می‌شود، پس قبل از import پویا ست می‌شود.
+process.env.RATE_LIMIT_BACKEND = "postgres";
+let checkRateAsync: typeof import("@/auth/rateLimit").checkRateAsync;
+let resetRates: typeof import("@/auth/rateLimit").resetRates;
+before(async () => {
+  ({ checkRateAsync, resetRates } = await import("@/auth/rateLimit"));
+});
 
-const isPostgresBackend = process.env.RATE_LIMIT_BACKEND === "postgres";
-
-test("rate limiter postgres: سقف در چند insert موازی رعایت می‌شود", async () => {
-  if (!isPostgresBackend) return; // skip در حالتِ memory
-
-  const { sql, resetSchema } = await import("@/db/_testdb");
-  const { checkRateAsync, resetRates } = await import("@/auth/rateLimit");
-
+// باگ واقعی، در docs/PHASES.md بخش «معلق»: COUNT و INSERT سریالی نیستند و درخواست‌های هم‌زمان از سقف رد می‌شوند.
+// todo یعنی تست اجرا می‌شود و نتیجه‌اش دیده می‌شود، ولی CI را قرمز نمی‌کند تا فاز ۴ درستش کند.
+test("rate limiter postgres: سقف در چند insert موازی رعایت می‌شود", { todo: "فاز ۴: race بین COUNT و INSERT" }, async () => {
   await resetSchema();
   resetRates();
 
@@ -36,15 +33,9 @@ test("rate limiter postgres: سقف در چند insert موازی رعایت م�
   assert.equal(allowed, limit, `فقط ${limit} درخواست باید مجاز شوند، نه ${allowed}`);
   assert.equal(blocked, 10 - limit, `بقیه باید block شوند`);
 
-  await sql.end();
 });
 
 test("rate limiter postgres: کلیدهای متفاوت مستقل‌اند", async () => {
-  if (!isPostgresBackend) return; // skip در حالتِ memory
-
-  const { sql, resetSchema } = await import("@/db/_testdb");
-  const { checkRateAsync, resetRates } = await import("@/auth/rateLimit");
-
   await resetSchema();
   resetRates();
 
@@ -63,15 +54,9 @@ test("rate limiter postgres: کلیدهای متفاوت مستقل‌اند", a
   const bResult = await checkRateAsync("test:isolation:B", limit, windowMs, { failPolicy: "closed" });
   assert.equal(bResult.ok, true, "B نباید تحت تأثیر A باشد");
 
-  await sql.end();
 });
 
 test("rate limiter postgres: پنجره لغزان است", async () => {
-  if (!isPostgresBackend) return; // skip در حالتِ memory
-
-  const { sql, resetSchema } = await import("@/db/_testdb");
-  const { checkRateAsync, resetRates } = await import("@/auth/rateLimit");
-
   await resetSchema();
   resetRates();
 
@@ -93,5 +78,4 @@ test("rate limiter postgres: پنجره لغزان است", async () => {
   const after = await checkRateAsync(key, limit, windowMs, { failPolicy: "closed" });
   assert.equal(after.ok, true, "پنجره باید لغزان باشد");
 
-  await sql.end();
 });

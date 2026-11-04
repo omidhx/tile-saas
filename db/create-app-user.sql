@@ -51,11 +51,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 TO app_user;
 
 -- ۵. جداول سراسری (غیر tenant-scoped)
---    app_user: SELECT روی app_user و tenant (برای lookup)
+--    app_user: ورود session_epoch را بالا می‌برد، تغییر رمز و ساخت حساب هم می‌نویسند
+--    tenant: تنظیمات کارخانه و ساخت کارخانه توسط مدیر پلتفرم
 --    password_reset: SELECT, INSERT, UPDATE (برای reset flow)
-GRANT SELECT ON app_user TO app_user;
-GRANT SELECT ON tenant TO app_user;
+GRANT SELECT, INSERT, UPDATE ON app_user TO app_user;
+GRANT SELECT, INSERT, UPDATE ON tenant TO app_user;
 GRANT SELECT, INSERT, UPDATE ON password_reset TO app_user;
+GRANT SELECT ON v_lot_availability TO app_user;
 
 -- ۶. جداول زیرساختی — least privilege
 --    _migrations: فقط SELECT (apply.ts با migration role اجرا می‌شود)

@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { T, seedTenant } from "./_fixtures";
@@ -47,7 +47,6 @@ before(async () => {
       ('${T}','${LOT}',100000), ('${T}','${LOT_FREE}',10000);
   `);
 });
-after(async () => { await sql.end(); });
 
 // هر تست از سقفِ تمیز شروع می‌شود
 beforeEach(async () => {

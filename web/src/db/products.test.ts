@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { createProduct, listProducts, updateProduct, addProductImage, removeProductImage, setPrimaryImage } from "./products";
 import { T, seedTenant } from "./_fixtures";
@@ -22,7 +22,6 @@ before(async () => {
   await sql.unsafe(`INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','انبارِ اصلی','W1','main');`);
   await sql.unsafe(`INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','09120000001','x');`);
 });
-after(async () => { await sql.end(); });
 beforeEach(async () => {
   // ترتیب مهم است: lot و price_list_item به variant قفل‌اند (RESTRICT، نه CASCADE) —
   // بدونِ پاک‌کردنِ اول لجر/بالانس/لات/قیمت، حذفِ variant با خطای FK رد می‌شود

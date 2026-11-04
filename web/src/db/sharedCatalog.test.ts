@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import {
   createCatalog, updateCatalog, listCatalogs, setCatalogActive, deleteCatalog, getPublicCatalog,
@@ -42,7 +42,6 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',50);
   `);
 });
-after(async () => { await sql.end(); });
 beforeEach(async () => { await sql`DELETE FROM shared_catalog WHERE tenant_id = ${T}`; });
 
 test("ساخت + فهرست: تعدادِ آیتم درست است", async () => {

@@ -12,7 +12,6 @@ const STATUS_FILE = join(TMP_DIR, "backup-status.json");
 process.env.BACKUP_STATUS_PATH = STATUS_FILE;
 
 // Dynamic import via require() so env var is set first
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { readBackupStatus, computeLiveBackupAgeSeconds } = require("./backupStatus") as typeof import("./backupStatus");
 
 // ──────────────────────────────────────────────

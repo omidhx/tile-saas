@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve } from "./reservations";
@@ -48,7 +48,6 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',1000);
   `);
 });
-after(async () => { await sql.end(); });
 
 /** رزرو → تأیید → حواله (با مشتری) → بارگیری. */
 async function sell(qty: number, code: string, customerId: string | null, customerName: string) {

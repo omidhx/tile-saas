@@ -1,16 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-
-// دیتای seed:dev (globalSetup) — همان دو حسابِ شناخته‌شده‌ی محیطِ dev.
-const STAFF = { phone: "09120000001", password: "pass1234" };
-const AGENT = { phone: "09120000000", password: "pass1234" };
-
-async function login(page: Page, creds: { phone: string; password: string }) {
-  await page.goto("/login");
-  await page.getByLabel("شماره موبایل یا ایمیل").fill(creds.phone);
-  await page.getByLabel("رمز عبور").fill(creds.password);
-  await page.getByRole("button", { name: "ورود" }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"));
-}
+import { test, expect } from "@playwright/test";
+import { AGENT, STAFF, login } from "./helpers";
 
 /**
  * مسیرِ حیاتی: نماینده رزرو می‌کند → (تأییدِ دستی یا خودکار) → پشتیبان حواله
@@ -56,6 +45,7 @@ test("ورود → رزرو → تأیید/خودکار → حواله → با�
   const approvedCard = page.getByTestId("approved-requests").locator(".card").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
   await expect(approvedCard).toBeVisible({ timeout: 15_000 });
   await approvedCard.getByRole("button", { name: "ساخت حواله" }).click();
+  await approvedCard.getByRole("button", { name: "تأیید و ساختِ حواله" }).click();
   await expect(approvedCard).not.toBeVisible({ timeout: 15_000 });
 
   // ۳. حواله: تا «بارگیری‌شده» پیش می‌رود — لیست با created_at DESC می‌آید،

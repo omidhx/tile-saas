@@ -1,6 +1,6 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "@/db/client";
+import { sql } from "@/db/_testdb";
 import { resetSchema } from "@/db/_testdb";
 import { hashPassword, verifyPassword } from "./password";
 import { changePassword, requestReset, confirmReset, MIN_PASSWORD, MAX_PASSWORD } from "./passwordFlows";
@@ -25,7 +25,6 @@ before(async () => {
     INSERT INTO tenant_membership (tenant_id,user_id,role) VALUES ('${T}','${U}','agent');
   `);
 });
-after(async () => { await sql.end(); });
 
 // هر تست از رمزِ معلوم و بدونِ کدِ باز شروع می‌شود
 beforeEach(async () => {

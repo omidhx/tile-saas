@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { applySnapshot } from "./imports";
 import { reserve } from "./reservations";
@@ -25,7 +25,6 @@ before(async () => {
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH}','${T}','W','W1','main');
   `);
 });
-after(async () => { await sql.end(); });
 
 test("کلِ زنجیره (import→رزرو→تأیید→بارگیری) لجرِ کاملاً تراز می‌سازد", async () => {
   // ۱. ورود موجودی

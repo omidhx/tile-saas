@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { getSmsConfig, getSmsConfigForSending, updateSmsConfig } from "./smsConfig";
@@ -17,7 +17,6 @@ before(async () => {
   await resetSchema();
   await seedTenantUser();
 });
-after(async () => { await sql.end(); });
 
 test("پیش‌فرض: خاموش، بدونِ پروایدر", async () => {
   const c = await getSmsConfig(T);

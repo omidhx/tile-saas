@@ -1,11 +1,10 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { createTenant } from "./platform";
 
 before(async () => { await resetSchema(); });
-after(async () => { await sql.end(); });
 
 test("createTenant: کارخانه + اولین admin با can_manage_access ساخته می‌شوند", async () => {
   const r = await createTenant({ name: "کارخانه‌ی الف", slug: "factory-a", adminPhone: "09121110001" });

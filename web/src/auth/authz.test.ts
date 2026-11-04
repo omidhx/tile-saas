@@ -1,8 +1,8 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "@/db/client";
+import { sql } from "@/db/_testdb";
 import { resetSchema } from "@/db/_testdb";
-import { authorizeAgent, authorizeStaff, authorizeAccessManager, authorizeStaffPage, AuthzError } from "./authz";
+import { authorizeAgent, authorizeStaff, authorizeAdmin, authorizeAccessManager, authorizeStaffPage, AuthzError } from "./authz";
 
 // دو tenant. U = نماینده‌ی A (role agent). S = پشتیبانِ A (role staff).
 const A = "11111111-1111-1111-1111-111111111111";
@@ -26,7 +26,6 @@ before(async () => {
   `);
 });
 
-after(async () => { await sql.end(); });
 
 test("دسترسی معتبر: کاربر A روی نمایندگیِ A → context با ttlHours", async () => {
   const ctx = await authorizeAgent(U, A, AG_A);
@@ -54,6 +53,18 @@ test("authorizeStaff: نماینده (role agent) رد می‌شود (تأیید
 
 test("authorizeStaff: غیرعضو رد می‌شود", async () => {
   await assert.rejects(() => authorizeStaff(S, B), AuthzError);
+});
+
+test("authorizeAdmin: staff کافی نیست، فقط admin مجاز است", async () => {
+  const ADMIN = "abababab-abab-abab-abab-abababababab";
+  await sql.unsafe(`
+    INSERT INTO app_user (id,phone,password_hash) VALUES ('${ADMIN}','0919','x');
+    INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${A}','${ADMIN}','admin',true);
+  `);
+  await assert.rejects(() => authorizeAdmin(S, A), AuthzError);
+  await assert.rejects(() => authorizeAdmin(U, A), AuthzError);
+  const ctx = await authorizeAdmin(ADMIN, A);
+  assert.equal(ctx.tenantId, A);
 });
 
 test("authorizeAccessManager: adminِ ساده (بدونِ can_manage_access) رد می‌شود", async () => {

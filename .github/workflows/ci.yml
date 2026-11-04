@@ -1,20 +1,8 @@
-# =============================================================================
-# CI — تست‌های خودکار روی هر push و pull request
-# =============================================================================
-# این pipeline:
-#   ۱. نصبِ وابستگی‌ها (npm ci)
-#   ۲. typecheck (tsc --noEmit)
-#   ۳. اجرای migration با apply.ts (نه schema.sql — تا خود migrate هم تست شود)
-#   ۴. تست‌های یکپارچه روی PostgreSQL داکری
-#   ۵. بیلدِ production
-#
-# چرا PostgreSQL واقعی: تست‌های این پروژه RLS، SECURITY DEFINER، و قفل‌های
-# FOR UPDATE را بررسی می‌کنند. SQLite یا in-memory این الگوها را پشتیبانی
-# نمی‌کنند. docker-compose یک PG تازه به ازای هر job می‌سازد.
-#
-# توجه: این CI هنوز اجرا نشده — اولین push روی GitHub آن را سبز یا قرمز می‌کند.
-# اگر قرمز شد، به‌عنوانِ «CI اضافه شد، اجرا شد» به‌جایِ «CI رفع شد» گزارش می‌شود.
-# =============================================================================
+# CI روی لینوکس منبع حقیقت است. سه job برای required status check روی main:
+#   lint  بدون دیتابیس: چک خود CI، gitleaks، tsc، ESLint، قرارداد API
+#   test  Postgres واقعی با نقش محدود app_user: migration، db/test_schema.sql، npm test، بکاپ
+#   e2e   بیلد production و Playwright با نقش محدود روی DB جدا، و smoke
+# هر مرحله باید بتواند شکست بخورد؛ scripts/lint-ci.sh الگوهای پنهان‌کننده را رد می‌کند.
 
 name: CI
 
@@ -24,14 +12,54 @@ on:
   pull_request:
     branches: [main]
 
-# همزمان فقط یک run روی همان branch — cancelِ runهای قدیمیِ در حال اجرا
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CI lint and file modes
+        run: bash scripts/lint-ci.sh
+
+      - name: Gitleaks (full history)
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git --redact --verbose .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        working-directory: web
+        run: npm run lint
+
+      - name: API contract drift
+        run: bash scripts/test-api-contract.sh
+
   test:
-    name: Test & Build
+    name: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -51,19 +79,15 @@ jobs:
           --health-retries 10
 
     env:
-      # نقشِ postgres superuser در CI فقط — در production باید non-superuser باشد.
-      # برای تستِ RLS، _testdb.ts از نقشِ `app_role` استفاده می‌کند که در test_schema.sql ساخته می‌شود.
-      DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
-      # AUTH_SECRET حداقل ۳۲ کاراکتر — برای تستِ secretBox.ts و session.ts
-      AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
-      NODE_ENV: test
+      # متغیرهای محیطی مقدارهای web/.env.test را override می‌کنند.
+      DATABASE_URL: postgres://app_user:ci_app_pw@localhost:5432/tile_test
+      TEST_ADMIN_DATABASE_URL: postgres://postgres:pw@localhost:5432/tile_test
+      PGPASSWORD: pw
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -73,164 +97,36 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Type check
-        working-directory: web
-        run: npx tsc --noEmit
-
-      - name: Run migrations (apply.ts)
-        # مهم: اینجا apply.ts را تست می‌کنیم، نه schema.sql را.
-        # اگر apply.ts کار کند، یعنی migration system از ابتدا تا انتها سالم است.
-        # schema.sql هم درونِ خودش شاملِ همه‌ی migrationها است (همگام‌سازی شده).
-        #
-        # نکته: apply.ts در `db/migrations/` است ولی node_modules در `web/` است.
-        # tsx از مسیرِ فایل node_modules را پیدا می‌کند، نه از cwd. پس NODE_PATH
-        # را ست می‌کنیم یا فایل را به web/ کپی می‌کنیم. روش ساده‌تر: NODE_PATH.
-        working-directory: web
-        env:
-          DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
-          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
-          NODE_PATH: ${{ github.workspace }}/web/node_modules
+      - name: Install Postgres client and backup tools
         run: |
-          # ابتدا schema.sql را اجرا می‌کنیم (نصبِ اولیه)
-          PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -f ../db/schema.sql
-          # بعد migrationها را — از web/ اجرا می‌کنیم تا node_modules در دسترس باشد
-          # .env.test مقادیر dev دارد؛ در CI، متغیرهای محیطی override می‌کنند
-          DATABASE_URL=postgres://postgres:pw@localhost:5432/tile_test \
-          AUTH_SECRET=ci-secret-must-be-at-least-32-characters-long-for-tests-only \
-          node --import tsx ../db/migrations/apply.ts
-
-      - name: Run tests
-        working-directory: web
-        env:
-          DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
-          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
-          NODE_ENV: test
-        # npm test از --env-file=.env.test استفاده می‌کند. در CI، .env.test مقادیر
-        # dev را دارد (localhost:55433/devpw) که با PostgreSQL داکریِ CI (localhost:5432/pw)
-        # هم‌خوان نیست. پس قبل از تست، .env.test را با مقادیر CI بازنویسی می‌کنیم.
-        # از test:ci استفاده می‌کنیم چون glob expansion در npm script درست کار نمی‌کند.
-        run: |
-          cp .env.test .env.test.backup
-          printf 'DATABASE_URL=postgres://postgres:pw@localhost:5432/tile_test\nAUTH_SECRET=ci-secret-must-be-at-least-32-characters-long-for-tests-only\n' > .env.test
-          npm run test:ci
-          mv .env.test.backup .env.test
-
-      - name: Verify RLS with app_user (non-superuser)
-        # این step نقش app_user را می‌سازد و تست می‌کند که RLS واقعاً کار می‌کند.
-        # این مهم‌ترین verification برای DB-001 است.
-        working-directory: web
-        run: |
-          # ۱. نقش app_user را بساز
-          PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -f ../db/create-app-user.sql
-
-          # ۲. تأیید: app_user نباید superuser یا BYPASSRLS باشد
-          echo "=== Role check ==="
-          PGPASSWORD=pw psql -h localhost -U postgres -d tile_test -t -c "
-            SELECT rolname, rolsuper, rolbypassrls, rolcanlogin
-            FROM pg_roles WHERE rolname = 'app_user';
-          "
-
-          # ۳. تست: با app_user وصل شو و بررسی کن که بدون SET app.tenant_id هیچ داده‌ای برنمی‌گردد
-          echo "=== RLS test with app_user ==="
-          PGPASSWORD=TEMPORARY_CHANGE_ME psql -h localhost -U app_user -d tile_test -t -c "
-            SELECT current_user, session_user;
-          " || echo "NOTE: app_user password is temporary — may need ALTER ROLE"
-
-          # ۴. اگر app_user وصل شد، تست کن که RLS داده را فیلتر می‌کند
-          PGPASSWORD=TEMPORARY_CHANGE_ME psql -h localhost -U app_user -d tile_test -t -c "
-            -- بدون SET app.tenant_id، RLS باید همه را فیلتر کند
-            SELECT COUNT(*) AS products_without_tenant FROM product;
-          " || echo "NOTE: RLS test skipped — app_user password needs to be set"
-
-          # ۵. با SET app.tenant_id، فقط داده‌ی همان tenant باید برگردد
-          PGPASSWORD=TEMPORARY_CHANGE_ME psql -h localhost -U app_user -d tile_test -t -c "
-            SET app.tenant_id = '11111111-1111-1111-1111-111111111111';
-            SELECT COUNT(*) AS products_tenant_a FROM product;
-          " || echo "NOTE: RLS tenant test skipped"
-
-          echo "=== RLS verification complete ==="
-
-      - name: Build
-        working-directory: web
-        env:
-          SENTRY_DSN: ""
-          NEXT_TELEMETRY_DISABLED: 1
-        run: npm run build
-
-      - name: Smoke test /api/health
-        # بعد از build، سرور را بالا بیاور و /api/health را چک کن
-        # در CI، DATABASE_URL به postgres superuser وصل می‌شود، پس role check
-        # را skip می‌کنیم. در staging/production، app_user استفاده می‌شود.
-        working-directory: web
-        env:
-          DATABASE_URL: postgresql://postgres:pw@localhost:5432/tile_test
-          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
-          NODE_ENV: production
-          SKIP_ROLE_CHECK: "1"
-        run: |
-          npm run start &
-          SERVER_PID=$!
-          sleep 5
-          # /api/health (liveness) باید 200 بدهد — فقط process زنده است
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "FAIL: /api/health returned $STATUS"
-            kill $SERVER_PID
-            exit 1
-          fi
-          echo "OK: /api/health (liveness) returned 200"
-          # /api/ready (readiness) باید 200 یا 503 بدهد — DB را چک می‌کند
-          # در CI، DB متصل است پس باید 200 باشد
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/ready)
-          if [ "$STATUS" != "200" ]; then
-            echo "WARN: /api/ready returned $STATUS (DB may be unavailable)"
-          else
-            echo "OK: /api/ready (readiness) returned 200"
-          fi
-          # /api/metrics باید در production 401 بدهد (نیازمند auth)
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/metrics)
-          if [ "$STATUS" = "401" ] || [ "$STATUS" = "403" ]; then
-            echo "OK: /api/metrics returned $STATUS (auth required)"
-          else
-            echo "WARN: /api/metrics returned $STATUS (expected 401/403 in production)"
-          fi
-          kill $SERVER_PID
-
-      - name: Install backup tools (zstd, gpg, rsync, postgresql-client)
-        # Phase 8 — نصبِ صریحِ همه‌ی dependencyهای لازم برایِ تستِ backup/restore.
-        # نسخه‌ها در log چاپ می‌شوند تا در صورتِ mismatch سریع تشخیص داده شود.
-        # PostgreSQL client از apt repository رسمی نصب می‌شود (نه از Ubuntu default)
-        # تا با PostgreSQL 16 server سازگار باشد.
-        run: |
-          set -e
-          # Install PostgreSQL 16 client (matching production server version)
           sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           sudo apt-get update -qq
-
-          sudo apt-get install -y -qq \
-            postgresql-client-16 \
-            zstd \
-            gnupg \
-            util-linux \
-            rsync
-
-          # Print all versions — critical for diagnosing version mismatch
-          echo "=== Tool versions ==="
+          sudo apt-get install -y -qq postgresql-client-16 zstd gnupg util-linux rsync file
           psql --version
           pg_dump --version
-          pg_restore --version
-          zstd --version
-          gpg --version | head -1
-          rsync --version | head -1
-          flock --version 2>&1 | head -1 || echo "flock (from util-linux, no --version flag)"
-          echo "=== End tool versions ==="
 
-      - name: Phase 8 — Backup + Verify + Restore test
-        # این مرحله مهم‌ترین verification برایِ Phase 8 است. اسکریپتِ
-        # `scripts/ci-backup-test.sh` چرخه‌ی کاملِ backup → verify → restore را
-        # اجرا می‌کند. این اسکریپت در پوشه‌ی scripts/ است و code review
-        # می‌شود — به‌این ترتیب از drift بینِ CI و scripts/ جلوگیری می‌شود.
+      - name: Fresh install (schema.sql, create-app-user.sql, apply.ts)
+        working-directory: web
+        env:
+          DATABASE_URL: ${{ env.TEST_ADMIN_DATABASE_URL }}
+          NODE_PATH: ${{ github.workspace }}/web/node_modules
+        run: |
+          psql -v ON_ERROR_STOP=1 -q -h localhost -U postgres -d tile_test -f ../db/schema.sql
+          psql -v ON_ERROR_STOP=1 -q -h localhost -U postgres -d tile_test -f ../db/create-app-user.sql
+          node --import tsx ../db/migrations/apply.ts
+
+      - name: Schema smoke test (db/test_schema.sql)
+        run: |
+          psql -v ON_ERROR_STOP=1 -q -h localhost -U postgres -d postgres -c "CREATE DATABASE tile_schema_test"
+          psql -v ON_ERROR_STOP=1 -q -h localhost -U postgres -d tile_schema_test -f db/schema.sql
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d tile_schema_test -f db/test_schema.sql
+
+      - name: Tests as app_user
+        working-directory: web
+        run: npm test
+
+      - name: Backup cycle (ci-backup-test.sh)
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: "5432"
@@ -239,44 +135,87 @@ jobs:
           POSTGRES_DB: tile_test
           BACKUP_GPG_PASSPHRASE: ci-test-passphrase-only-not-for-production
           BACKUP_RETENTION_DAYS: "30"
-          PGPASSWORD: pw
         run: bash scripts/ci-backup-test.sh
 
-      - name: Phase 9 — Uploads Backup + Verify + Restore test
-        # این مرحله verification برایِ Phase 9 (AUD-009) است. اسکریپتِ
-        # `scripts/ci-uploads-backup-test.sh` چرخه‌ی کاملِ backup → verify →
-        # restore را برایِ فایل‌های private/uploads/ اجرا می‌کند. فایل‌های فیک
-        # با ساختارِ UUID (jpg, png, webp) ساخته می‌شوند و بعد از تست پاک
-        # می‌شوند.
+      - name: Production backup script (backup-db.sh)
+        run: bash scripts/ci-backup-script-test.sh
+
+      - name: Uploads backup cycle
         env:
           BACKUP_GPG_PASSPHRASE: ci-test-passphrase-only-not-for-production
           BACKUP_RETENTION_DAYS: "30"
         run: bash scripts/ci-uploads-backup-test.sh
 
-      - name: Secret scanning + API contract verification
-        # Phase P1/P3: Verify no secrets in repo and all API routes documented
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      E2E_DATABASE_URL: postgres://app_user:ci_e2e_pw@localhost:5432/tile_e2e_test
+      E2E_ADMIN_DATABASE_URL: postgres://postgres:pw@localhost:5432/tile_e2e_test
+      NEXT_TELEMETRY_DISABLED: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Production build
+        working-directory: web
+        run: npm run build
+
+      - name: Playwright (critical path and a11y baseline)
+        working-directory: web
+        run: npx playwright test
+
+      - name: Smoke as app_user
+        working-directory: web
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          AUTH_SECRET: ci-secret-must-be-at-least-32-characters-long-for-tests-only
         run: |
-          echo "=== Secret Scanning ==="
-          bash scripts/scan-secrets.sh
-          echo ""
-          echo "=== API Contract Drift Check ==="
-          bash scripts/test-api-contract.sh
+          npm run start -- -p 3200 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID' EXIT
+          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -o /dev/null http://localhost:3200/api/health
+          curl -fsS -o /dev/null http://localhost:3200/api/ready
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3200/api/metrics)
+          if [ "$status" != "401" ] && [ "$status" != "403" ]; then
+            echo "/api/metrics باید احراز هویت بخواهد، پاسخ: $status"
+            exit 1
+          fi
 
-      - name: Upload backup artifacts (on failure)
+      - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: backup-logs
-          path: |
-            backups/
-          retention-days: 7
-
-      - name: Upload test artifacts (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-logs
-          path: |
-            web/.next/
-            web/test-results/
+          name: playwright-traces
+          path: web/test-results/
           retention-days: 7

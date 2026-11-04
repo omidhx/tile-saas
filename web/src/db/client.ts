@@ -17,10 +17,10 @@ export { sql };
  * این تابع در production باید صدا زده شود (مثلاً در instrumentation.ts یا اولین
  * middleware). اگر نقش ناامن باشد، fail-loud می‌کند.
  *
- * در dev و test نادیده گرفته می‌شود چون با superuser وصل می‌شویم.
+ * در dev نادیده گرفته می‌شود. تست‌ها چک خودشان را در _testdb.ts دارند.
  */
 export async function assertNonSuperuserRole(): Promise<void> {
-  if (process.env.NODE_ENV !== "production") return; // dev و test با superuser
+  if (process.env.NODE_ENV !== "production") return;
 
   const [role] = await sql<{ rolsuper: boolean; rolbypassrls: boolean }[]>`
     SELECT rolsuper, rolbypassrls FROM pg_roles

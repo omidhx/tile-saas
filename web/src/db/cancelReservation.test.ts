@@ -1,6 +1,6 @@
-import { test, before, after } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./client";
+import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve, cancelReservation } from "./reservations";
@@ -22,7 +22,6 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',100);
   `);
 });
-after(async () => { await sql.end(); });
 
 const available = async () =>
   Number((await sql<{ v: number }[]>`SELECT available_qty_boxes AS v FROM v_lot_availability WHERE lot_id = ${LOT}`)[0].v);

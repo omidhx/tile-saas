@@ -147,4 +147,7 @@ async function main() {
   }
 }
 
-main();
+main().catch((e) => {
+  console.error("[cleanup-uploads] failed:", e);
+  process.exit(1);
+});
