@@ -52,7 +52,7 @@ export async function POST(req: Request) {
   if (typeof tenantId !== "string" || !(file instanceof File))
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
-  // ۳. مجوز — staff با دسترسیِ صفحه‌ی catalog
+  // ۳. مجوز — staff
   try {
     await authorizeStaff(userId, tenantId);
   } catch (e) {

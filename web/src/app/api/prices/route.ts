@@ -24,13 +24,14 @@ export async function GET(req: Request) {
         FROM price_list pl
         WHERE pl.tenant_id = ${c.tenantId} AND ${f.price_lists ? tx`TRUE` : tx`pl.id = ${mainId}`}
         ORDER BY pl.is_default DESC, pl.name`;
+      const visible = lists.map((l) => l.id as string);
       const items = await tx`
         SELECT pli.price_list_id AS "priceListId", pli.variant_id AS "variantId",
                pli.price, p.name, p.code, pv.sku
         FROM price_list_item pli
         JOIN product_variant pv ON pv.id = pli.variant_id
         JOIN product p ON p.id = pv.product_id
-        WHERE pli.tenant_id = ${c.tenantId} ORDER BY p.name`;
+        WHERE pli.tenant_id = ${c.tenantId} AND pli.price_list_id IN ${tx(visible)} ORDER BY p.name`;
       return { lists, items };
     }),
     f.volume_discount ? listVolumeDiscounts(c.tenantId) : Promise.resolve([]),
@@ -55,7 +56,11 @@ export async function POST(req: Request) {
       || !Number.isInteger(price) || price < 0)
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
-  await withTenant(c.tenantId, async (tx) => {
+  const f = await getFeatures(c.tenantId);
+  const written = await withTenant(c.tenantId, async (tx) => {
+    // با «چند لیست» خاموش فقط لیستِ اصلی قابلِ نوشتن است؛ لیستِ پنهان نباید مخفیانه پر شود.
+    if (!f.price_lists && priceListId !== await ensureDefaultPriceList(tx, c.tenantId)) return false;
+
     // قیمتِ قبلی **قبل از** نوشتن خوانده می‌شود: بدون آن، ردپا فقط می‌گوید
     // «قیمت شد X» و سؤالِ اصلی («از چند آمد؟») بی‌جواب می‌ماند.
     const [prev] = await tx<{ price: string }[]>`
@@ -76,6 +81,8 @@ export async function POST(req: Request) {
         action: "price.set", entity: "price_list_item", entityId: variantId,
         oldValue: before, newValue: price,
       });
+    return true;
   });
+  if (!written) return NextResponse.json({ error: "feature_off" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -177,10 +177,6 @@ export async function reserveIn(
     ttlHours: number;
     idempotencyKey: string;
     items: ReserveItem[];
-    /**
-     * پیشنهادِ صفِ انتظار نباید خودکار تأیید شود: نماینده در آن لحظه حاضر نیست و
-     * درخواستش شاید روزها پیش ثبت شده. تعهدِ پول باید با حضورِ او باشد.
-     */
   },
 ): Promise<ReserveResult> {
   const { tenantId, agentAccountId, ttlHours, idempotencyKey, items } = params;

@@ -27,12 +27,11 @@ context‌های کاربر (کدام tenant/نمایندگی). از `user_conte
 // 200
 { "contexts": [
   { "tenantId": "…", "tenantName": "…", "agentAccountId": "…", "agentLegalName": "…",
-    "role": "staff", "canManageAccess": false, "allowedPages": [],
+    "role": "staff",
     "assignedStaffName": null, "assignedStaffPhone": null }
 ] }
 // 401 → { "error": "unauthenticated" }
 ```
-- `allowedPages` خالی یعنی دسترسیِ کامل (پیش‌فرضِ سازگار با قبل)؛ `canManageAccess` فقط برای `role="admin"` معنا دارد.
 - `assignedStaffName`/`assignedStaffPhone` فقط وقتی `agentAccountId` پر است معنا دارند (پشتیبانِ ثابتِ همان نمایندگی).
 
 ## `GET /api/lots?tenantId=…&agentAccountId=…`
@@ -144,7 +143,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/shared-catalog` | agent | کاتالوگِ سفارشیِ نماینده: فهرست/ساخت/باطل‌کردن/حذف. صفحه‌ی عمومیِ مشتری در `/c/<slug>/<token>` (بدونِ لاگین، فقط عکس/مشخصات/موجود، بدونِ قیمت) |
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
-| `/api/reports` | staff | گزارش‌های مدیریتی (عملکردِ نماینده، پرفروش/راکد، تخفیف‌های اعمال‌شده به‌تفکیکِ نماینده/کالا، عملکردِ نماینده به‌تفکیکِ انبار — فقط کارتن، بدونِ ارزشِ ریالی)؛ `&agentAccountId`/`&variantId` اختیاری برای محدودکردنِ همان گزارش به یک نماینده/کالا (راکدها فقط فیلترِ کالا را می‌پذیرد). `&monthly=1[&months]` همان مسیر را عوض می‌کند به عملکردِ نماینده ماه‌به‌ماهِ شمسی (پیش‌فرض ۶ ماه، سقفِ ۱۲) |
+| `/api/reports` | staff | گزارش‌های مدیریتی (عملکردِ نماینده، پرفروش، راکد) |
 | `/api/ledger` | staff | دفتر حرکات (صفحه‌بندی‌شده، `&offset`/`&q`، `hasMore`؛ `&limit` هم می‌گیرد — خروجیِ اکسل با آن کلِ نتیجه‌ی فیلترشده را می‌گیرد، سقفِ ۲۰٬۰۰۰) + تطبیق (drift) |
 | `/api/audit` | staff | دفتر تغییراتِ قواعدِ پولی؛ صفحه‌بندی‌شده (`&offset`/`&q`)، `hasMore` |
 | `/api/catalog` | staff | فهرستِ کمکیِ محصولات |

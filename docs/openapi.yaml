@@ -878,7 +878,7 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "200": { description: Auto-approve settings }
-    patch:
+    put:
       tags: [Settings]
       summary: Update auto-approve threshold (admin)
       security: [{ sessionCookie: [] }]

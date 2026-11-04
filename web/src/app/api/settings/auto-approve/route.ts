@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { authorizeAdmin, AuthzError } from "@/auth/authz";
 import { featureOff } from "@/auth/httpCtx";
 import { withTenant } from "@/db/client";
 import { writeAudit } from "@/db/audit";
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeAdmin(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
@@ -61,7 +61,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {
-    await authorizeStaff(userId, tenantId);
+    await authorizeAdmin(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

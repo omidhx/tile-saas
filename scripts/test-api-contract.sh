@@ -33,7 +33,7 @@ while IFS= read -r -d '' route_file; do
     sed 's|\[id\]|{id}|g; s|\[itemId\]|{itemId}|g; s|\[slug\]|{slug}|g; s|\[token\]|{token}|g')
 
   # Check each HTTP method
-  for method in GET POST PATCH DELETE; do
+  for method in GET POST PUT PATCH DELETE; do
     if grep -q "export async function ${method}" "${route_file}" 2>/dev/null; then
       lower=$(echo "${method}" | tr '[:upper:]' '[:lower:]')
 

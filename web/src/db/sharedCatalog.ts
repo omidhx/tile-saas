@@ -1,4 +1,5 @@
 import { sql, withTenant } from "./client";
+import { featuresIn } from "./features";
 import type { CurrencyUnit } from "@/lib/money";
 
 /**
@@ -153,9 +154,11 @@ export async function getPublicCatalog(p: { slug: string; token: string }) {
       JOIN product p          ON p.id = pv.product_id
       WHERE ci.catalog_id = ${cat.id}
       ORDER BY ci.sort_order, p.name`;
+    // کلیدِ قیمت خاموش یعنی قیمت در صفحه‌ی عمومی هم نیست.
+    const { pricing } = await featuresIn(tx, t.id);
     const items = rows.map((r) => ({
       ...r,
-      customerPrice: r.customerPrice == null ? null : Number(r.customerPrice),
+      customerPrice: !pricing || r.customerPrice == null ? null : Number(r.customerPrice),
       // فیلدهای اطلاعاتِ بیشتر فقط اگر نماینده opt-in کرده باشد به مشتری می‌روند.
       size: cat.showDetails ? r.size : null,
       thickness: cat.showDetails ? r.thickness : null,

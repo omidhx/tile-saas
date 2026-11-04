@@ -20,14 +20,14 @@ import FeaturesSection from "./FeaturesSection";
  * راه‌اندازی/مدیریتی‌اند که به‌ندرت (نه هر روز) باز می‌شوند، پس سوییچِ بینِ آدرس‌ها
  * برایشان بیشتر از کاتالوگ/گزارش‌ها آزاردهنده نبود، ولی همان منطق صدق می‌کند.
  *
- * تیم، نمایندگی‌ها، انبارها و تنظیمات فقط برای admin. تأییدِ خودکار فقط وقتی کلیدش روشن است.
+ * همه‌ی این تب‌ها فقط برای admin. تأییدِ خودکار فقط وقتی کلیدش روشن است.
  */
 type TabKey = "team" | "agents" | "warehouses" | "auto-approve" | "settings";
 const ALL_TABS: { key: TabKey; label: string; visible: (ctx: Ctx, f: Features) => boolean }[] = [
   { key: "team", label: "تیمِ کارخانه", visible: (ctx) => ctx.role === "admin" },
   { key: "agents", label: "نمایندگی‌ها", visible: (ctx) => ctx.role === "admin" },
   { key: "warehouses", label: "انبارها", visible: (ctx) => ctx.role === "admin" },
-  { key: "auto-approve", label: "تأیید خودکار", visible: (_, f) => f.auto_approve },
+  { key: "auto-approve", label: "تأیید خودکار", visible: (ctx, f) => ctx.role === "admin" && f.auto_approve },
   { key: "settings", label: "تنظیمات و امکانات", visible: (ctx) => ctx.role === "admin" },
 ];
 

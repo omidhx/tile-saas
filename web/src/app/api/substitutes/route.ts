@@ -2,13 +2,6 @@ import { NextResponse } from "next/server";
 import { staffCtx, featureOff } from "@/auth/httpCtx";
 import { listSubstitutes, addSubstitute, removeSubstitute } from "@/db/substitutes";
 
-/**
- * GETِ این فهرست را /staff/catalog هم برای شمارشِ «جایگزین‌ها (N)» صدا می‌زند،
- * پس pageKey رویش نمی‌گذاریم (وگرنه staffِ محدود به فقط catalog اینجا هم گیر
- * می‌کرد). ویرایشِ واقعی (POST/DELETE) فقط از /staff/substitutes ممکن است،
- * پس همان‌جا pageKey='substitutes' اعمال می‌شود.
- */
-
 export async function GET(req: Request) {
   const c = await staffCtx(new URL(req.url).searchParams.get("tenantId"));
   if ("err" in c) return c.err;

@@ -129,6 +129,10 @@ export async function ensureDefaultPriceList(tx: TransactionSql, tenantId: strin
     SELECT id FROM price_list WHERE tenant_id = ${tenantId} AND is_default`)[0]?.id;
   const existing = await find();
   if (existing) return existing;
+  // دو درخواستِ هم‌زمان نباید دو لیستِ متفاوت را اصلی کنند (unique index خطا می‌داد).
+  await tx`SELECT 1 FROM tenant WHERE id = ${tenantId} FOR UPDATE`;
+  const raced = await find();
+  if (raced) return raced;
   const [first] = await tx<{ id: string }[]>`
     SELECT id FROM price_list WHERE tenant_id = ${tenantId} ORDER BY name, id LIMIT 1`;
   if (first) await tx`UPDATE price_list SET is_default = TRUE WHERE id = ${first.id} AND tenant_id = ${tenantId}`;

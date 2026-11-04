@@ -17,7 +17,7 @@ import { useEscapeClose } from "@/lib/useEscapeClose";
  */
 
 // سمتِ نماینده گیتِ نقش/دسترسی ندارد (همه‌ی نماینده‌ها همین لینک‌ها را می‌بینند)،
-// پس هیچ‌کدام pageKey/adminOnly/deputyOnly ندارند — visibleNavGroups همه را عبور می‌دهد.
+// پس هیچ‌کدام adminOnly ندارند — visibleNavGroups همه را عبور می‌دهد.
 const AGENT_NAV_GROUPS: NavGroup[] = [
   {
     title: "عملیات",
