@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"$CLAUDE_PROJECT_DIR/docs/PHASES.md\" || echo 'docs/PHASES.md not found: this branch may predate it; check main before starting work.'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

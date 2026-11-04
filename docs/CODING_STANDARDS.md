@@ -45,7 +45,7 @@
 ## Git
 - کامیتِ کوچک و متمرکز. پیام: `type(scope): summary` + بدنه‌ی «چرا».
 - تریلر اجباری: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-- push به هر دو mirror (GitLab + GitHub).
+- push فقط به GitHub (`origin`).
 - **هر تغییرِ schema با migration در `db/migrations/`** — هرگز `schema.sql` را در prodِ داده‌دار اجرا نکن.
 
 ## Assumptions
