@@ -1,12 +1,11 @@
 import { withTenant } from "./client";
 import { findOrCreateUser } from "./users";
-import { STAFF_PAGE_KEYS } from "@/lib/staffPages";
 
 export type Role = "staff" | "admin";
 
 export type TeamMember = {
   membershipId: string; userId: string; phone: string; email: string | null; fullName: string | null;
-  role: Role; isActive: boolean; canManageAccess: boolean; allowedPages: string[];
+  role: Role; isActive: boolean;
 };
 
 export type StaffOption = { userId: string; fullName: string | null; phone: string };
@@ -35,8 +34,7 @@ export async function listTeam(tenantId: string): Promise<TeamMember[]> {
   return withTenant(tenantId, (tx) =>
     tx<TeamMember[]>`
       SELECT tm.id AS "membershipId", u.id AS "userId", u.phone, u.email, u.full_name AS "fullName",
-             tm.role, tm.is_active AS "isActive",
-             tm.can_manage_access AS "canManageAccess", tm.allowed_pages AS "allowedPages"
+             tm.role, tm.is_active AS "isActive"
       FROM tenant_membership tm
       JOIN app_user u ON u.id = tm.user_id
       WHERE tm.tenant_id = ${tenantId} AND tm.role IN ('staff','admin')
@@ -46,29 +44,18 @@ export async function listTeam(tenantId: string): Promise<TeamMember[]> {
   );
 }
 
-function cleanAllowedPages(pages: string[] | undefined): string[] {
-  if (!pages) return [];
-  return pages.filter((p) => STAFF_PAGE_KEYS.includes(p));
-}
-
 /**
  * دعوتِ عضوِ تیم با موبایل (+ ایمیلِ اختیاری). اگر شماره از قبل در سامانه هست
  * (حتی برای tenantِ دیگر — app_user سراسری است)، رمزِ تازه ساخته نمی‌شود، فقط
  * عضویت اضافه/فعال می‌شود؛ کاربر با همان رمزِ قبلیِ خودش وارد می‌شود.
  * فقط برای کاربرِ **جدید** رمزِ یک‌بارمصرف ساخته و اعلان می‌شود.
- *
- * canManageAccess فقط برای role='admin' معنا دارد؛ allowedPages فقط برای role='staff'
- * (طرفِ دیگر همیشه پیش‌فرض/نادیده گرفته می‌شود، حتی اگر فرم اشتباهی فرستاده باشد).
  */
 export async function inviteTeamMember(params: {
   tenantId: string; phone: string; email?: string | null; fullName?: string | null; role: Role;
-  canManageAccess?: boolean; allowedPages?: string[];
 }): Promise<InviteResult> {
   const { tenantId, phone, role } = params;
   const email = params.email?.trim() || null;
   const fullName = params.fullName?.trim() || null;
-  const canManageAccess = role === "admin" && !!params.canManageAccess;
-  const allowedPages = role === "staff" ? cleanAllowedPages(params.allowedPages) : [];
 
   return withTenant(tenantId, async (tx) => {
     const [tenant] = await tx<{ name: string; max_staff: number | null }[]>`
@@ -89,15 +76,14 @@ export async function inviteTeamMember(params: {
       SELECT id, is_active FROM tenant_membership WHERE tenant_id = ${tenantId} AND user_id = ${userId}`;
     if (member) {
       if (member.is_active) return { ok: false, reason: "already_member" };
-      // عضوِ قبلاً غیرفعال‌شده: بازگشت به تیم، با نقش/دسترسیِ تازه (شاید فرق کند)
+      // عضوِ قبلاً غیرفعال‌شده: بازگشت به تیم، با نقشِ تازه (شاید فرق کند)
       await tx`
-        UPDATE tenant_membership SET is_active = true, role = ${role},
-          can_manage_access = ${canManageAccess}, allowed_pages = ${allowedPages}
+        UPDATE tenant_membership SET is_active = true, role = ${role}
         WHERE id = ${member.id}`;
     } else {
       await tx`
-        INSERT INTO tenant_membership (tenant_id, user_id, role, is_active, can_manage_access, allowed_pages)
-        VALUES (${tenantId}, ${userId}, ${role}, true, ${canManageAccess}, ${allowedPages})`;
+        INSERT INTO tenant_membership (tenant_id, user_id, role, is_active)
+        VALUES (${tenantId}, ${userId}, ${role}, true)`;
     }
 
     // اعلان: کاربرِ تازه رمزِ یک‌بارمصرف می‌گیرد؛ کاربرِ قدیمی فقط خبرِ دسترسیِ تازه.
@@ -107,70 +93,45 @@ export async function inviteTeamMember(params: {
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
       VALUES (${tenantId}, 'sms', ${phone}, ${JSON.stringify(payload)}::jsonb)`;
-    if (email)
-      await tx`
-        INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-        VALUES (${tenantId}, 'email', ${email}, ${JSON.stringify(payload)}::jsonb)`;
 
     return { ok: true, created, tempPassword };
   });
 }
 
-export type SetMemberResult = { ok: true } | { ok: false; reason: "last_admin" | "last_deputy" };
+export type SetMemberResult = { ok: true } | { ok: false; reason: "last_admin" };
 
 /**
- * گاردِ مشترکِ setTeamMember/deleteTeamMember: آیا حذف/غیرفعال‌کردن/تنزلِ این
- * عضو، تیم را بدونِ حداقلِ لازم می‌گذارد؟ دو چیز جداگانه باید حفظ شود:
- *   • حداقل یک adminِ فعال — وگرنه هیچ‌کس نمی‌تواند نمایندگی/انبار بسازد.
- *   • حداقل یک «مدیرِ دسترسی»ِ فعال — وگرنه هیچ‌کس نمی‌تواند دسترسیِ بقیه را
- *     دست‌کاری کند و تیم برای همیشه قفل می‌ماند (فقط SQL دستی راه می‌داشت).
+ * گاردِ مشترکِ setTeamMember/deleteTeamMember: حداقل یک adminِ فعال باید بماند،
+ * وگرنه هیچ‌کس نمی‌تواند تیم/نمایندگی/انبار را مدیریت کند و کارخانه قفل می‌شود.
  */
-async function guardMinimumAccess(
+async function guardLastAdmin(
   tx: Parameters<Parameters<typeof withTenant>[1]>[0],
   tenantId: string, membershipId: string,
-  willLoseAdmin: boolean, willLoseDeputy: boolean,
 ): Promise<SetMemberResult | null> {
-  const [target] = await tx<{ role: Role; can_manage_access: boolean }[]>`
-    SELECT role, can_manage_access FROM tenant_membership WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
-  if (!target) return null;
-
-  if (willLoseAdmin && target.role === "admin") {
-    const [{ n }] = await tx<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM tenant_membership
-      WHERE tenant_id = ${tenantId} AND role = 'admin' AND is_active AND id <> ${membershipId}`;
-    if (n === 0) return { ok: false, reason: "last_admin" };
-  }
-  if (willLoseDeputy && target.role === "admin" && target.can_manage_access) {
-    const [{ n }] = await tx<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM tenant_membership
-      WHERE tenant_id = ${tenantId} AND role = 'admin' AND can_manage_access AND is_active AND id <> ${membershipId}`;
-    if (n === 0) return { ok: false, reason: "last_deputy" };
-  }
-  return null;
+  const [target] = await tx<{ role: Role }[]>`
+    SELECT role FROM tenant_membership WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
+  if (target?.role !== "admin") return null;
+  const [{ n }] = await tx<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM tenant_membership
+    WHERE tenant_id = ${tenantId} AND role = 'admin' AND is_active AND id <> ${membershipId}`;
+  return n === 0 ? { ok: false, reason: "last_admin" } : null;
 }
 
-/**
- * تغییرِ نقش/فعال‌بودن/دسترسیِ عضوِ تیم. گاردِ «حداقل یک adminِ فعال» و
- * «حداقل یک مدیرِ دسترسیِ فعال» (guardMinimumAccess).
- */
+/** تغییرِ نقش/فعال‌بودنِ عضوِ تیم، با گاردِ «حداقل یک adminِ فعال». */
 export async function setTeamMember(params: {
-  tenantId: string; membershipId: string; role?: Role; isActive?: boolean;
-  canManageAccess?: boolean; allowedPages?: string[]; fullName?: string;
+  tenantId: string; membershipId: string; role?: Role; isActive?: boolean; fullName?: string;
 }): Promise<SetMemberResult> {
   const { tenantId, membershipId } = params;
   return withTenant(tenantId, async (tx) => {
-    const willLoseAdmin = params.isActive === false || params.role === "staff";
-    const willLoseDeputy = params.isActive === false || params.role === "staff" || params.canManageAccess === false;
-    const blocked = await guardMinimumAccess(tx, tenantId, membershipId, willLoseAdmin, willLoseDeputy);
-    if (blocked) return blocked;
+    if (params.isActive === false || params.role === "staff") {
+      const blocked = await guardLastAdmin(tx, tenantId, membershipId);
+      if (blocked) return blocked;
+    }
 
-    if (params.allowedPages !== undefined)
-      await tx`UPDATE tenant_membership SET allowed_pages = ${cleanAllowedPages(params.allowedPages)} WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
     await tx`
       UPDATE tenant_membership SET
         role = COALESCE(${params.role ?? null}, role),
-        is_active = COALESCE(${params.isActive ?? null}, is_active),
-        can_manage_access = COALESCE(${params.canManageAccess ?? null}, can_manage_access)
+        is_active = COALESCE(${params.isActive ?? null}, is_active)
       WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
     // fullName صرفاً برچسبِ نمایشی است، نه اعتبارنامه — برخلافِ ایمیل، همیشه
     // قابلِ بازنویسی است (مدیر باید بتواند تایپوی نام را اصلاح کند).
@@ -183,13 +144,13 @@ export async function setTeamMember(params: {
   });
 }
 
-export type DeleteMemberResult = { ok: true } | { ok: false; reason: "last_admin" | "last_deputy" | "linked_to_agent" };
+export type DeleteMemberResult = { ok: true } | { ok: false; reason: "last_admin" | "linked_to_agent" };
 
 /** حذفِ واقعیِ عضویت (نه فقط غیرفعال‌کردن). app_user سراسری دست‌نخورده می‌ماند. */
 export async function deleteTeamMember(params: { tenantId: string; membershipId: string }): Promise<DeleteMemberResult> {
   const { tenantId, membershipId } = params;
   return withTenant(tenantId, async (tx) => {
-    const blocked = await guardMinimumAccess(tx, tenantId, membershipId, true, true);
+    const blocked = await guardLastAdmin(tx, tenantId, membershipId);
     if (blocked) return blocked;
 
     const [target] = await tx<{ user_id: string }[]>`

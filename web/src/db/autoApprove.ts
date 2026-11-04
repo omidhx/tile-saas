@@ -1,5 +1,6 @@
 import type { TransactionSql } from "postgres";
 import { resolvePricesIn } from "./pricing";
+import { featuresIn } from "./features";
 
 /**
  * تأیید هیبریدی (v2، spec ۹: «approval mode هیبریدی — سقف رزرو → نیاز به تایید»).
@@ -27,6 +28,9 @@ export async function decideAutoApproval(
   p: { tenantId: string; agentAccountId: string; reservationId: string },
 ): Promise<AutoApproveDecision> {
   const { tenantId, agentAccountId, reservationId } = p;
+
+  // کلیدِ خاموش یعنی سقفِ ذخیره‌شده هم بی‌اثر است؛ وگرنه راهی برای خاموش‌کردنش نمی‌ماند.
+  if (!(await featuresIn(tx, tenantId)).auto_approve) return { approve: false, reason: "disabled" };
 
   // سقفِ مؤثر: نماینده بر کارخانه ارجح. COALESCE دقیقاً همین را می‌گوید، چون
   // NULLِ نماینده یعنی «حرفی ندارم» و ۰ یعنی «هرگز» (و ۰ از COALESCE رد می‌شود).

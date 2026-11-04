@@ -125,7 +125,6 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/lots` | نماینده | موجودیِ قابل‌سفارش + «قیمت من» + انبار |
 | `/api/reservations` (+`/:id/approve` `/:id/cancel`) | نماینده/staff | رزرو، تأیید، لغو |
 | `/api/alerts` | نماینده | «خبرم کن» + ناموجودها + **جایگزین‌ها** + **موجودی در راه** |
-| `/api/waitlist` | نماینده | صف انتظار (نوبت گرفتن/انصراف) |
 | `/api/sales-requests` | staff | سفارش‌های تأییدشده (+`approvalMode`) |
 | `/api/sales-dispatches` (+`/:id/status`) | staff | حواله (**آرایه** — چندانباره) و گذارِ وضعیت؛ GET صفحه‌بندی‌شده (`&offset`) + جستجو (`&q`) با `hasMore` |
 | `/api/backorders` (+`/:itemId/status`) | staff | backorder؛ GET صفحه‌بندی‌شده (`&offset`) + جستجو (`&q`) با `hasMore` |
@@ -133,6 +132,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/prices` (+`/api/prices/import`) | staff | قیمت‌گذاری (تغییر در `audit_log` ثبت می‌شود)؛ دومی ورودِ اکسلِ دسته‌جمعیِ یک سبد (sku+قیمت) |
 | `/api/price-lists` | staff | `POST` ساختِ سبدِ قیمت‌گذاریِ تازه (تا حالا فقط SQL) |
 | `/api/volume-discounts` | staff | `POST`/`PATCH`/`DELETE`ِ پله‌های تخفیفِ حجمی (تا حالا فقط SQL؛ حتی خواندنش هم جایی نمایش داده نمی‌شد) — priceListId/variantId=null یعنی «همه» |
+| `/api/settings/features` | staff خواندن، admin نوشتن | امکاناتِ اختیاریِ کارخانه؛ امکانِ خاموش در API مثلِ نبودن است (۴۰۴) |
 | `/api/settings/auto-approve` | staff | سقفِ تأیید خودکار (تغییر در `audit_log`) |
 | `/api/settings/tenant` | admin | تنظیماتِ کارخانه: TTLِ پیش‌فرضِ رزرو + لوگو + واحدِ نمایشِ مبلغ (ریال/تومان، فقط UI) (تغییر در `audit_log`) |
 | `/api/settings/sms` | admin | پنلِ پیامکیِ کارخانه: انتخابِ پروایدر، اطلاعاتِ ورود (رمزنگاری‌شده)، شماره‌ی ارسال‌کننده، پترن‌های هر نوع اعلان، روشن/خاموش (تغییر در `audit_log`، بدونِ رازها) |
@@ -151,7 +151,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/agents` | staff (GET ساده) / admin (`detail=1`، `POST`، `PATCH`، `DELETE`) | فهرستِ کمکی برای فرم backorder؛ مدیریتِ کامل (ساخت + کاربرِ اول، ویرایش، افزودنِ کاربرِ دیگر، تخصیصِ `assignedStaffUserId` به‌عنوانِ پشتیبانِ ثابت، حذفِ واقعی با گاردِ سابقه) برای admin. `detail=1` یک `staffOptions` هم برمی‌گرداند (برای دراپ‌داونِ انتخابِ پشتیبان) |
 | `/api/agent-overrides` | admin | استثنای قیمتِ نمایندگی‌محور (`agent_price_override`، بالاترین اولویتِ قیمت). `GET ?agentAccountId`، `POST`/`PATCH`/`DELETE`؛ بازه‌ی هم‌پوش برای همان (نماینده،کالا) رد می‌شود (۴۰۹) |
 | `/api/warehouses` | staff (GET) / admin (`POST`/`PATCH`/`DELETE`) | فهرست؛ ساخت/تغییرِ نام/حذف برای admin (حذف فقط بدونِ سابقه — گاردِ `has_history`) |
-| `/api/team` | admin + مدیرِ دسترسی (`can_manage_access`) | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری+نامِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن/دسترسیِ ریزدانه (`allowedPages`)/نام، حذفِ واقعی (گاردِ last_admin/last_deputy/linked_to_agent) |
+| `/api/team` | admin | اعضای تیمِ پشتیبان/مدیر: دعوت با موبایل(+ایمیلِ اختیاری+نامِ اختیاری، find-or-create روی `app_user` سراسری)، تغییرِ نقش/فعال‌بودن/دسترسیِ ریزدانه (`allowedPages`)/نام، حذفِ واقعی (گاردِ last_admin/last_deputy/linked_to_agent) |
 | `/api/platform/tenants` | مدیرِ پلتفرم (`app_user.is_platform_admin`) | v9 — روزِ صفرِ مشتریِ تازه: `POST` یک tenant + اولین کاربرِ admin (که `can_manage_access` هم دارد) در یک تراکنش می‌سازد؛ بدونِ SQL دستی |
 | `/api/health` | عمومی (احراز هویت لازم نیست) | **Liveness probe** — فقط بررسی می‌کند که process زنده است. DB چک نمی‌شود. `{status:"ok",timestamp}` برمی‌گرداند. برای Docker healthcheck. |
 | `/api/ready` | عمومی (احراز هویت لازم نیست) | **Readiness probe** — بررسی می‌کند که DB در دسترس است (`SELECT 1`). `{status:"ready",checks:{db:"ok"}}` یا `{status:"not_ready",checks:{db:"fail"}}` برمی‌گرداند. برای reverse proxy (Caddy/Nginx) — فقط ترافیک می‌فرستد اگر 200 باشد. |

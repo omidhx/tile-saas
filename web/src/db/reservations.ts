@@ -3,7 +3,6 @@ import type { TransactionSql } from "postgres";
 import { withTenant } from "./client";
 import { decideAutoApproval } from "./autoApprove";
 import { approveReservationIn } from "./salesRequests";
-import { advanceWaitlist } from "./waitlist";
 import { resolvePrices } from "./pricing";
 
 export type CancelResult =
@@ -47,14 +46,6 @@ export async function cancelReservation(params: {
           (tenant_id, lot_id, transaction_type, reference_type, reference_id, actor_user_id, note)
         VALUES (${tenantId}, ${it.lot_id}, 'reservation_cancel', 'reservation', ${reservationId},
                 ${actorUserId}, ${"آزادسازی " + it.quantity_boxes})`;
-
-    // صف انتظار: موجودی همین حالا آزاد شد (held فقط activeها را می‌شمارد)، پس صف باید
-    // در **همین تراکنش** جلو برود — وگرنه نفرِ اولِ صف به کسی می‌بازد که صفحه‌اش باز است.
-    const variants = await tx<{ variant_id: string }[]>`
-      SELECT DISTINCT l.variant_id FROM reservation_item ri
-      JOIN inventory_lot l ON l.id = ri.lot_id
-      WHERE ri.reservation_id = ${reservationId} AND ri.tenant_id = ${tenantId}`;
-    await advanceWaitlist(tx, tenantId, variants.map((v) => v.variant_id));
 
     return { ok: true };
   });
@@ -190,10 +181,9 @@ export async function reserveIn(
      * پیشنهادِ صفِ انتظار نباید خودکار تأیید شود: نماینده در آن لحظه حاضر نیست و
      * درخواستش شاید روزها پیش ثبت شده. تعهدِ پول باید با حضورِ او باشد.
      */
-    skipAutoApprove?: boolean;
   },
 ): Promise<ReserveResult> {
-  const { tenantId, agentAccountId, ttlHours, idempotencyKey, items, skipAutoApprove } = params;
+  const { tenantId, agentAccountId, ttlHours, idempotencyKey, items } = params;
   if (items.length === 0) throw new Error("رزرو خالی مجاز نیست");
 
   // اقلام هم‌lot را جمع و بر اساس lot_id مرتب کن — قفل همیشه ORDER BY lot_id (#۴)
@@ -311,9 +301,7 @@ export async function reserveIn(
     //    تأیید می‌شود. جدا کردنش به تراکنشِ دوم یعنی پنجره‌ای که رزرو هست ولی تأیید نیست،
     //    و شکستِ نیمه‌راه یک رزروِ سرگردان می‌گذاشت. سقفِ تعریف‌نشده یا خطِ بی‌قیمت →
     //    تصمیم «نه» است، پس رفتارِ پیش‌فرض همان تأییدِ دستیِ قبلی می‌ماند.
-    const decision = skipAutoApprove
-      ? ({ approve: false, reason: "disabled" } as const)
-      : await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resvId });
+    const decision = await decideAutoApproval(tx, { tenantId, agentAccountId, reservationId: resvId });
     if (decision.approve) {
       const approved = await approveReservationIn(tx, {
         tenantId, reservationId: resvId, actorUserId: null,

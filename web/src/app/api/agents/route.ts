@@ -32,7 +32,7 @@ export async function GET(req: Request) {
 /** POST /api/agents — نمایندگیِ تازه + کاربرِ اولش. admin-only. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { tenantId, legalName, code, priceListId, creditLimit, autoApproveLimit, assignedStaffUserId, firstUserPhone, firstUserEmail } = body ?? {};
+  const { tenantId, legalName, code, priceListId, autoApproveLimit, assignedStaffUserId, firstUserPhone, firstUserEmail } = body ?? {};
   if (typeof legalName !== "string" || !legalName.trim()
     || typeof code !== "string" || !code.trim() || typeof firstUserPhone !== "string" || !firstUserPhone.trim())
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
   const r = await createAgent({
     tenantId, legalName: legalName.trim(), code: code.trim(),
-    priceListId: priceListId ?? null, creditLimit: creditLimit ?? null, autoApproveLimit: autoApproveLimit ?? null,
+    priceListId: priceListId ?? null, autoApproveLimit: autoApproveLimit ?? null,
     assignedStaffUserId: assignedStaffUserId ?? null,
     firstUserPhone: firstUserPhone.trim(), firstUserEmail,
   });
@@ -87,7 +87,7 @@ export async function PATCH(req: Request) {
   const r = await updateAgent({
     tenantId, agentAccountId, actorUserId: auth.userId,
     legalName: str(body.legalName), code: str(body.code), priceListId: strOrNull(body.priceListId),
-    creditLimit: body.creditLimit, autoApproveLimit: body.autoApproveLimit,
+    autoApproveLimit: body.autoApproveLimit,
     isActive: bool(body.isActive), assignedStaffUserId: strOrNull(body.assignedStaffUserId),
   });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "invalid_limit" ? 400 : 409 });

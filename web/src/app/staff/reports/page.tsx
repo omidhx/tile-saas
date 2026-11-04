@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "../../Icon";
-import { hasPageAccess } from "@/lib/staffPages";
 import PageShell from "../../PageShell";
 import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError } from "@/lib/api";
@@ -17,29 +16,19 @@ import AuditSection from "./AuditSection";
 type AgentPerf = { agentId: string; agentName: string; requests: number; boxes: number; value: number; unpricedLines: number };
 type TopProduct = { name: string; code: string; boxes: number };
 type DeadStock = { name: string; code: string; onHand: number };
-type DiscountByAgent = { agentId: string; agentName: string; discountedLines: number; discountAmount: number; grossAmount: number };
-type DiscountByProduct = { name: string; code: string; discountedLines: number; discountAmount: number };
-type WarehouseBucket = { warehouseId: string; warehouseName: string };
-type AgentByWarehouseRow = { agentId: string; agentName: string; warehouses: { boxes: number }[] };
 type Reports = {
   from: string; to: string; agents: AgentPerf[]; topProducts: TopProduct[]; deadStock: DeadStock[];
-  discountsByAgent: DiscountByAgent[]; discountsByProduct: DiscountByProduct[];
-  warehouseBuckets: WarehouseBucket[]; agentsByWarehouse: AgentByWarehouseRow[];
 };
 type AgentOpt = { id: string; legalName: string };
 type VariantOpt = { id: string; name: string; code: string };
-type MonthlyBucket = { jy: number; jm: number; label: string };
-type AgentMonthlyRow = { agentId: string; agentName: string; months: { boxes: number; value: number }[] };
-type MonthlyAgentPerf = { buckets: MonthlyBucket[]; rows: AgentMonthlyRow[] };
-
 const n = (v: number) => v.toLocaleString("fa-IR");
 /** برای نامِ فایل — نه formatJalaliDate که با «/» می‌نویسد و در ویندوز نامِ فایلِ نامعتبر می‌سازد. */
 const jstr = (j: Jalali) => `${j.jy}-${String(j.jm).padStart(2, "0")}-${String(j.jd).padStart(2, "0")}`;
 
-const ALL_TABS: (Tab & { pageKey: string })[] = [
-  { key: "reports", label: "گزارش‌های مدیریتی", pageKey: "reports" },
-  { key: "ledger", label: "دفتر حرکات موجودی", pageKey: "ledger" },
-  { key: "audit", label: "دفتر تغییرات", pageKey: "audit" },
+const ALL_TABS: Tab[] = [
+  { key: "reports", label: "گزارش‌های مدیریتی" },
+  { key: "ledger", label: "دفتر حرکات موجودی" },
+  { key: "audit", label: "دفتر تغییرات" },
 ];
 
 export default function ReportsHubPage() {
@@ -55,11 +44,6 @@ export default function ReportsHubPage() {
   const [variantOpts, setVariantOpts] = useState<VariantOpt[]>([]);
   const [filterAgent, setFilterAgent] = useState("");
   const [filterVariant, setFilterVariant] = useState("");
-  // عملکردِ نماینده ماه‌به‌ماه — بازه‌ی خودش دارد (N ماهِ اخیر)، مستقلِ از from/to بالا
-  const [monthly, setMonthly] = useState<MonthlyAgentPerf | null>(null);
-  const [monthlyCount, setMonthlyCount] = useState(6);
-  const [monthlyErr, setMonthlyErr] = useState("");
-  const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   // آدرسِ ورودی (مثلاً از سایدبار یا لینکِ قدیمی: ?tab=ledger) تبِ اولیه را تعیین می‌کند —
   // فقط در کلاینت خوانده می‌شود تا با رندرِ اول (که همیشه «reports» است) ناسازگار نشود.
@@ -99,16 +83,6 @@ export default function ReportsHubPage() {
     })();
   }, [ctx]);
 
-  const loadMonthly = useCallback(async (tenantId: string, months: number) => {
-    setMonthlyLoading(true);
-    const res = await getJson<MonthlyAgentPerf>(`/api/reports?tenantId=${tenantId}&monthly=1&months=${months}`);
-    if (res.ok) { setMonthly(res.data); setMonthlyErr(""); }
-    else setMonthlyErr(loadError(res.status));
-    setMonthlyLoading(false);
-  }, []);
-
-  useEffect(() => { if (ctx && tab === "reports") loadMonthly(ctx.tenantId, monthlyCount); }, [ctx, tab, monthlyCount, loadMonthly]);
-
   // با selectها دیگر min/max نداریم، پس بازه‌ی وارونه ممکن است — و بی‌راهنما
   // فقط یک گزارشِ خالی نشان می‌داد.
   const inverted = jalaliToDate(from) > jalaliToDate(to);
@@ -127,14 +101,8 @@ export default function ReportsHubPage() {
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
-  // v6: این سه صفحه‌ی جدا (گزارش‌ها/دفترِ حرکات/دفترِ تغییرات) ادغام شدند چون
-  // هر سه فقط نمایشی‌اند و پشتیبان مدام بینشان سوییچ می‌کرد — حالا زیرِ یک مسیرِ
-  // تب‌دار. هر تب دسترسیِ pageKeyِ خودش را جدا نگه می‌دارد (مثلِ قبل)، تا کسی که
-  // فقط «گزارش‌ها» دارد نه «دفترِ تغییرات» را نبیند.
-  const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
-  if (tabs.length === 0)
-    return <PageShell ctx={ctx}><main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main></PageShell>;
-  const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
+  const tabs = ALL_TABS;
+  const activeTab = tab;
 
   const totalValue = rep?.agents.reduce((s, a) => s + a.value, 0) ?? 0;
   const totalBoxes = rep?.topProducts.reduce((s, p) => s + p.boxes, 0) ?? 0;
@@ -148,25 +116,7 @@ export default function ReportsHubPage() {
         "خطِ بی‌قیمت": a.unpricedLines,
       })),
       "پرفروش‌ها": rep.topProducts.map((p) => ({ "کالا": p.name, "کد": p.code, "کارتنِ بارگیری‌شده": p.boxes })),
-      "به‌تفکیکِ انبار": rep.agentsByWarehouse.flatMap((r) => rep.warehouseBuckets.map((w, i) => ({
-        "نمایندگی": r.agentName, "انبار": w.warehouseName, "کارتن": r.warehouses[i].boxes,
-      }))),
       "راکدها": rep.deadStock.map((d) => ({ "کالا": d.name, "کد": d.code, "موجودی (کارتن)": d.onHand })),
-      "تخفیف به‌تفکیکِ نماینده": rep.discountsByAgent.map((d) => ({
-        "نمایندگی": d.agentName, "خطِ تخفیف‌دار": d.discountedLines,
-        [`مبلغِ تخفیف (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(d.discountAmount, ctx.currencyUnit),
-        [`مبلغِ ناخالص (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(d.grossAmount, ctx.currencyUnit),
-      })),
-      "تخفیف به‌تفکیکِ کالا": rep.discountsByProduct.map((d) => ({
-        "کالا": d.name, "کد": d.code, "خطِ تخفیف‌دار": d.discountedLines,
-        [`مبلغِ تخفیف (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(d.discountAmount, ctx.currencyUnit),
-      })),
-      ...(monthly && monthly.rows.length > 0 ? {
-        "ماه‌به‌ماه": monthly.rows.flatMap((r) => monthly.buckets.map((b, i) => ({
-          "نمایندگی": r.agentName, "ماه": b.label, "کارتن": r.months[i].boxes,
-          [`ارزش (${currencyLabel(ctx.currencyUnit)})`]: toDisplayAmount(r.months[i].value, ctx.currencyUnit),
-        }))),
-      } : {}),
     });
   }
 
@@ -211,51 +161,6 @@ export default function ReportsHubPage() {
             <div className="row row--start no-print" style={{ gap: "var(--sp-2)", marginBottom: "var(--sp-3)" }}>
               <button onClick={exportReports}><Icon name="download" size={13} />خروجیِ اکسل</button>
               <button onClick={() => window.print()}><Icon name="printer" size={13} />خروجیِ PDF (چاپ)</button>
-            </div>
-          )}
-
-          {/* ماه‌به‌ماه — بازه‌ی خودش دارد (N ماهِ اخیر شمسی)، مستقلِ از «از/تا»ی بالا؛
-              برایِ دیدنِ روند (رشد/افت)، نه یک بازه‌ی تکی. */}
-          <h2>عملکردِ نمایندگان ماه‌به‌ماه</h2>
-          <div className="card no-print">
-            <label htmlFor="monthly-count">تعدادِ ماه</label>
-            <select id="monthly-count" value={monthlyCount} onChange={(e) => setMonthlyCount(Number(e.target.value))} style={{ maxWidth: 140 }}>
-              <option value={3}>۳ ماهِ اخیر</option>
-              <option value={6}>۶ ماهِ اخیر</option>
-              <option value={12}>۱۲ ماهِ اخیر</option>
-            </select>
-            {monthlyLoading && <span className="muted"><span className="spinner" aria-hidden="true" /> در حال محاسبه…</span>}
-          </div>
-          {monthlyErr && <div className="banner banner--error" role="alert"><Icon name="alert" /><span>{monthlyErr}</span></div>}
-          {monthly && !monthlyErr && monthly.rows.length === 0 && (
-            <p className="empty">در این {n(monthlyCount)} ماه سفارشِ تأییدشده‌ای ثبت نشده.</p>
-          )}
-          {monthly && !monthlyErr && monthly.rows.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="num" style={{ width: "100%", borderCollapse: "collapse", whiteSpace: "nowrap" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>نمایندگی</th>
-                    {monthly.buckets.map((b) => (
-                      <th key={`${b.jy}-${b.jm}`} style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>{b.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthly.rows.map((r) => (
-                    <tr key={r.agentId} style={{ borderBottom: "1px solid var(--line)" }}>
-                      <td style={{ padding: "var(--sp-2)" }}>{r.agentName}</td>
-                      {r.months.map((m, i) => (
-                        <td key={i} style={{ padding: "var(--sp-2)" }}>
-                          {m.boxes > 0
-                            ? <>{n(m.boxes)} کارتن<div className="subtle">{formatMoney(m.value, ctx.currencyUnit)}</div></>
-                            : <span className="subtle">—</span>}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           )}
 
@@ -306,37 +211,6 @@ export default function ReportsHubPage() {
                     </div>
                   ))}
 
-              <h2>عملکردِ نماینده به‌تفکیکِ انبار</h2>
-              <p className="muted">فقط کارتنِ واقعاً بارگیری‌شده — ارزشِ ریالی به یک انبارِ مشخص snapshot نشده، چون سفارش می‌تواند از چند انبار پر شود.</p>
-              {rep.agentsByWarehouse.length === 0
-                ? <p className="muted">در این بازه چیزی بارگیری نشده.</p>
-                : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="num" style={{ width: "100%", borderCollapse: "collapse", whiteSpace: "nowrap" }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>نمایندگی</th>
-                          {rep.warehouseBuckets.map((w) => (
-                            <th key={w.warehouseId} style={{ textAlign: "start", padding: "var(--sp-2)", borderBottom: "2px solid var(--line-strong)" }}>{w.warehouseName}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rep.agentsByWarehouse.map((r) => (
-                          <tr key={r.agentId} style={{ borderBottom: "1px solid var(--line)" }}>
-                            <td style={{ padding: "var(--sp-2)" }}>{r.agentName}</td>
-                            {r.warehouses.map((w, i) => (
-                              <td key={i} style={{ padding: "var(--sp-2)" }}>
-                                {w.boxes > 0 ? `${n(w.boxes)} کارتن` : <span className="subtle">—</span>}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
               <h2>راکدها (موجودیِ بدون فروش)</h2>
               {filterAgent && <p className="subtle">موجودی مالِ نماینده‌ی خاصی نیست — فیلترِ نماینده اینجا اثر ندارد.</p>}
               {rep.deadStock.length === 0
@@ -353,38 +227,6 @@ export default function ReportsHubPage() {
                     ))}
                   </>}
 
-              <h2>تخفیف‌های اعمال‌شده</h2>
-              <p className="muted">
-                از پله‌ی تخفیفِ حجمیِ لحظه‌ی تأیید — مستقل از اینکه قیمتِ پایه از لیست بود یا استثنای نماینده.
-              </p>
-              <h3 className="subtle" style={{ marginBottom: "var(--sp-2)" }}>به‌تفکیکِ نماینده</h3>
-              {rep.discountsByAgent.length === 0
-                ? <p className="muted">در این بازه تخفیفی اعمال نشده.</p>
-                : rep.discountsByAgent.map((d) => (
-                    <div className="card" key={d.agentId}>
-                      <div className="row">
-                        <strong>{d.agentName}</strong>
-                        <span className="metric num">{formatMoney(d.discountAmount, ctx.currencyUnit)}</span>
-                      </div>
-                      <div className="muted num">
-                        {n(d.discountedLines)} خطِ تخفیف‌دار
-                        {d.grossAmount > 0 && ` · ${((d.discountAmount / d.grossAmount) * 100).toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪ از مبلغِ ناخالص`}
-                      </div>
-                    </div>
-                  ))}
-
-              <h3 className="subtle" style={{ marginBottom: "var(--sp-2)" }}>به‌تفکیکِ کالا</h3>
-              {rep.discountsByProduct.length === 0
-                ? <p className="muted">در این بازه تخفیفی اعمال نشده.</p>
-                : rep.discountsByProduct.map((d) => (
-                    <div className="card" key={d.code}>
-                      <div className="row">
-                        <span>{d.name} <span className="muted">({d.code})</span></span>
-                        <span className="metric num">{formatMoney(d.discountAmount, ctx.currencyUnit)}</span>
-                      </div>
-                      <div className="muted num">{n(d.discountedLines)} خطِ تخفیف‌دار</div>
-                    </div>
-                  ))}
             </>
           )}
         </>

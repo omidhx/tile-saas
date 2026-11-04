@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { featureOff } from "@/auth/httpCtx";
 import { applyPriceImport } from "@/db/pricing";
 
 /**
@@ -21,11 +22,14 @@ export async function POST(req: Request) {
     .map((r) => ({ sku: typeof r.sku === "string" ? r.sku.trim() : "", price: Number(r.price) }));
 
   try {
-    await authorizeStaffPage(userId, tenantId, "prices");
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
   }
+
+  const off = await featureOff(tenantId, "price_import");
+  if (off) return off;
 
   const result = await applyPriceImport({ tenantId, priceListId, actorUserId: userId, rows: cleanRows });
   if (!result.ok) return NextResponse.json({ error: result.reason }, { status: 404 });

@@ -4,7 +4,7 @@ import { writeFile, mkdir, unlink } from "node:fs/promises";
 import { join, resolve, normalize } from "node:path";
 import * as Sentry from "@sentry/nextjs";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { checkRateAsync, tooMany } from "@/auth/rateLimit";
 import { matchesMagicBytes } from "@/lib/magicBytes";
 
@@ -15,7 +15,7 @@ import { matchesMagicBytes } from "@/lib/magicBytes";
  * ذخیره می‌کند:
  *
  *   ۱. احراز هویت (currentUserId از JWT)
- *   ۲. مجوز (authorizeStaffPage با pageKey="catalog")
+ *   ۲. مجوز (authorizeStaff)
  *   ۳. اعتبارسنجی حجم (حداکثر ۳ مگابایت)
  *   ۴. اعتبارسنجی نوع فایل (whitelist MIME)
  *   ۵. اعتبارسنجی محتوای واقعی (magic bytes — نه فقط File.type که کلاینت پر می‌کند)
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
   // ۳. مجوز — staff با دسترسیِ صفحه‌ی catalog
   try {
-    await authorizeStaffPage(userId, tenantId, "catalog");
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;

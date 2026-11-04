@@ -103,7 +103,7 @@ export default function ResetPage() {
               <Icon name="info" />
               <span>
                 اگر <span className="num">{identifier}</span> در سامانه ثبت باشد، کدِ شش‌رقمی به همه‌ی
-                راه‌های تماسِ ثبت‌شده‌ی همان حساب (پیامک/ایمیل) فرستاده شد. کد تا ۱۰ دقیقه معتبر است.
+                شماره‌ی موبایلِ همان حساب (پیامک) فرستاده شد. کد تا ۱۰ دقیقه معتبر است.
               </span>
             </div>
             <form className="card" onSubmit={submitNew} noValidate>

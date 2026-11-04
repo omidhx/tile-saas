@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { suggestSubstitutes, addSubstitute, listSubstitutes, removeSubstitute } from "./substitutes";
-import { T, seedTenant } from "./_fixtures";
+import { T, seedTenant, enableAllFeatures } from "./_fixtures";
 
 /**
  * پیشنهاد کالای جایگزین. قاعده‌ی اصلی که تست‌ها قفلش می‌کنند:
@@ -25,6 +25,7 @@ const V_DEAD   = "a2222222-2222-2222-2222-22222222220d"; // محصولِ دیگ�
 before(async () => {
   await resetSchema();
   await seedTenant();
+  await enableAllFeatures();
   await sql.unsafe(`
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG}','${T}','نماینده','AG1','${PL}');

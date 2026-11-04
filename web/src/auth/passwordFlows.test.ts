@@ -187,7 +187,7 @@ test("رمزِ کوتاه در مسیرِ بازیابی هم رد می‌شود
     "کاربری که رمزِ کوتاه زد نباید مجبور شود کدِ تازه بگیرد");
 });
 
-test("v3: بازیابی با ایمیل هم کار می‌کند، و کد به هر دو کانال صف می‌شود", async () => {
+test("بازیابی با ایمیل هم کار می‌کند، و کد فقط با پیامک به شماره‌ی همان حساب می‌رود", async () => {
   await sql`UPDATE app_user SET email = 'agent@example.com' WHERE id = ${U}`;
   const { code } = await requestReset("agent@example.com");
   assert.ok(code, "کاربرِ دارایِ ایمیل باید کد بگیرد");
@@ -196,9 +196,8 @@ test("v3: بازیابی با ایمیل هم کار می‌کند، و کد ب�
     SELECT channel, recipient FROM notification_outbox
     WHERE tenant_id = ${T} AND payload->>'code' = ${code} ORDER BY channel`;
   assert.deepEqual([...rows].map((r) => ({ channel: r.channel, recipient: r.recipient })), [
-    { channel: "email", recipient: "agent@example.com" },
     { channel: "sms", recipient: PHONE },
-  ], "همان کد باید هم به sms هم به email صف شود");
+  ], "کانالِ ایمیل نداریم؛ کد فقط به پیامک صف می‌شود");
 
   assert.ok((await confirmReset({ identifier: "agent@example.com", code: code!, newPassword: "viaemail123" })).ok,
     "تأیید هم باید با همان ایمیل کار کند");

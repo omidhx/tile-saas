@@ -6,7 +6,7 @@ import { createTenant } from "./platform";
 
 before(async () => { await resetSchema(); });
 
-test("createTenant: کارخانه + اولین admin با can_manage_access ساخته می‌شوند", async () => {
+test("createTenant: کارخانه + اولین admin ساخته می‌شوند", async () => {
   const r = await createTenant({ name: "کارخانه‌ی الف", slug: "factory-a", adminPhone: "09121110001" });
   assert.ok(r.ok);
   if (!r.ok) return;
@@ -15,10 +15,9 @@ test("createTenant: کارخانه + اولین admin با can_manage_access س�
   const [t] = await sql<{ name: string; slug: string }[]>`SELECT name, slug FROM tenant WHERE id = ${r.tenantId}`;
   assert.equal(t.slug, "factory-a");
 
-  const [m] = await sql<{ role: string; can_manage_access: boolean }[]>`
-    SELECT role, can_manage_access FROM tenant_membership WHERE tenant_id = ${r.tenantId}`;
+  const [m] = await sql<{ role: string }[]>`
+    SELECT role FROM tenant_membership WHERE tenant_id = ${r.tenantId}`;
   assert.equal(m.role, "admin");
-  assert.equal(m.can_manage_access, true, "اولین مدیر باید بتواند دسترسیِ بقیه را هم تنظیم کند");
 });
 
 test("createTenant: اسلاگِ تکراری رد می‌شود", async () => {

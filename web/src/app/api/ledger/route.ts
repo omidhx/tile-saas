@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx } from "@/auth/httpCtx";
 import { listMovements, findDrift } from "@/db/ledger";
 
 /**
@@ -9,7 +9,7 @@ import { listMovements, findDrift } from "@/db/ledger";
  */
 export async function GET(req: Request) {
   const u = new URL(req.url);
-  const c = await staffPageCtx(u.searchParams.get("tenantId"), "ledger");
+  const c = await staffCtx(u.searchParams.get("tenantId"));
   if ("err" in c) return c.err;
 
   const lotId = u.searchParams.get("lotId") ?? undefined;

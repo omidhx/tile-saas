@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminCtx } from "@/auth/httpCtx";
+import { adminCtx, featureOff } from "@/auth/httpCtx";
 import { listAgentOverrides, createAgentOverride, updateAgentOverride, deleteAgentOverride } from "@/db/pricing";
 
 const statusFor = (reason: string) => (reason === "not_found" ? 404 : reason === "overlap" ? 409 : 400);
@@ -9,6 +9,8 @@ export async function GET(req: Request) {
   const u = new URL(req.url);
   const c = await adminCtx(u.searchParams.get("tenantId"));
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "agent_price");
+  if (off) return off;
   const agentAccountId = u.searchParams.get("agentAccountId");
   if (typeof agentAccountId !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
   return NextResponse.json({ overrides: await listAgentOverrides(c.tenantId, agentAccountId) });
@@ -19,6 +21,8 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await adminCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "agent_price");
+  if (off) return off;
 
   const { agentAccountId, variantId, price, validFrom, validTo } = body ?? {};
   if (typeof agentAccountId !== "string" || typeof variantId !== "string" || typeof price !== "number"
@@ -38,6 +42,8 @@ export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await adminCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "agent_price");
+  if (off) return off;
 
   const { id, price, validFrom, validTo } = body ?? {};
   if (typeof id !== "string" || typeof price !== "number"
@@ -54,6 +60,8 @@ export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await adminCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "agent_price");
+  if (off) return off;
   if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   const result = await deleteAgentOverride({ tenantId: c.tenantId, id: body.id });

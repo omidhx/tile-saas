@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { agentCtx } from "@/auth/httpCtx";
 import { suggestSubstitutes } from "@/db/substitutes";
 import { expectedArrivals } from "@/db/incoming";
+import { getFeatures } from "@/db/features";
 import { subscribeAlert, unsubscribeAlert, listAlertsAndOutOfStock } from "@/db/alerts";
 
 /** GET ?tenantId&agentAccountId — اشتراک‌های من + کالاهای ناموجود (برای دکمه‌ی «خبرم کن»). */
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
   // کالاهای ناموجود لازم‌اند و رفت‌وبرگشتِ دومی فقط صفحه را کندتر می‌کرد.
   const variantIds = data.outOfStock.map((v) => v.variantId);
   const [substitutes, arrivals] = await Promise.all([
-    suggestSubstitutes({ ...c, variantIds }),
+    (await getFeatures(c.tenantId)).substitutes ? suggestSubstitutes({ ...c, variantIds }) : Promise.resolve({}),
     // «کِی می‌رسد» کنارِ «چه چیزی به‌جایش هست»: نماینده باید بتواند بین صبر کردن
     // و گرفتنِ جایگزین انتخاب کند، و برای این انتخاب هر دو را لازم دارد.
     expectedArrivals({ tenantId: c.tenantId, variantIds }),

@@ -4,7 +4,7 @@ import { encryptSecret, decryptSecret, maskSecret } from "@/lib/secretBox";
 import type { SmsCredentials, SmsProviderId } from "@/notify/smsProviders";
 
 export type SmsPatternConfig = { patternCode: string; paramNames?: string };
-export const SMS_NOTIFICATION_TYPES = ["restock", "waitlist_offer", "password_reset", "team_invite", "agent_invite"] as const;
+export const SMS_NOTIFICATION_TYPES = ["restock", "password_reset", "team_invite", "agent_invite"] as const;
 
 type StoredSecrets = { apiKey?: string; username?: string; password?: string }; // apiKey/password رمزنگاری‌شده در DB
 type StoredConfig = {

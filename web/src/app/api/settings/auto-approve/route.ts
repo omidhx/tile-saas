@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
-import { authorizeStaffPage, AuthzError } from "@/auth/authz";
+import { authorizeStaff, AuthzError } from "@/auth/authz";
+import { featureOff } from "@/auth/httpCtx";
 import { withTenant } from "@/db/client";
 import { writeAudit } from "@/db/audit";
 
@@ -20,11 +21,14 @@ export async function GET(req: Request) {
 
   const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
   try {
-    await authorizeStaffPage(userId, tenantId, "auto-approve");
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
   }
+
+  const off = await featureOff(tenantId, "auto_approve");
+  if (off) return off;
 
   return NextResponse.json(await withTenant(tenantId, async (tx) => {
     const [tenant] = await tx<{ limit: string | null }[]>`
@@ -57,11 +61,14 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
 
   try {
-    await authorizeStaffPage(userId, tenantId, "auto-approve");
+    await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     throw e;
   }
+
+  const off = await featureOff(tenantId, "auto_approve");
+  if (off) return off;
 
   await withTenant(tenantId, async (tx) => {
     // این سقف اجازه می‌دهد پول **بدونِ نگاهِ انسان** متعهد شود. بدونِ ردپا، کسی

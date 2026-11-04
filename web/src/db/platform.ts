@@ -45,11 +45,9 @@ export async function createTenant(p: {
         tx, adminPhone, p.adminEmail?.trim() || null, p.adminFullName?.trim() || null);
       if (!found.ok) throw new CreateTenantRejected(found.reason);
 
-      // اولین مدیرِ یک کارخانه‌ی تازه همیشه «مدیرِ دسترسی» هم هست — وگرنه هیچ‌کس
-      // در آن کارخانه نمی‌تواند دسترسیِ بقیه را تنظیم کند (بن‌بستِ v4).
       await tx`
-        INSERT INTO tenant_membership (tenant_id, user_id, role, is_active, can_manage_access)
-        VALUES (${t.id}, ${found.userId}, 'admin', true, true)`;
+        INSERT INTO tenant_membership (tenant_id, user_id, role, is_active)
+        VALUES (${t.id}, ${found.userId}, 'admin', true)`;
 
       return { tenantId: t.id, tempPassword: found.tempPassword };
     }) as { tenantId: string; tempPassword: string | null };

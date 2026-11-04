@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx } from "@/auth/httpCtx";
 import { listCustomers, addCustomer, updateCustomer, customerSales, customerHistory } from "@/db/customers";
 
 const DAY = 24 * 60 * 60 * 1000;
-const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "customers");
 
 /**
  * GET ?tenantId               → فهرست مشتری‌ها

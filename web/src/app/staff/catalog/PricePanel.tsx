@@ -5,10 +5,10 @@ import type { Ctx } from "@/lib/useContexts";
 import type { Product, PriceList, PriceItem } from "./types";
 
 export default function PricePanel({
-  ctx, product, priceLists, priceItems, onSaved, onMsg, onGoImport,
+  ctx, product, priceLists, priceItems, onSaved, onMsg,
 }: {
   ctx: Ctx; product: Product; priceLists: PriceList[]; priceItems: PriceItem[];
-  onSaved: () => Promise<void>; onMsg: (text: string, ok?: boolean) => void; onGoImport: () => void;
+  onSaved: () => Promise<void>; onMsg: (text: string, ok?: boolean) => void;
 }) {
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [priceSaving, setPriceSaving] = useState<string | null>(null);
@@ -28,13 +28,6 @@ export default function PricePanel({
     }
     setPriceSaving(null);
   }
-
-  if (priceLists.length === 0)
-    return (
-      <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
-        <p className="subtle">هنوز لیست قیمتی ساخته نشده. <button className="ghost" onClick={onGoImport}>ساختِ سبدِ قیمت</button></p>
-      </div>
-    );
 
   return (
     <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>

@@ -1,15 +1,7 @@
-// فرستنده‌ی چندکاناله — spec ۵.۹ + v3 «چندکاناله».
+// فرستنده‌ی پیامک — spec ۵.۹.
 //
-// چرا سه کانال: پیامک تنها راه نبود — قطعیِ خطِ SMS (که در ایران کم هم پیش نمی‌آید)
-// یعنی کاربر هیچ کدِ بازیابی/دعوتی نمی‌گیرد. email و بله همان کد را از مسیرِ دیگر
-// می‌برند؛ کاربر با هرکدام که کار می‌کند وارد می‌شود.
-//
-// v10: پیامک دیگر سراسری (env) نیست — هر tenant پروایدرِ خودش را از UI کانفیگ
-// می‌کند (`sms_config` روی tenant، رمزنگاری‌شده با secretBox.ts). `SMS_PROVIDER`
-// فقط fallback است برای وقتی tenant چیزی کانفیگ نکرده — عملاً یعنی `log`.
-// email/bale هنوز سراسری‌اند (کسی درخواستِ per-tenant برایشان نداده، YAGNI).
-//   EMAIL_PROVIDER=smtp (یا sendgrid/...)
-//   BALE_PROVIDER=bot   — نیازمندِ webhook عمومی برای اتصالِ حساب (فلوی جدا، هنوز نیست)
+// هر tenant پروایدرِ خودش را از UI کانفیگ می‌کند (`sms_config` روی tenant، رمزنگاری‌شده
+// با secretBox.ts). `SMS_PROVIDER` فقط fallback است برای وقتی tenant چیزی کانفیگ نکرده.
 
 import { getSmsConfigForSending } from "@/db/smsConfig";
 import { sendViaProvider } from "./smsProviders";
@@ -35,7 +27,6 @@ function tokensFor(payload: Record<string, unknown>): string[] {
   const s = (v: unknown) => String(v ?? "");
   switch (payload.type) {
     case "restock": return [s(payload.product), s(payload.code)];
-    case "waitlist_offer": return [s(payload.product), s(payload.code), s(payload.qty), s(payload.ttlHours)];
     case "password_reset": return [s(payload.code), s(payload.ttlMinutes)];
     case "team_invite": return [s(payload.tenantName), s(payload.identifier), s(payload.tempPassword)];
     case "agent_invite": return [s(payload.agentName), s(payload.tenantName), s(payload.identifier), s(payload.tempPassword)];
@@ -59,25 +50,10 @@ export async function sendSms(sms: Notification): Promise<SendResult> {
   return sendViaProvider(cfg.credentials, sms.to, sms.text, pattern?.patternCode ?? null, tokens, paramNames);
 }
 
-export async function sendEmail(email: Notification): Promise<SendResult> {
-  const provider = process.env.EMAIL_PROVIDER ?? "log";
-  switch (provider) {
-    case "log": return logSender("email", email);
-    default: return { ok: false, error: `EMAIL_PROVIDER ناشناخته: ${provider}` };
-  }
-}
-
-export async function sendBale(bale: Notification): Promise<SendResult> {
-  const provider = process.env.BALE_PROVIDER ?? "log";
-  switch (provider) {
-    case "log": return logSender("bale", bale);
-    default: return { ok: false, error: `BALE_PROVIDER ناشناخته: ${provider}` };
-  }
-}
-
 export function send(channel: Channel, n: Notification): Promise<SendResult> {
-  if (channel === "email") return sendEmail(n);
-  if (channel === "bale") return sendBale(n);
+  // ستونِ channel هنوز email/bale را می‌پذیرد، ولی ارائه‌دهنده‌ای برایشان نیست: پیامکِ
+  // اشتباهی به نشانیِ ایمیل نرود؛ ردیف با retry به dead-letter می‌رسد.
+  if (channel !== "sms") return Promise.resolve({ ok: false, error: `کانالِ پشتیبانی‌نشده: ${channel}` });
   return sendSms(n);
 }
 
@@ -85,9 +61,6 @@ export function send(channel: Channel, n: Notification): Promise<SendResult> {
 export function renderMessage(payload: Record<string, unknown>): string {
   if (payload.type === "restock")
     return `موجود شد: ${payload.product} (${payload.code}). برای رزرو وارد پنل شوید.`;
-  if (payload.type === "waitlist_offer")
-    return `نوبت شما رسید: ${payload.qty} کارتن ${payload.product} (${payload.code}) برای شما رزرو شد `
-      + `و تا ${payload.ttlHours} ساعت نگه داشته می‌شود. برای نهایی‌کردن وارد پنل شوید.`;
   if (payload.type === "password_reset")
     // بدونِ نامِ کاربر یا هر چیزِ دیگر: پیامکِ حاوی کد ممکن است روی قفلِ صفحه دیده شود
     return `کد بازیابی رمز: ${payload.code}\nتا ${payload.ttlMinutes} دقیقه معتبر است. `
@@ -105,6 +78,6 @@ export function renderMessage(payload: Record<string, unknown>): string {
 export function renderSubject(payload: Record<string, unknown>): string {
   if (payload.type === "password_reset") return "کدِ بازیابیِ رمزِ عبور";
   if (payload.type === "team_invite" || payload.type === "agent_invite") return "دعوت به سامانه";
-  if (payload.type === "restock" || payload.type === "waitlist_offer") return "اعلانِ موجودی";
+  if (payload.type === "restock") return "اعلانِ موجودی";
   return "اعلانِ جدید";
 }

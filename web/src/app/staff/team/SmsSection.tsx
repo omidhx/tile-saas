@@ -16,7 +16,6 @@ type Config = {
 // نوع → (برچسبِ فارسی، ترتیبِ توکن‌هایی که در پترنِ روی پنلِ پروایدر باید بگذارد)
 const TYPES: { key: string; label: string; tokens: string }[] = [
   { key: "restock", label: "اطلاعِ موجود شدنِ کالا", tokens: "نامِ کالا، کد" },
-  { key: "waitlist_offer", label: "نوبت‌رسیدن در صفِ انتظار", tokens: "نامِ کالا، کد، تعداد، ساعتِ اعتبار" },
   { key: "password_reset", label: "بازیابیِ رمزِ عبور", tokens: "کد، دقیقه‌ی اعتبار" },
   { key: "team_invite", label: "دعوتِ عضوِ تیم", tokens: "نامِ کارخانه، شناسه‌ی ورود، رمزِ موقت" },
   { key: "agent_invite", label: "دعوتِ نمایندگی", tokens: "نامِ نمایندگی، نامِ کارخانه، شناسه‌ی ورود، رمزِ موقت" },

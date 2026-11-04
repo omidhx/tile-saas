@@ -63,7 +63,7 @@ export async function listProducts(p: {
              (SELECT pli.price FROM price_list_item pli
               JOIN price_list pl ON pl.id = pli.price_list_id
               WHERE pli.variant_id = v.id AND pl.tenant_id = ${tenantId}
-              ORDER BY pl.name LIMIT 1) AS "basePrice"
+              ORDER BY pl.is_default DESC, pl.name LIMIT 1) AS "basePrice"
       FROM product p
       LEFT JOIN LATERAL (
         SELECT pv.id, pv.sku, pv.boxes_per_pallet, pv.sqcm_per_box FROM product_variant pv
@@ -124,7 +124,7 @@ export async function addProductImageTx(tx: TransactionSql, tenantId: string, pr
  *  actorUserId فقط برای لجرِ موجودیِ اولیه لازم است (رفِ audit). */
 export async function createProduct(tenantId: string, a: Attrs, actorUserId?: string): Promise<CreateResult> {
   if (!a.name.trim() || !a.code.trim() || !a.sku.trim()) return { ok: false, reason: "missing" };
-  // همان گاردی که هر مسیرِ دیگرِ نویسنده‌ی لجر دارد (incoming/imports/waitlist) —
+  // همان گاردی که هر مسیرِ دیگرِ نویسنده‌ی لجر دارد (incoming/imports) —
   // تکیه‌کردن به اعتبارسنجیِ caller (route) کافی نیست، چون این تابع یک منبعِ حقیقتِ
   // مشترک است و هر فراخوانِ آینده‌ای (اسکریپت، تستِ seed) ممکن است این چک را نداشته باشد.
   if (a.initialStock && (!Number.isInteger(a.initialStock.quantityBoxes) || a.initialStock.quantityBoxes < 0))
@@ -309,18 +309,3 @@ export async function setPrimaryImage(p: { tenantId: string; imageId: string }) 
   });
 }
 
-/**
- * حذفِ همه‌ی عکس‌های گالری برای یک محصول — برای زمانی که محصول حذف می‌شود
- * (در حال حاضر حذفِ محصول پیاده نیست، ولی این تابع آماده است).
- * فایل‌های فیزیکی هم پاک می‌شوند.
- */
-export async function removeAllProductImages(p: { tenantId: string; productId: string }) {
-  const deletedUrls = await withTenant(p.tenantId, async (tx) => {
-    const rows = await tx<{ url: string }[]>`
-      DELETE FROM product_image WHERE product_id = ${p.productId} AND tenant_id = ${p.tenantId}
-      RETURNING url`;
-    return rows.map((r) => r.url);
-  });
-  // حذفِ فایل‌های فیزیکی بعد از COMMIT
-  if (deletedUrls.length > 0) await deleteUploadFiles(deletedUrls);
-}
