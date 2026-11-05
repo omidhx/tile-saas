@@ -1,6 +1,11 @@
 # DOMAIN از .env می‌آید. دامنه‌ی واقعی: گواهی Let's Encrypt.
 # localhost یا IP: گواهی داخلی Caddy که مرورگر به آن هشدار می‌دهد؛ فقط برای تست.
 #
+# default_sni: کلاینت برای IP نام نمی‌فرستد و بدون این، TLS با internal error قطع می‌شود.
+{
+	default_sni {$DOMAIN}
+}
+
 # Caddy هدرهای X-Forwarded-For و X-Forwarded-Proto ارسالی کلاینت را خودش بازنویسی می‌کند
 # و اپ سقف درخواست و HSTS را از همین‌ها می‌خواند. هدرهای امنیتی دیگر را خود اپ می‌گذارد.
 {$DOMAIN} {

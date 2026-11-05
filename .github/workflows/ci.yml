@@ -152,7 +152,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install backup tools
-        run: sudo apt-get install -y -qq zstd
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd rsync
 
       - name: Clean Docker install (scripts/docker-smoke.sh)
         run: bash scripts/docker-smoke.sh

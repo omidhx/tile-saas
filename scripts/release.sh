@@ -5,6 +5,12 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# docker build از پوشه‌ی فعلی می‌سازد؛ تغییر commit‌نشده با برچسب HEAD به سرور می‌رفت.
+if [ -n "$(git status --porcelain -- web db scripts Dockerfile .dockerignore docker-compose.yml Caddyfile)" ]; then
+  echo "ERROR: تغییر commit‌نشده هست. فایل نصب فقط از commit ساخته می‌شود." >&2
+  git status --short -- web db scripts Dockerfile .dockerignore docker-compose.yml Caddyfile >&2
+  exit 1
+fi
 tag="${1:-$(git rev-parse --short HEAD)}"
 out="tile-saas-${tag}.tar"
 work="$(mktemp -d)"

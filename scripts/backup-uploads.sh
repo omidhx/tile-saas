@@ -226,7 +226,7 @@ write_status_success() {
     "null" \
     "null" \
     "${LAST_SUCCESS_SIZE}" \
-    "\"${LAST_SUCCESS_SHA256}\"" \
+    "${LAST_SUCCESS_SHA256}" \
     "${LAST_SUCCESS_FILE_COUNT}" \
     "${PREV_RESTORE_SUCCESS_AT}" \
     "${PREV_RESTORE_FAILURE_AT}"

@@ -13,3 +13,5 @@ web/private
 web/.env
 web/.env.*
 **/*.md
+db/seed-dev.sql
+db/test_schema.sql

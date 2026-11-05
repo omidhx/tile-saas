@@ -204,11 +204,11 @@ PR: https://github.com/omidhx/tile-saas/pull/4 (هنوز merge نشده)
 - مالک جدول‌ها superuser می‌ماند: توابع `SECURITY DEFINER` با FORCE RLS فقط با مالک superuser کار می‌کنند (ممیزی اجرا کرده بود).
 - با URL superuser اپ با `process.exit(1)` خارج می‌شود، به‌جای اینکه بالا بماند و ۵۰۰ بدهد. Docker دوباره می‌سازدش، پس Postgres دیرآمده بعد از ریبوت هم خودش درست می‌شود.
 - `instrumentation.ts` به `web/src/` رفت. در ریشه‌ی `web` بود و خروجی standalone آن را کپی نمی‌کرد، پس چک نقش و Sentry روی ایمیج تازه بی‌صدا از کار می‌افتادند. تست نصب این را گرفت.
-- `v_lot_availability` با `security_invoker` (migration 0007 و `schema.sql`، E1-F12). بعد از این، خواندن view بیرون از `withTenant` روی اتصال استفاده‌شده خطا می‌دهد، همان رفتار جدول‌های دارای RLS. هر ۷ محل استفاده داخل `withTenant` است (خوانده شد).
+- `v_lot_availability` با `security_invoker` (migration 0007 و `schema.sql`، E1-F12). بعد از این، خواندن view بیرون از `withTenant` روی اتصال استفاده‌شده خطا می‌دهد، همان رفتار جدول‌های دارای RLS. هر ۶ محل استفاده در کد محصول داخل `withTenant` است؛ بازبین مسیرهای HTTP آن‌ها را هم با `app_user` زد.
 - ایمیج standalone: ۳۵۰ مگابایت به‌جای ۱٫۵۷ گیگابایت. فایل نصب با Postgres و Caddy ۲۱۱ مگابایت. فهرست سفید در `.dockerignore`، پس `.claude`، `_audit` و `_backups` وارد context نمی‌شوند.
 - `xlsx` در `web/vendor/` است و hash آن با `package-lock` یکی است. هیچ `resolved` دیگری بیرون از `registry.npmjs.org` نیست.
 - worker اگر شکست بخورد کانتینر خارج می‌شود و در `docker compose ps` دیده می‌شود. `housekeeping` فایل خودش را دارد.
-- `scripts/restore-prod.sh` برای بازیابی واقعی: دیتابیس فعلی پاک نمی‌شود و با نام دیگر می‌ماند. قبلاً فقط چند صفحه دستور دستی بود.
+- `scripts/restore-prod.sh` برای بازیابی واقعی. قبلاً فقط چند صفحه دستور دستی بود. بکاپ قبل از توقف سایت کامل باز و بررسی می‌شود و دیتابیس فعلی با نام دیگر می‌ماند.
 - `scripts/create-admin.ts` برای اولین مدیر پلتفرم، به‌جای SQL دستی.
 
 باگ‌هایی که تست نصب در اسکریپت‌های بکاپ پیدا کرد و رفع شد:
@@ -217,26 +217,37 @@ PR: https://github.com/omidhx/tile-saas/pull/4 (هنوز merge نشده)
 - بررسی manifest آپلودها هرگز اجرا نمی‌شد، چون نام فایل غلط بود. `backup-uploads.sh` روی ایمیج alpine به `bash` و GNU tar نیاز داشت.
 - بعد از بازیابی، `REVOKE`های توابع `SECURITY DEFINER` برنمی‌گشت چون بکاپ `--no-privileges` است. حالا `create-app-user.sql` آن‌ها را هم می‌زند.
 
+ایرادهای بازبین Opus روی `9a3cbe5` که رفع شدند (گزارش: `review-opus-phase3.md` در پوشه‌ی یادداشت مشترک سشن‌ها):
+- بازیابی روی سرور تازه سایت را خاموش می‌گذاشت، چون volume با رمز دیگری ساخته شده بود. حالا اسکریپت رمز را هم برمی‌گرداند و `docker-smoke.sh` همین ترتیب را اجرا می‌کند.
+- نصب با IP هرگز HTTPS نمی‌داد (`tlsv1 alert internal error`). `default_sni` اضافه شد و `docker-smoke.sh` آن را با `127.0.0.1` تست می‌کند.
+- `/api/metrics` بعد از هر بکاپ موفق «not configured» نشان می‌داد، چون نقل‌قول دوتایی JSON را خراب می‌کرد. این باگ قدیمی بود و تست من چون بعد از تست بازیابی اجرا می‌شد آن را نمی‌دید. حالا بلافاصله بعد از بکاپ چک می‌شود.
+- بکاپ خراب یا رمز اشتباه سایت را متوقف می‌گذاشت؛ جابه‌جایی نام دیتابیس اتمی نبود؛ چک «ایمیج تمیز» و «بکاپ رمزنگاری‌شده» نمی‌توانستند شکست بخورند؛ `release.sh` تغییر commit‌نشده را با برچسب HEAD می‌ساخت؛ مقدار دامنه در `init-env.sh` اعتبارسنجی نمی‌شد.
+
 تکلیف فایل‌ها:
-- حذف: `test-dr-simulation.sh` (فقط وجود سند را می‌شمرد)، `prodlike-smoke.sh` و `staging-verify.sh` (جایشان `docker-smoke.sh`)، `verify-uploads.sh` (`restore-uploads.sh` همان چک را می‌کند)، `test-migration-0004.ts` و PGlite، `docker-compose.staging.yml`، `Caddyfile.staging`.
+- حذف: `test-dr-simulation.sh` (فقط وجود سند را می‌شمرد)، `prodlike-smoke.sh` و `staging-verify.sh` (جایشان `docker-smoke.sh`)، `verify-uploads.sh` (`restore-uploads.sh` همان چک را می‌کند)، `test-migration-0004.ts` و وابستگی مستقیم PGlite (هنوز به‌عنوان peer اختیاری `drizzle-orm` نصب می‌شود و در ایمیج نیست)، `docker-compose.staging.yml`، `Caddyfile.staging`.
 - `cleanup-old-uploads-backups.sh` ماند، چون بدون آن دیسک پر می‌شود، و حالا `docker-smoke.sh` اجرایش می‌کند.
-- حذف سند: `DISASTER_RECOVERY`، `RESTORE_RUNBOOK`، `BACKUP_POLICY`، `RUNBOOK_MIGRATION`، `STAGING_*` و `docs/runbooks/` (۳٬۳۰۰ خط اجرانشده). `GO_LIVE.md` از نو نوشته شد و تنها راهنماست. `README.md` از ۱٬۱۹۵ خط به یک صفحه رسید، چون مسیر دیپلوی دیگری داشت. همه در تاریخچه‌ی git هستند.
+- حذف سند: `DISASTER_RECOVERY`، `RESTORE_RUNBOOK`، `BACKUP_POLICY`، `RUNBOOK_MIGRATION`، `STAGING_*` و `docs/runbooks/` (۳٬۸۱۶ خط اجرانشده). هرچه از آن‌ها غیربدیهی بود به `GO_LIVE.md` آمد: عوض کردن رمزها، برگشت نسخه، پاکسازی مقصد بیرونی. `GO_LIVE.md` از نو نوشته شد و تنها راهنماست. `README.md` از ۱٬۱۹۵ خط به یک صفحه رسید، چون مسیر دیپلوی دیگری داشت. همه در تاریخچه‌ی git هستند.
 - `web/.env.example` و `docs/phase.md` در پوشه‌ی اصلی commit نمی‌شوند. اولی تکرار `.env.example` ریشه است و دومی پرامپت قدیمی ممیزی. دست نزدم چون untracked هستند و برگشت ندارند؛ صاحب پروژه می‌تواند پاکشان کند.
 
 مدرک:
-- `scripts/docker-smoke.sh` روی dockerd خالی داخل کانتینر، روی شبکه‌ی internal بدون اینترنت، بعد از `docker load` سبز شد. مراحل: ورود با کوکی Secure؛ رد superuser؛ آپلود روی volume؛ هر سه worker واقعاً داده را عوض کردند؛ RLS روی view؛ بکاپ و `rsync` و `/api/metrics`؛ پاک‌کردن همه‌ی volumeها و بازیابی روی نصب خالی با همان رمزها و همان فایل؛ و ریبوت با اپ قبل از Postgres.
+- `scripts/docker-smoke.sh` روی dockerd خالی داخل کانتینر، روی شبکه‌ی internal بدون اینترنت، بعد از `docker load` سبز شد. مراحل: ورود با کوکی Secure؛ رد superuser؛ آپلود روی volume؛ هر سه worker واقعاً داده را عوض کردند؛ RLS روی view؛ بکاپ و `rsync` و `/api/metrics`؛ رد بکاپ خراب و ناقص و رمز اشتباه با سایت بالا؛ پاک‌کردن همه‌ی volumeها، نصب تازه با رمزهای دیگر و بازیابی با `.env` قبلی و همان رمزهای ورود و همان فایل؛ ریبوت با اپ قبل از Postgres؛ و نصب با IP.
+- بازبین Opus روی `9a3cbe5` مستقل اجرا کرد: همین نصب بدون اینترنت؛ نصب فقط از فایل `release.sh`؛ روی لینوکس ۴۹۲ تست، ۴۹۱ پاس، ۰ fail، ۱ todo؛ ۱۹ از ۱۹ باگ عمدی؛ چرخه‌ی واقعی workerها بدون restart (outbox ۹ ثانیه، expire ۴۹۰ ثانیه)؛ چهار نقطه‌ی شروع قدیمی و بکاپ با schema قدیمی بدون از دست رفتن داده؛ تفاوت کاربردی نداشتن `schema.sql` با schema به‌علاوه‌ی migrationها؛ و Chromium واقعی روی ایمیج از Caddy: راست‌به‌چپ، فونت، CSP nonce و ورود برای پلتفرم، کارمند و نماینده، بدون خطای صفحه.
+- رفع ایرادهای بازبین را من دوباره با `docker-smoke.sh` اجرا کردم، نه خود بازبین.
 - همین اسکریپت حالا job `docker` در CI است و روی Ubuntu runner هم اجرا می‌شود.
-- `scripts/release.sh` اجرا شد و مراحل ۳ تا ۷ `GO_LIVE.md` عیناً روی سرور خالی بدون اینترنت اجرا شد.
+- `scripts/release.sh` اجرا شد و مراحل ۳ تا ۷ `GO_LIVE.md` روی سرور خالی بدون اینترنت اجرا شد. بازیابی روی سرور تازه را `docker-smoke.sh` پوشش می‌دهد، چون اجرای اول راهنما روی همان سرور بود و ایراد آن را ندید.
 - `migrate.test.ts` خود اسکریپت را اجرا می‌کند: دیتابیس خالی، اجرای دوباره، رد `app_user`، و تغییر checksum وقتی چیزی برای اجرا نیست. روی همین مسیر دارای فاصله هم پاس شد. دو باگ عمدی تازه در `mutation-check.mjs` آمد (`p3v`، `p3c`).
 
 بررسی‌نشده:
 - **تست دسترسی از VPS ایرانی انجام نشده.** فقط صاحب پروژه می‌تواند VPS بدهد. پس معیار پایان فاز هنوز کامل نیست. دستورهایش در `GO_LIVE.md` بخش ۹ است.
 - نصب Docker روی سرور ایرانی و انتقال واقعی فایل ۲۱۱ مگابایتی.
-- گواهی Let's Encrypt با دامنه‌ی واقعی. فقط گواهی داخلی Caddy با `localhost` امتحان شد.
+- گواهی Let's Encrypt با دامنه‌ی واقعی. فقط گواهی داخلی Caddy با `localhost` و `127.0.0.1` امتحان شد، نه IP عمومی.
 - `rsync` فقط به پوشه‌ی محلی امتحان شد، نه روی SSH به سرور دیگر.
 - خطوط crontab دستی اجرا شدند، نه با cron واقعی.
 - پیامک فقط با `SMS_PROVIDER=log`. متن غلط پیامک دعوت هنوز فاز ۴ است.
 - رفتار زیر بار و مصرف حافظه روی VPS کوچک اندازه‌گیری نشد.
+- Playwright کامل روی ایمیج اجرا نمی‌شود: CI مسیر اصلی را با `next start` می‌زند. روی ایمیج فقط ورود و صفحه‌ها را بازبین با Chromium دید.
+- چرخه‌ی ۶ ساعته‌ی housekeeping صبر نشد؛ پر شدن دیسک حین بازیابی؛ برگشت نسخه و عوض کردن رمزها فقط نوشته شده‌اند و اجرا نشدند؛ بازیابی از کپی روی مقصد بیرونی.
+- `npm run migrate` روی دیتابیس توسعه‌ی صاحب پروژه اجرا نشد. اگر قبلاً از checkout با CRLF migrate شده باشد، چک checksum ممکن است خطا بدهد.
 
 ## هشدارها
 
@@ -251,6 +262,10 @@ PR: https://github.com/omidhx/tile-saas/pull/4 (هنوز merge نشده)
 - **سقف rate limiter در حالت Postgres زیر هم‌زمانی رعایت نمی‌شود**: ۱۰ درخواست هم‌زمان با سقف ۵ همگی رد شدند (`rateLimit.ts`، COUNT و INSERT سریالی نیستند). `docker-compose.yml` این حالت را پیش‌فرض دارد و login از آن استفاده می‌کند. فاز ۳ این پیش‌فرض را عوض نکرد. تست `todo` در `rateLimitPostgres.test.ts` آماده است. فاز ۴.
 - قانون `on_hand >= held + allocated + blocked` جایی چک نمی‌شود: CHECK دیتابیس held را نمی‌شناسد و `findDrift` فقط لجر را با balance مقایسه می‌کند. فاز ۴ یا ۵ (ایمپورت می‌تواند on_hand را زیر held ببرد).
 - لایه‌ی دوم tenant فقط برای `listCustomers` تست دارد؛ حذف فیلتر tenant در `listMovements` و مانند آن هنوز تستی را قرمز نمی‌کند، چون RLS پوشش می‌دهد. فاز ۴.
+- **`npm audit --omit=dev`: ۱۱ مورد، از جمله دو critical در `next` (تا 16.4.0) و `@sentry/nextjs`.** راه‌حل موجود است. بازبین موارد RCE را بررسی کرد: AVIF با `unoptimized: true` و `/_next/image` ۴۰۴ بسته است، RCE ویندوز روی این ایمیج نیست، و `tunnelRoute` ست نشده. `next/og` را هم باید چک کرد. قبل از go-live ارتقا لازم است. فاز ۴.
+- worker پیامک با خطای پنل خارج نمی‌شود و `fetch` در `smsProviders.ts:46` timeout ندارد، پس پنل هنگ‌کرده worker را «در حال اجرا» نگه می‌دارد. فاز ۹، با وصل شدن پنل.
+- `backup-db.sh` رمز را با `-e PGPASSWORD` به `docker compose exec` می‌دهد و در `ps` دیده می‌شود، با اینکه اتصال داخل کانتینر رمز نمی‌خواهد. فقط کاربر محلی سرور. فاز ۴.
+- `backupHardening.test.ts` روی مسیر دارای فاصله ۱۵ تست را می‌شکند (خطای خود تست، قدیمی). مسیر این ریپو فاصله دارد، پس روی این سیستم فقط لینوکس معتبر است.
 - چرخش session در login (`login/route.ts:55`) تست ندارد. فاز ۴.
 - `scripts/lint-ci.sh` فقط workflowها را اسکن می‌کند، نه اسکریپت‌هایی را که CI صدا می‌زند؛ دو مورد `grep -c || echo 0` در اسکریپت‌های بکاپ دستی رفع شد.
 - GitHub هشدار می‌دهد actions/checkout@v4 و setup-node@v4 روی Node 20 هستند؛ فعلاً کار می‌کنند.

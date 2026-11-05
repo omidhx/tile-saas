@@ -5,6 +5,11 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 domain="${1:?استفاده: bash scripts/init-env.sh <دامنه یا IP>}"
+# این مقدار در .env با source خوانده می‌شود و داخل sed می‌رود.
+if ! [[ "$domain" =~ ^[A-Za-z0-9.:-]+$ ]]; then
+  echo "ERROR: دامنه یا IP نامعتبر: $domain" >&2
+  exit 1
+fi
 if [ -e .env ]; then
   echo "ERROR: .env از قبل هست و عوض نشد." >&2
   exit 1

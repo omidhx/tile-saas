@@ -59,9 +59,11 @@ step "۰. ایمیج و فایل‌های سرور"
 if ! docker image inspect "tile-saas:${IMAGE_TAG}" >/dev/null 2>&1; then
   docker build -t "tile-saas:${IMAGE_TAG}" "$ROOT"
 fi
-docker run --rm --entrypoint sh "tile-saas:${IMAGE_TAG}" -c \
-  '! ls /app/web/.env* /app/web/src /app/.claude >/dev/null 2>&1' || fail "ایمیج فایل اضافه یا راز دارد"
-pass "ایمیج src و .env و .claude ندارد"
+docker run --rm --entrypoint sh "tile-saas:${IMAGE_TAG}" -c '
+  for p in /app/web/src /app/web/e2e /app/web/.env /app/web/.env.test /app/.env /app/.claude /app/_audit /app/db/seed-dev.sql; do
+    if [ -e "$p" ]; then echo "اضافه در ایمیج: $p"; exit 1; fi
+  done' || fail "ایمیج فایل اضافه یا راز دارد"
+pass "ایمیج src و .env و seed و .claude ندارد"
 cp -r "$ROOT/docker-compose.yml" "$ROOT/Caddyfile" "$ROOT/.env.example" "$ROOT/scripts" "$ROOT/backups" "$WORK/"
 mkdir -p "$WORK/backups/status" "$WORK/backups/daily" "$WORK/backups/uploads"
 bash "$WORK/scripts/init-env.sh" localhost
@@ -102,7 +104,7 @@ step "۳. ورود"
 compose run --rm --no-deps -T -e ADMIN_PHONE="$ADMIN_PHONE" -e ADMIN_PASSWORD="$ADMIN_PASSWORD" migrate node dist-scripts/create-admin.js
 expect "رمز اشتباه رد می‌شود" 401 "$(login "$WORK/bad.jar" "$ADMIN_PHONE" wrong-password)"
 expect "مدیر پلتفرم وارد می‌شود" 200 "$(login "$WORK/platform.jar" "$ADMIN_PHONE" "$ADMIN_PASSWORD")"
-grep -i '^set-cookie' "$WORK/platform.jar.headers" | grep -qi 'secure' || fail "کوکی نشست Secure نیست"
+grep -i '^set-cookie: *session=' "$WORK/platform.jar.headers" | grep -qi '; *secure' || fail "کوکی نشست Secure نیست"
 pass "کوکی نشست Secure است"
 expect "نشست معتبر است" 200 "$(http -o /dev/null -w '%{http_code}' -b "$WORK/platform.jar" "$BASE/api/me")"
 expect "بدون نشست رد می‌شود" 401 "$(http -o /dev/null -w '%{http_code}' "$BASE/api/me")"
@@ -161,21 +163,27 @@ expect "رمز app_user از .env ست شده" app_user "$(app_q 'SELECT current
 step "۷. بکاپ"
 bash "$WORK/scripts/backup-db.sh"
 bash "$WORK/scripts/verify-backup.sh"
-bash "$WORK/scripts/restore-db.sh" --test-only
 bash "$WORK/scripts/backup-uploads.sh"
+# قبل از تست بازیابی، چون آن‌ها فایل status را بازنویسی می‌کنند و خرابی آن را می‌پوشانند.
+http -b "$WORK/platform.jar" "$BASE/api/metrics" >"$WORK/metrics.json"
+python3 - "$WORK/metrics.json" <<'PY' || fail "وضعیت بکاپ بعد از بکاپ موفق در /api/metrics نیست"
+import json, sys
+m = json.load(open(sys.argv[1]))
+assert m["backup"]["last_success_at"] and m["backup"]["last_success_sha256"], m["backup"]
+assert m["uploads_backup"]["last_success_at"], m["uploads_backup"]
+PY
+pass "وضعیت هر دو بکاپ بلافاصله در /api/metrics دیده می‌شود"
+bash "$WORK/scripts/restore-db.sh" --test-only
 bash "$WORK/scripts/restore-uploads.sh" --test-only | tee "$WORK/restore-uploads.log"
 grep -q "Verifying against manifest" "$WORK/restore-uploads.log" || fail "بررسی manifest آپلودها اجرا نشد"
 DB_BACKUP="$(ls -t "$WORK"/backups/daily/*.gpg | head -1)"
 UPLOADS_BACKUP="$(ls -t "$WORK"/backups/uploads/*.gpg | head -1)"
 expect "فایل بکاپ فقط برای مالک" 600 "$(stat -c%a "$DB_BACKUP")"
-if head -c 2000000 "$DB_BACKUP" | grep -qa "$ADMIN_PHONE"; then fail "بکاپ رمزنگاری نشده"; fi
-pass "بکاپ رمزنگاری شده"
+if zstd -tq "$DB_BACKUP" 2>/dev/null || zstd -tq "$UPLOADS_BACKUP" 2>/dev/null; then fail "بکاپ رمزنگاری نشده"; fi
+pass "بکاپ بدون رمز باز نمی‌شود"
 find "$WORK/offsite" -name "$(basename "$DB_BACKUP")" | grep -q . || fail "بکاپ دیتابیس به مقصد بیرونی نرسید"
 find "$WORK/offsite" -name "$(basename "$UPLOADS_BACKUP")" | grep -q . || fail "بکاپ آپلودها به مقصد بیرونی نرسید"
 pass "هر دو بکاپ با rsync به مقصد بیرونی رسیدند"
-METRICS="$(http -b "$WORK/platform.jar" "$BASE/api/metrics")"
-grep -q '"last_success_at":"20' <<<"$METRICS" || fail "وضعیت بکاپ در /api/metrics نیست: $METRICS"
-pass "وضعیت بکاپ در /api/metrics دیده می‌شود"
 
 old_db="$WORK/backups/daily/tile_saas_2020-01-01_0000.sql.zstd.gpg"
 old_up="$WORK/backups/uploads/uploads_2020-01-01_0000.tar.zst.gpg"
@@ -192,13 +200,31 @@ cp "$DB_BACKUP.sha256" "$WORK/corrupt.gpg.sha256"
 printf 'x' >>"$WORK/corrupt.gpg"
 if bash "$WORK/scripts/restore-prod.sh" --overwrite-production "$WORK/corrupt.gpg" 2>/dev/null; then fail "بکاپ خراب پذیرفته شد"; fi
 ready || fail "بکاپ خراب سایت را از کار انداخت"
-pass "بکاپ خراب قبل از هر تغییری رد شد و سایت بالا ماند"
+pass "بکاپ با checksum غلط رد شد و سایت بالا ماند"
+head -c 2000 "$DB_BACKUP" >"$WORK/short.gpg"
+sha256sum "$WORK/short.gpg" >"$WORK/short.gpg.sha256"
+if bash "$WORK/scripts/restore-prod.sh" --overwrite-production "$WORK/short.gpg" 2>/dev/null; then fail "بکاپ ناقص پذیرفته شد"; fi
+ready || fail "بکاپ ناقص سایت را از کار انداخت"
+pass "بکاپ ناقص با checksum درست رد شد و سایت بالا ماند"
+good_pass="$(grep '^BACKUP_GPG_PASSPHRASE=' "$WORK/.env" | cut -d= -f2)"
+sed -i "s/^BACKUP_GPG_PASSPHRASE=.*/BACKUP_GPG_PASSPHRASE=wrong-passphrase/" "$WORK/.env"
+if bash "$WORK/scripts/restore-prod.sh" --overwrite-production "$DB_BACKUP" 2>/dev/null; then fail "رمز اشتباه پذیرفته شد"; fi
+sed -i "s/^BACKUP_GPG_PASSPHRASE=.*/BACKUP_GPG_PASSPHRASE=${good_pass}/" "$WORK/.env"
+ready || fail "رمز اشتباه سایت را از کار انداخت"
+pass "رمز اشتباه رد شد و سایت بالا ماند"
 if bash "$WORK/scripts/restore-prod.sh" "$DB_BACKUP" 2>/dev/null; then fail "بدون --overwrite-production اجرا شد"; fi
 pass "بدون --overwrite-production اجرا نمی‌شود"
 
 BEFORE="$(q "SELECT (SELECT count(*) FROM tenant), (SELECT count(*) FROM app_user), (SELECT sum(on_hand_qty_boxes) FROM inventory_balance), (SELECT status FROM reservation WHERE id='$T')")"
 compose down -v
 expect "volumeها واقعاً پاک شدند" 0 "$(docker volume ls -q --filter "name=${COMPOSE_PROJECT_NAME}_" | wc -l)"
+# سرور تازه طبق GO_LIVE: نصب با رمزهای تازه، بعد برگرداندن .env قبلی و بازیابی.
+cp "$WORK/.env" "$WORK/env.old"
+rm "$WORK/.env"
+bash "$WORK/scripts/init-env.sh" localhost
+compose up -d
+wait_for "نصب تازه بالا آمد" 180 ready
+cp "$WORK/env.old" "$WORK/.env"
 bash "$WORK/scripts/restore-prod.sh" --overwrite-production "$DB_BACKUP" "$UPLOADS_BACKUP"
 wait_for "سایت بعد از بازیابی بالا آمد" 180 ready
 expect "داده همان است" "$BEFORE" "$(q "SELECT (SELECT count(*) FROM tenant), (SELECT count(*) FROM app_user), (SELECT sum(on_hand_qty_boxes) FROM inventory_balance), (SELECT status FROM reservation WHERE id='$T')")"
@@ -224,6 +250,12 @@ web_restarted() { [ "$(docker inspect -f '{{.RestartCount}}' "$(compose ps -aq w
 wait_for "اپ بدون Postgres خارج می‌شود و Docker دوباره می‌سازدش" 120 web_restarted
 docker start "$(compose ps -aq postgres)" >/dev/null
 wait_for "با برگشتن Postgres سایت خودش درست شد" 120 ready
+
+step "۱۰. نصب با IP به‌جای دامنه"
+sed -i "s/^DOMAIN=.*/DOMAIN=127.0.0.1/" "$WORK/.env"
+compose up -d caddy
+ip_ready() { [ "$(http -o /dev/null -w '%{http_code}' https://127.0.0.1/api/ready)" = 200 ]; }
+wait_for "سایت با IP روی HTTPS جواب می‌دهد" 60 ip_ready
 
 step "نتیجه"
 echo "✓ همه‌ی مراحل نصب تمیز سبز شد."
