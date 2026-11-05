@@ -1,15 +1,19 @@
 import type { TransactionSql } from "postgres";
 import { withTenant } from "./client";
 import { writeAudit } from "./audit";
+import { featuresIn } from "./features";
 
 /**
  * قیمت‌گذاری (v2، spec ۵.۷ + roadmap v2).
  *
  * ترتیبِ اولویت — مشخص‌ترین برنده است:
  *   ۱. `agent_price_override` معتبر در تاریخِ مرجع  → source='override'
- *   ۲. قلمِ لیستِ قیمتِ همان نماینده                 → source='list'
+ *   ۲. قلمِ لیستِ قیمتِ همان نماینده، وگرنه «لیست اصلی» → source='list'
  *   ۳. هیچ                                          → قیمتی نداریم (null)
  * بعد، تخفیف حجمی بر اساس تعداد کارتن روی مبلغِ کل اعمال می‌شود.
+ *
+ * کلیدهای امکانات همین‌جا اعمال می‌شوند، نه فقط در منو: ردیفِ ذخیره‌شده‌ی یک امکانِ
+ * خاموش نباید قیمت را در تراکنشِ تأیید عوض کند.
  *
  * **همه‌چیز عددِ صحیح است** (کوچیک‌ترین واحد پولی، قانون معماری #۷): درصدِ تخفیف
  * هم INT است و با `Math.floor` حساب می‌شود، پس هیچ‌جا float وارد مسیر پول نمی‌شود.
@@ -65,32 +69,41 @@ export async function resolvePricesIn(
   if (variantIds.length === 0) return new Map();
   const asOf = at ?? new Date();
 
+  const f = await featuresIn(tx, tenantId);
+  if (!f.pricing) return new Map();
+
+  const [agent] = await tx<{ price_list_id: string | null }[]>`
+    SELECT price_list_id FROM agent_account WHERE id = ${agentAccountId} AND tenant_id = ${tenantId}`;
+  const [main] = await tx<{ id: string }[]>`
+    SELECT id FROM price_list WHERE tenant_id = ${tenantId} AND is_default`;
+  const listId = (f.price_lists ? agent?.price_list_id : null) ?? main?.id ?? null;
+
   // قیمتِ پایه: override بر لیست ارجح است. یک کوئری، نه یکی به‌ازای هر قلم.
   const rows = await tx<{ variant_id: string; price: string; source: PriceSource; price_list_id: string | null }[]>`
     SELECT DISTINCT ON (variant_id) variant_id, price, source, price_list_id FROM (
       SELECT o.variant_id, o.price, 'override'::text AS source, NULL::uuid AS price_list_id, 1 AS rank
       FROM agent_price_override o
-      WHERE o.tenant_id = ${tenantId} AND o.agent_account_id = ${agentAccountId}
+      WHERE ${f.agent_price ? tx`TRUE` : tx`FALSE`}
+        AND o.tenant_id = ${tenantId} AND o.agent_account_id = ${agentAccountId}
         AND o.variant_id IN ${tx(variantIds)}
         AND (o.valid_from IS NULL OR o.valid_from <= ${asOf})
         AND (o.valid_to   IS NULL OR o.valid_to   >= ${asOf})
       UNION ALL
       SELECT pli.variant_id, pli.price, 'list'::text AS source, pli.price_list_id, 2 AS rank
       FROM price_list_item pli
-      JOIN agent_account aa ON aa.price_list_id = pli.price_list_id AND aa.tenant_id = pli.tenant_id
-      WHERE pli.tenant_id = ${tenantId} AND aa.id = ${agentAccountId}
+      WHERE pli.tenant_id = ${tenantId}
+        AND ${listId ? tx`pli.price_list_id = ${listId}` : tx`FALSE`}
         AND pli.variant_id IN ${tx(variantIds)}
     ) candidates
     ORDER BY variant_id, rank`;
 
   // پله‌های تخفیف حجمی: بهترین (بیشترین درصدِ) پله‌ای که حداقلش برآورده شده.
-  const tiers = await tx<{ variant_id: string | null; min_qty_boxes: number; percent_off: number }[]>`
+  const tiers = !f.volume_discount ? [] : await tx<{ variant_id: string | null; min_qty_boxes: number; percent_off: number }[]>`
     SELECT vd.variant_id, vd.min_qty_boxes, vd.percent_off
     FROM volume_discount vd
-    LEFT JOIN agent_account aa ON aa.id = ${agentAccountId} AND aa.tenant_id = ${tenantId}
     WHERE vd.tenant_id = ${tenantId}
       AND (vd.variant_id IS NULL OR vd.variant_id IN ${tx(variantIds)})
-      AND (vd.price_list_id IS NULL OR vd.price_list_id = aa.price_list_id)`;
+      AND (vd.price_list_id IS NULL OR ${listId ? tx`vd.price_list_id = ${listId}` : tx`FALSE`})`;
 
   const out = new Map<string, ResolvedPrice>();
   for (const r of rows) {
@@ -110,6 +123,25 @@ export async function resolvePricesIn(
 }
 
 /** ساختِ سبدِ قیمت‌گذاریِ تازه — تا حالا فقط با SQL می‌شد. */
+/** شناسه‌ی «لیست اصلی» کارخانه؛ اگر نبود می‌سازد (idempotent). */
+export async function ensureDefaultPriceList(tx: TransactionSql, tenantId: string): Promise<string> {
+  const find = async () => (await tx<{ id: string }[]>`
+    SELECT id FROM price_list WHERE tenant_id = ${tenantId} AND is_default`)[0]?.id;
+  const existing = await find();
+  if (existing) return existing;
+  // دو درخواستِ هم‌زمان نباید دو لیستِ متفاوت را اصلی کنند (unique index خطا می‌داد).
+  await tx`SELECT 1 FROM tenant WHERE id = ${tenantId} FOR UPDATE`;
+  const raced = await find();
+  if (raced) return raced;
+  const [first] = await tx<{ id: string }[]>`
+    SELECT id FROM price_list WHERE tenant_id = ${tenantId} ORDER BY name, id LIMIT 1`;
+  if (first) await tx`UPDATE price_list SET is_default = TRUE WHERE id = ${first.id} AND tenant_id = ${tenantId}`;
+  else await tx`
+    INSERT INTO price_list (tenant_id, name, is_default) VALUES (${tenantId}, 'لیست اصلی', TRUE)
+    ON CONFLICT (tenant_id) WHERE is_default DO NOTHING`;
+  return (await find())!;
+}
+
 export async function createPriceList(tenantId: string, name: string): Promise<{ id: string; name: string }> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("نامِ سبد لازم است");

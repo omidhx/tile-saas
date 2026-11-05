@@ -37,6 +37,7 @@ export type AuditAction =
   | "product.edit"
   | "customer.edit"
   | "tenant_settings.edit"
+  | "tenant_features.edit"
   | "sms_config.edit";
 
 export async function writeAudit(

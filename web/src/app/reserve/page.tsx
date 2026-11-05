@@ -15,7 +15,7 @@ import { hideOnError } from "@/lib/img";
 import { ImageGalleryModal } from "../ImageGalleryModal";
 import QtyPicker from "./QtyPicker";
 import CartSummary from "./CartSummary";
-import OutOfStockSection, { type WaitlistEntry, type Arrival, type Substitute } from "./OutOfStockSection";
+import OutOfStockSection, { type Arrival, type Substitute } from "./OutOfStockSection";
 
 type Lot = {
   lot_id: string; name: string; code: string; grade: string | null;
@@ -47,9 +47,6 @@ export default function ReservePage() {
   const [subscribed, setSubscribed] = useState<string[]>([]);
   const [outOfStock, setOutOfStock] = useState<{ variantId: string; name: string; code: string }[]>([]);
   const [alertPending, setAlertPending] = useState<string | null>(null);
-  const [queue, setQueue] = useState<WaitlistEntry[]>([]);
-  const [queueQty, setQueueQty] = useState<Record<string, string>>({});
-  const [queuePending, setQueuePending] = useState<string | null>(null);
   const [whFilter, setWhFilter] = useState(""); // "" = همه‌ی انبارها
   const [query, setQuery] = useState("");
   // فیلترِ ساخت‌یافته بر ویژگی‌ها؛ "" = بی‌قید. مقدارها از خودِ اقلامِ موجود ساخته می‌شوند.
@@ -73,15 +70,13 @@ export default function ReservePage() {
   const [loaded, setLoaded] = useState(false);
 
   const loadLots = useCallback(async (c: Ctx) => {
-    const [lotsRes, alertsRes, queueRes] = await Promise.all([
+    const [lotsRes, alertsRes] = await Promise.all([
       getJson<{ lots: Lot[] }>(`/api/lots?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
       getJson<{
         subscribed: string[]; outOfStock: { variantId: string; name: string; code: string }[];
         substitutes: Record<string, Substitute[]>;
         arrivals: Record<string, Arrival[]>;
       }>(`/api/alerts?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
-      getJson<{ entries: WaitlistEntry[] }>(
-        `/api/waitlist?tenantId=${c.tenantId}&agentAccountId=${c.agentAccountId}`),
     ]);
     if (lotsRes.ok) {
       setLots(lotsRes.data.lots);
@@ -110,9 +105,8 @@ export default function ReservePage() {
       setSubs(alertsRes.data.substitutes ?? {});
       setArrivals(alertsRes.data.arrivals ?? {});
     }
-    if (queueRes.ok) setQueue(queueRes.data.entries);
     // «کالایی نیست» نباید وقتی نگرفتیم نشان داده شود
-    const failed = [lotsRes, alertsRes, queueRes].find((x) => !x.ok);
+    const failed = [lotsRes, alertsRes].find((x) => !x.ok);
     setLoadErr(failed && !failed.ok ? loadError(failed.status) : "");
     setLoaded(true);
   }, []);
@@ -128,30 +122,6 @@ export default function ReservePage() {
     if (!res.ok) setMsg({ kind: "err", text: actionError(res.status) });
     else await loadLots(ctx);
     setAlertPending(null);
-  }
-
-  async function joinQueue(variantId: string) {
-    if (!ctx) return;
-    const quantityBoxes = Number(queueQty[variantId]);
-    if (!Number.isInteger(quantityBoxes) || quantityBoxes <= 0) return;
-    setQueuePending(variantId); setMsg(null);
-    const res = await postJson("/api/waitlist",
-      { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId, quantityBoxes });
-    if (res.ok) {
-      setMsg({ kind: "ok", text: "در صف قرار گرفتی. به‌محض آزاد شدن موجودی، همان تعداد برایت رزرو می‌شود." });
-      await loadLots(ctx);
-    } else setMsg({ kind: "err", text: actionError(res.status) });
-    setQueuePending(null);
-  }
-
-  async function leaveQueue(variantId: string) {
-    if (!ctx) return;
-    setQueuePending(variantId); setMsg(null);
-    const res = await postJson("/api/waitlist",
-      { tenantId: ctx.tenantId, agentAccountId: ctx.agentAccountId, variantId }, "DELETE");
-    if (!res.ok) setMsg({ kind: "err", text: actionError(res.status) });
-    else await loadLots(ctx);
-    setQueuePending(null);
   }
 
   // با تغییر نمایندگی، داده‌ی همان نمایندگی دوباره بارگذاری می‌شود
@@ -435,10 +405,9 @@ export default function ReservePage() {
           pending={pending} onSubmit={submit} currencyUnit={ctx.currencyUnit} />
       )}
 
-      <OutOfStockSection outOfStock={outOfStock} subscribed={subscribed} queue={queue} queueQty={queueQty}
-        alertPending={alertPending} queuePending={queuePending} subs={subs} arrivals={arrivals}
-        onToggleAlert={toggleAlert} onJoinQueue={joinQueue} onLeaveQueue={leaveQueue}
-        onQueueQtyChange={(variantId, v) => setQueueQty((q) => ({ ...q, [variantId]: v }))}
+      <OutOfStockSection outOfStock={outOfStock} subscribed={subscribed}
+        alertPending={alertPending} subs={subs} arrivals={arrivals}
+        onToggleAlert={toggleAlert}
         currencyUnit={ctx.currencyUnit} />
 
       {/* مودالِ جزئیاتِ محصول: گالری + ویژگی‌ها + توضیحات. کلیک روی پس‌زمینه یا Esc می‌بندد. */}

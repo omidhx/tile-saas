@@ -9,7 +9,7 @@ import {
 } from "./pricing";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
-import { T, seedTenant } from "./_fixtures";
+import { T, seedTenant, enableAllFeatures } from "./_fixtures";
 
 const AG = "a5555555-5555-5555-5555-555555555555";   // لیست قیمت دارد
 const AG2 = "a6666666-6666-6666-6666-666666666666";  // هیچ لیستی ندارد
@@ -20,6 +20,7 @@ const V2 = "a2222222-2222-2222-2222-222222222223";
 before(async () => {
   await resetSchema();
   await seedTenant();
+  await enableAllFeatures();
   await sql.unsafe(`
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','لیست ۱۴۰۵');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES

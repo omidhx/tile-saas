@@ -18,7 +18,7 @@ tenant ──< agent_account (assigned_staff_user_id → app_user) ──< agent
    ├─ sales_dispatch ──< sales_dispatch_item ─→ lot|NULL (backorder)
    ├─ price_list ──< price_list_item ;  agent_price_override ; volume_discount   (v2)
    ├─ customer ─→ sales_dispatch.customer_id  (نام روی حواله snapshot می‌ماند)      (v2)
-   ├─ waitlist_entry (صف انتظار) ; product_substitute (جایگزین، جهت‌دار)            (v2)
+   ├─ waitlist_entry (بی‌استفاده از فاز ۲) ; product_substitute (جایگزین، جهت‌دار)            (v2)
    ├─ incoming_stock (موجودی در راه — **هرگز وارد available نمی‌شود**)              (v2)
    ├─ shared_catalog ──< shared_catalog_item (token در URL؛ customer_price اختیاری)  (v2)
    ├─ import_template ; import_batch (scope: tenant/warehouse/brand) ──< import_row
@@ -55,7 +55,7 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
 | سقفِ تأییدِ خودکار: NULL=ارث/خاموش، ۰=هرگز | `auto_approve_limit` روی tenant و agent_account |
 | چرا سفارش تأیید شد | `sales_request.approval_mode` + `auto_approve_limit_applied` (snapshot) |
 | نشستِ باطل‌شده | `app_user.session_epoch` (شمارنده، نه timestamp — مرزِ ثانیه ندارد) |
-| دسترسیِ ریزدانه‌ی صفحه برای staff | `tenant_membership.allowed_pages` (TEXT[]، خالی=کامل) + `can_manage_access` (فقط برای role='admin' معنا دارد) |
+| دسترسیِ staff | فقط نقشِ `tenant_membership.role`. ستون‌های `allowed_pages` و `can_manage_access` از فاز ۲ بی‌استفاده‌اند و چون migration 0004 به آن‌ها وابسته است حذف نشده‌اند |
 | پشتیبانِ ثابتِ نمایندگی (بدونِ composite FK چون app_user سراسری است) | `agent_account.assigned_staff_user_id UUID REFERENCES app_user(id)`؛ عضویتِ tenant در لایه‌ی app چک می‌شود (`isActiveStaffMember`) |
 | موجودیِ اولیه از مسیرِ لجر می‌آید، نه UPDATE مستقیم | `inventory_transaction.transaction_type='initial_stock'` هنگامِ ساختِ محصول با انبار+تعداد |
 | روزِ صفرِ tenantِ تازه بدونِ SQL دستی | `app_user.is_platform_admin` (بالاتر از سطحِ tenant) + `db/platform.ts::createTenant` (یک تراکنش: tenant + اولین admin) |
@@ -113,3 +113,9 @@ cd web && npm run migrate
 ## Decision Log
 - `sales_request_item.line_no` جای `UNIQUE(request_id, variant_id)` (چندشید) — spec ۱۴.۷.
 - `partially_converted` حذف — spec ۱۴.۱.
+
+## فاز ۲: امکانات و جدول‌های بی‌استفاده
+
+- `tenant.features` (JSONB) کلیدهای امکاناتِ هر کارخانه است؛ پیش‌فرض‌ها در `web/src/lib/features.ts`.
+- `price_list.is_default` «لیست اصلی» است؛ وقتی «چند لیست قیمت» خاموش است همه از آن قیمت می‌گیرند.
+- `waitlist_entry`، `agent_account.credit_limit`، `tenant_membership.allowed_pages` و `can_manage_access` دیگر استفاده نمی‌شوند. عمداً حذف نشده‌اند، چون قانونِ migration حذفِ جدول را محدود می‌کند و حذفِ دو تای آخری نصبِ تازه را می‌شکند.

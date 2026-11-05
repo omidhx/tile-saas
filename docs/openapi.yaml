@@ -856,6 +856,21 @@ paths:
         "200": { description: SMS config updated }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/settings/features:
+    get:
+      tags: [Settings]
+      summary: Get optional features of the factory (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Feature switches }
+    put:
+      tags: [Settings]
+      summary: Change optional features (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Updated feature switches }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/settings/auto-approve:
     get:
       tags: [Settings]
@@ -863,7 +878,7 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "200": { description: Auto-approve settings }
-    patch:
+    put:
       tags: [Settings]
       summary: Update auto-approve threshold (admin)
       security: [{ sessionCookie: [] }]
@@ -1115,22 +1130,3 @@ paths:
       responses:
         "200": { description: Shared catalog deleted }
 
-  /api/waitlist:
-    get:
-      tags: [Sales]
-      summary: List waitlist entries
-      security: [{ sessionCookie: [] }]
-      responses:
-        "200": { description: Waitlist }
-    post:
-      tags: [Sales]
-      summary: Create waitlist entry
-      security: [{ sessionCookie: [] }]
-      responses:
-        "201": { description: Waitlist entry created }
-    delete:
-      tags: [Sales]
-      summary: Delete waitlist entry
-      security: [{ sessionCookie: [] }]
-      responses:
-        "200": { description: Waitlist entry deleted }

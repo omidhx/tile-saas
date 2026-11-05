@@ -1,33 +1,40 @@
 import { NextResponse } from "next/server";
 import { withTenant } from "@/db/client";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx, featureOff } from "@/auth/httpCtx";
 import { writeAudit } from "@/db/audit";
-import { listVolumeDiscounts } from "@/db/pricing";
+import { listVolumeDiscounts, ensureDefaultPriceList } from "@/db/pricing";
+import { getFeatures } from "@/db/features";
 
-/** قیمت‌گذاری کارِ پشتیبان است، نه نماینده. */
-const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "prices");
 
 /** GET ?tenantId — لیست‌های قیمت + اقلامشان + پله‌های تخفیف (پنل قیمت‌گذاری staff). */
 export async function GET(req: Request) {
   const c = await staffCtx(new URL(req.url).searchParams.get("tenantId"));
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "pricing");
+  if (off) return off;
 
+  const f = await getFeatures(c.tenantId);
   const [{ lists, items }, tiers] = await Promise.all([
     withTenant(c.tenantId, async (tx) => {
+      // وقتی «چند لیست قیمت» خاموش است، پنل فقط «لیست اصلی» را می‌بیند.
+      const mainId = await ensureDefaultPriceList(tx, c.tenantId);
       const lists = await tx`
         SELECT pl.id, pl.name,
           (SELECT count(*) FROM agent_account aa WHERE aa.price_list_id = pl.id)::int AS "agentCount"
-        FROM price_list pl WHERE pl.tenant_id = ${c.tenantId} ORDER BY pl.name`;
+        FROM price_list pl
+        WHERE pl.tenant_id = ${c.tenantId} AND ${f.price_lists ? tx`TRUE` : tx`pl.id = ${mainId}`}
+        ORDER BY pl.is_default DESC, pl.name`;
+      const visible = lists.map((l) => l.id as string);
       const items = await tx`
         SELECT pli.price_list_id AS "priceListId", pli.variant_id AS "variantId",
                pli.price, p.name, p.code, pv.sku
         FROM price_list_item pli
         JOIN product_variant pv ON pv.id = pli.variant_id
         JOIN product p ON p.id = pv.product_id
-        WHERE pli.tenant_id = ${c.tenantId} ORDER BY p.name`;
+        WHERE pli.tenant_id = ${c.tenantId} AND pli.price_list_id IN ${tx(visible)} ORDER BY p.name`;
       return { lists, items };
     }),
-    listVolumeDiscounts(c.tenantId),
+    f.volume_discount ? listVolumeDiscounts(c.tenantId) : Promise.resolve([]),
   ]);
   const data = { lists, items, tiers };
   return NextResponse.json(data);
@@ -41,13 +48,19 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "pricing");
+  if (off) return off;
 
   const { priceListId, variantId, price } = body ?? {};
   if (typeof priceListId !== "string" || typeof variantId !== "string"
       || !Number.isInteger(price) || price < 0)
     return NextResponse.json({ error: "invalid" }, { status: 400 });
 
-  await withTenant(c.tenantId, async (tx) => {
+  const f = await getFeatures(c.tenantId);
+  const written = await withTenant(c.tenantId, async (tx) => {
+    // با «چند لیست» خاموش فقط لیستِ اصلی قابلِ نوشتن است؛ لیستِ پنهان نباید مخفیانه پر شود.
+    if (!f.price_lists && priceListId !== await ensureDefaultPriceList(tx, c.tenantId)) return false;
+
     // قیمتِ قبلی **قبل از** نوشتن خوانده می‌شود: بدون آن، ردپا فقط می‌گوید
     // «قیمت شد X» و سؤالِ اصلی («از چند آمد؟») بی‌جواب می‌ماند.
     const [prev] = await tx<{ price: string }[]>`
@@ -68,6 +81,8 @@ export async function POST(req: Request) {
         action: "price.set", entity: "price_list_item", entityId: variantId,
         oldValue: before, newValue: price,
       });
+    return true;
   });
+  if (!written) return NextResponse.json({ error: "feature_off" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx, featureOff } from "@/auth/httpCtx";
 import { createVolumeDiscount, updateVolumeDiscount, deleteVolumeDiscount } from "@/db/pricing";
 
-/** همان pageKey=«prices» — پله‌ی تخفیف بخشی از قیمت‌گذاری است. */
-const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "prices");
 
 const statusFor = (reason: string) => (reason === "not_found" ? 404 : reason === "duplicate" ? 409 : 400);
 
@@ -12,6 +10,8 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "volume_discount");
+  if (off) return off;
 
   const { priceListId, variantId, minQtyBoxes, percentOff } = body ?? {};
   if ((priceListId !== null && typeof priceListId !== "string")
@@ -29,6 +29,8 @@ export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "volume_discount");
+  if (off) return off;
 
   const { id, minQtyBoxes, percentOff } = body ?? {};
   if (typeof id !== "string" || typeof minQtyBoxes !== "number" || typeof percentOff !== "number")
@@ -44,6 +46,8 @@ export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "volume_discount");
+  if (off) return off;
   if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   const result = await deleteVolumeDiscount({ tenantId: c.tenantId, id: body.id });

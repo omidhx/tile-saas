@@ -82,16 +82,16 @@ test("🔴 updateAgent: سقفِ اعتبار/تأییدِ خودکار منفی
   assert.ok(created.ok);
   const id = created.ok ? created.agentAccountId : "";
 
-  const bad = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, creditLimit: -1 });
+  const bad = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, autoApproveLimit: -1 });
   assert.deepEqual(bad, { ok: false, reason: "invalid_limit" });
 
-  const ok = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, creditLimit: 5_000_000 });
+  const ok = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, autoApproveLimit: 5_000_000 });
   assert.equal(ok.ok, true);
   const [row] = await sql<{ oldValue: unknown; newValue: unknown }[]>`
     SELECT old_value AS "oldValue", new_value AS "newValue" FROM audit_log
     WHERE tenant_id = ${T} AND entity_id = ${id} AND action = 'auto_approve_limit.agent'`;
-  assert.deepEqual(row.oldValue, { creditLimit: null }, "تغییرِ واقعی باید ردپا بگذارد");
-  assert.deepEqual(row.newValue, { creditLimit: 5_000_000 });
+  assert.deepEqual(row.oldValue, { autoApproveLimit: null }, "تغییرِ واقعی باید ردپا بگذارد");
+  assert.deepEqual(row.newValue, { autoApproveLimit: 5_000_000 });
 });
 
 test("addAgentUser: افزودنِ کاربرِ دوم به همان نمایندگی، و رد کردنِ افزودنِ تکراری", async () => {

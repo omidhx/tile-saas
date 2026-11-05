@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "./session";
 import {
-  authorizeAgent, authorizeStaff, authorizeStaffPage, authorizeAdmin, authorizeAccessManager,
+  authorizeAgent, authorizeStaff, authorizeAdmin,
   AuthzError, type AgentContext,
 } from "./authz";
 import { checkRateAsync } from "./rateLimit";
+import { getFeatures } from "@/db/features";
+import type { FeatureKey } from "@/lib/features";
 
 /**
  * الگوی «userId از نشست → rate limit → اعتبارسنجیِ tenantId → authorize → نگاشتِ AuthzError به ۴۰۳»
@@ -66,21 +68,13 @@ async function ctx<T extends object>(
   }
 }
 
-/** نقشِ staff یا admin، بدونِ محدودیتِ صفحه‌ی ریزدانه. */
+/** نقشِ staff یا admin. */
 export const staffCtx = (tenantId: unknown) =>
   ctx(tenantId, authorizeStaff, (uid) => `staff:${uid}`);
 
-/** نقشِ staff/admin، محدود به یک صفحه‌ی مشخص (`allowed_pages`). */
-export const staffPageCtx = (tenantId: unknown, pageKey: string) =>
-  ctx(tenantId, (u, t) => authorizeStaffPage(u, t, pageKey), (uid) => `staff:${uid}`);
-
-/** فقط نقشِ admin (مدیریتِ نمایندگی/انبار). */
+/** فقط نقشِ admin (مدیریتِ تیم/نمایندگی/انبار/امکانات). */
 export const adminCtx = (tenantId: unknown) =>
   ctx(tenantId, authorizeAdmin, (uid) => `admin:${uid}`);
-
-/** admin + `can_manage_access` (مدیریتِ تیم). */
-export const accessManagerCtx = (tenantId: unknown) =>
-  ctx(tenantId, authorizeAccessManager, (uid) => `access:${uid}`);
 
 /** نماینده‌ای که به همین tenant/agentAccount وصل است. */
 export async function agentCtx(tenantId: unknown, agentAccountId: unknown): Promise<Err | AgentContext> {
@@ -122,4 +116,9 @@ export async function platformAdminCtx(): Promise<Err | { userId: string }> {
     if (e instanceof AuthzError) return forbidden();
     throw e;
   }
+}
+
+/** امکانِ خاموش مثلِ نبودنِ endpoint رفتار می‌کند. null یعنی روشن است. */
+export async function featureOff(tenantId: string, key: FeatureKey): Promise<NextResponse | null> {
+  return (await getFeatures(tenantId))[key] ? null : NextResponse.json({ error: "feature_off" }, { status: 404 });
 }

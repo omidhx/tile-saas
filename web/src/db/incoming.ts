@@ -1,5 +1,4 @@
 import { withTenant } from "./client";
-import { advanceWaitlist } from "./waitlist";
 import { enqueueRestockNotifications } from "./alerts";
 
 /**
@@ -79,7 +78,7 @@ export async function addIncoming(p: {
 }
 
 export type ArriveResult =
-  | { ok: true; lotId: string; offers: number; notified: number }
+  | { ok: true; lotId: string; notified: number }
   | { ok: false; reason: "not_found" | "not_pending" };
 
 /**
@@ -89,9 +88,7 @@ export type ArriveResult =
  * در همان تراکنشِ `inventory_balance`)، نه یک UPDATE مستقیم — وگرنه گزارشِ تطبیق
  * بلافاصله ناترازی نشان می‌داد.
  *
- * و چون موجودی آزاد شده، همان کارهایی که import می‌کند اینجا هم لازم است:
- * صف انتظار جلو برود و «موجود شد» صف شود. بدون این، محموله می‌رسید و کسی که
- * ماه‌ها منتظرش بود خبردار نمی‌شد.
+ * و چون موجودی آزاد شده، مثلِ import «موجود شد» هم صف می‌شود.
  */
 export async function markArrived(p: {
   tenantId: string; id: string; actorUserId: string; batchNumber?: string | null;
@@ -140,11 +137,9 @@ export async function markArrived(p: {
       SET status = 'arrived', arrived_lot_id = ${lot.id}, arrived_at = now()
       WHERE id = ${inc.id}`;
 
-    // موجودی همین حالا آزاد شد — صف حقِ تقدم دارد، بعد اعلانِ عمومی.
-    const offers = await advanceWaitlist(tx, p.tenantId, [inc.variant_id]);
     const notified = await enqueueRestockNotifications(tx, p.tenantId, [lot.id]);
 
-    return { ok: true as const, lotId: lot.id, offers: offers.length, notified };
+    return { ok: true as const, lotId: lot.id, notified };
   });
 }
 

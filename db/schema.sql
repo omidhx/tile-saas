@@ -115,6 +115,8 @@ CREATE TABLE tenant (
     -- رعایت می‌کنند (db/team.ts، db/agents.ts).
     max_staff                   INT CHECK (max_staff >= 0),
     max_agents                  INT CHECK (max_agents >= 0),
+    -- فاز ۲: امکاناتِ اختیاریِ کارخانه. پیش‌فرض‌ها در کدند (web/src/lib/features.ts).
+    features                    JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -485,9 +487,12 @@ CREATE TABLE price_list (
     id        UUID NOT NULL DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenant(id),
     name      TEXT NOT NULL,
+    -- فاز ۲: «لیست اصلی». وقتی «چند لیست قیمت» خاموش است، همه از همین قیمت می‌گیرند.
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id)
 );
+CREATE UNIQUE INDEX uq_price_list_default ON price_list(tenant_id) WHERE is_default;
 
 CREATE TABLE price_list_item (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

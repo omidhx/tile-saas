@@ -52,8 +52,8 @@ export default function IncomingPanel({
     if (!res.ok) onMsg(actionError(res.status));
     else {
       if (action === "arrive") {
-        const d = res.data as { offers?: number; notified?: number };
-        onMsg(`موجودی وارد شد.${d.offers ? ` ${money(d.offers)} نوبت از صف انتظار پر شد.` : ""}`
+        const d = res.data as { notified?: number };
+        onMsg(`موجودی وارد شد.`
           + `${d.notified ? ` ${money(d.notified)} اعلان «موجود شد» صف شد.` : ""}`, true);
         setIncArriving(null); setIncBatch("");
       } else onMsg("انجام شد.", true);

@@ -5,9 +5,9 @@ import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 import { createDispatchFromRequest, setDispatchStatus } from "./dispatches";
-import { buildReports, buildMonthlyAgentPerf } from "./reports";
+import { buildReports } from "./reports";
 import { toJalali } from "@/lib/date";
-import { T, U, seedTenantUser } from "./_fixtures";
+import { T, U, seedTenantUser, enableAllFeatures } from "./_fixtures";
 
 const AG = "a5555555-5555-5555-5555-555555555555";
 const PL = "aaaa1111-1111-1111-1111-111111111111";
@@ -22,6 +22,7 @@ const range = () => ({ from: new Date(Date.now() - 7 * 86400000), to: new Date(D
 before(async () => {
   await resetSchema();
   await seedTenantUser();
+  await enableAllFeatures();
   await sql.unsafe(`
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','L');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG}','${T}','نمایندگی الف','AG1','${PL}');
@@ -86,26 +87,6 @@ test("خطِ بدون قیمت شمرده می‌شود — «۰ ریال» با
   await sql`UPDATE sales_request_item SET unit_price_applied = 1000000 WHERE tenant_id = ${T}`;
 });
 
-test("تخفیف‌های اعمال‌شده به‌تفکیکِ نماینده/کالا: از discount_amountِ snapshot می‌آید", async () => {
-  await sql`INSERT INTO volume_discount (tenant_id, price_list_id, variant_id, min_qty_boxes, percent_off) VALUES (${T}, ${PL}, ${V_HOT}, 10, 10)`;
-  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "disc-1", items: [{ lotId: LOT_HOT, quantityBoxes: 10 }] });
-  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
-  assert.equal(a.ok, true);
-
-  const rep = await buildReports({ tenantId: T, ...range() });
-  const agentRow = rep.discountsByAgent.find((d) => d.agentId === AG);
-  assert.ok(agentRow, "نماینده باید در فهرستِ تخفیف‌ها باشد");
-  assert.equal(agentRow!.discountAmount, 1_000_000, "۱۰٪ روی ۱۰×۱٬۰۰۰٬۰۰۰");
-  assert.equal(agentRow!.discountedLines, 1, "فقط همین خطِ تازه تخفیف خورده، خطِ اولِ فیکسچر نه");
-
-  const productRow = rep.discountsByProduct.find((d) => d.code === "HOT");
-  assert.ok(productRow, "کالا باید در فهرستِ تخفیف‌ها باشد");
-  assert.equal(productRow!.discountAmount, 1_000_000);
-
-  // کالای راکد هیچ سفارشی نداشته، پس نباید در فهرستِ تخفیف‌ها باشد
-  assert.ok(!rep.discountsByProduct.some((d) => d.code === "DEAD"));
-});
-
 test("بازه‌ی زمانی واقعاً فیلتر می‌کند — بازه‌ی گذشته خالی است", async () => {
   const rep = await buildReports({
     tenantId: T,
@@ -157,62 +138,4 @@ test("فیلترِ کالا: عملکردِ نماینده را به همان ی
   assert.ok(onlyHot.agents.length > 0);
   assert.equal(onlyHot.topProducts.length, 1);
   assert.equal(onlyHot.topProducts[0].code, "HOT");
-});
-
-test("عملکردِ نماینده به‌تفکیکِ انبار: کارتن به‌درستی بینِ دو انبار تقسیم می‌شود", async () => {
-  const WH2 = "a3333333-3333-3333-3333-333333333334";
-  const LOT_HOT_WH2 = "a4444444-4444-4444-4444-444444444446";
-  await sql.unsafe(`
-    INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${WH2}','${T}','انبارِ دو','W2','main');
-    INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT_HOT_WH2}','${T}','${V_HOT}','${WH2}');
-    INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT_HOT_WH2}',50);
-  `);
-  const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "wh-test-1", items: [{ lotId: LOT_HOT_WH2, quantityBoxes: 5 }] });
-  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
-  assert.equal(a.ok, true);
-  const d = await createDispatchFromRequest({ tenantId: T, salesRequestId: a.ok ? a.salesRequestId : "", createdByUserId: U, dispatchCode: "D-WH2" });
-  const did = d.ok ? d.dispatchIds[0] : "";
-  await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "ready_for_loading", actorUserId: U });
-  await setDispatchStatus({ tenantId: T, dispatchId: did, toStatus: "loaded", actorUserId: U });
-
-  const rep = await buildReports({ tenantId: T, ...range() });
-  const wh2Idx = rep.warehouseBuckets.findIndex((w) => w.warehouseId === WH2);
-  const whIdx = rep.warehouseBuckets.findIndex((w) => w.warehouseId === WH);
-  assert.ok(wh2Idx >= 0 && whIdx >= 0, "هر دو انبار باید در فهرستِ باکت‌ها باشند");
-
-  const agRow = rep.agentsByWarehouse.find((r) => r.agentId === AG);
-  assert.ok(agRow, "نماینده باید در فهرست باشد");
-  assert.equal(agRow!.warehouses[wh2Idx].boxes, 5, "کارتنِ بارگیری‌شده از انبارِ دو");
-  assert.ok(agRow!.warehouses[whIdx].boxes > 0, "کارتنِ انبارِ اول هم جدا شمرده می‌شود، نه قاطی");
-});
-
-test("buildMonthlyAgentPerf: باکت‌بندیِ ماهانه‌ی شمسی + مقدارِ نماینده در ماهِ جاری", async () => {
-  const AG3 = "a5555555-5555-5555-5555-555555555557";
-  await sql.unsafe(`
-    INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG3}','${T}','نمایندگی ج','AG3','${PL}');
-  `);
-  const r = await reserve({ tenantId: T, agentAccountId: AG3, ttlHours: 24, idempotencyKey: "monthly-1", items: [{ lotId: LOT_HOT, quantityBoxes: 7 }] });
-  const a = await approveReservation({ tenantId: T, reservationId: r.ok ? r.reservationId : "", actorUserId: U });
-  assert.equal(a.ok, true);
-
-  const rep = await buildMonthlyAgentPerf({ tenantId: T, months: 3 });
-  assert.equal(rep.buckets.length, 3, "دقیقاً سه باکتِ ماهانه");
-
-  const todayJ = toJalali(new Date());
-  const lastBucket = rep.buckets[rep.buckets.length - 1];
-  assert.equal(lastBucket.jy, todayJ.jy, "آخرین باکت باید ماهِ جاری باشد");
-  assert.equal(lastBucket.jm, todayJ.jm);
-
-  const row = rep.rows.find((x) => x.agentId === AG3);
-  assert.ok(row, "نماینده‌ی تازه باید در فهرست باشد");
-  const currentMonthCell = row!.months[row!.months.length - 1];
-  assert.equal(currentMonthCell.boxes, 7);
-  assert.equal(currentMonthCell.value, 7_000_000, "۷ کارتن × ۱٬۰۰۰٬۰۰۰ ریال");
-});
-
-test("buildMonthlyAgentPerf: تعدادِ ماه بینِ ۱ تا ۱۲ کلمپ می‌شود", async () => {
-  const tooMany = await buildMonthlyAgentPerf({ tenantId: T, months: 100 });
-  assert.equal(tooMany.buckets.length, 12);
-  const tooFew = await buildMonthlyAgentPerf({ tenantId: T, months: 0 });
-  assert.equal(tooFew.buckets.length, 1);
 });

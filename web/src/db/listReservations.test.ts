@@ -2,7 +2,7 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
-import { T, U, seedTenantUser } from "./_fixtures";
+import { T, U, seedTenantUser, enableAllFeatures } from "./_fixtures";
 import { reserve, listReservations } from "./reservations";
 import { approveReservation } from "./salesRequests";
 
@@ -20,6 +20,7 @@ const LOT = "a4444444-4444-4444-4444-444444444444";
 before(async () => {
   await resetSchema();
   await seedTenantUser();
+  await enableAllFeatures();
   await sql.unsafe(`
     INSERT INTO price_list (id,tenant_id,name) VALUES ('${PL}','${T}','لیست');
     INSERT INTO agent_account (id,tenant_id,legal_name,code,price_list_id) VALUES ('${AG}','${T}','Ag','AG1','${PL}');

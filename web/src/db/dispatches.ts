@@ -203,7 +203,7 @@ export async function getDispatchDetail(tenantId: string, dispatchId: string): P
       WHERE sdi.dispatch_id = ${dispatchId} AND sdi.tenant_id = ${tenantId}
       ORDER BY p.code`;
 
-    // جمعِ فاکتور: یک sales_request می‌تواند به چند حواله (یک به‌ازای هر انبار) تقسیم شده
+    // جمع مبلغ: یک sales_request می‌تواند به چند حواله (یک به‌ازای هر انبار) تقسیم شده
     // باشد، پس unit_price_applied/discount_amount روی sales_request_item مالِ کلِ سفارش
     // است، نه فقط سهمِ همین حواله — تخفیف به‌نسبتِ تعدادِ همین حواله سهم‌بندی می‌شود.
     const priceRows = await tx<{

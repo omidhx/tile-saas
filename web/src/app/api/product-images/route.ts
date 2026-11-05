@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx } from "@/auth/httpCtx";
 import { addProductImage, removeProductImage, setPrimaryImage } from "@/db/products";
 import { isSafeImageUrl } from "@/lib/url";
 
 // گالریِ تصاویرِ محصول را پشتیبان مدیریت می‌کند — staff-only.
-const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "catalog");
 
 /** POST — افزودنِ عکس به گالریِ یک محصول. { productId, url } */
 export async function POST(req: Request) {

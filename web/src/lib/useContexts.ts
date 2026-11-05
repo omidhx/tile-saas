@@ -6,8 +6,6 @@ export type Ctx = {
   tenantId: string; tenantName: string;
   agentAccountId: string | null; agentLegalName: string | null;
   role: string;
-  // v4: فقط برای role='admin'/'staff' معنا دارند (بخشِ «دسترسی» در db/team.ts)
-  canManageAccess: boolean; allowedPages: string[];
   // v5: پشتیبانِ ثابتِ این نمایندگی — فقط وقتی agentAccountId پر است معنا دارد
   assignedStaffName: string | null; assignedStaffPhone: string | null;
   // v11: واحدِ نمایشِ مبلغ — فقط لایه‌ی نمایش، ذخیره‌سازی همیشه ریال است (lib/money.ts)

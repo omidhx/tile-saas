@@ -5,6 +5,7 @@ import MessageBanner from "../../MessageBanner";
 import { getJson, postJson, loadError, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
 import { formatMoney } from "@/lib/money";
+import { useFeatures } from "@/lib/useFeatures";
 import DeleteButton from "../../DeleteButton";
 import { JalaliDateInput } from "@/lib/JalaliDateInput";
 import { toJalali, todayJalali, formatJalaliDate, jalaliToIsoDate, type Jalali } from "@/lib/date";
@@ -13,7 +14,7 @@ type AgentUser = { userId: string; phone: string; email: string | null };
 type Agent = {
   id: string; legalName: string; code: string; isActive: boolean;
   priceListId: string | null; priceListName: string | null;
-  creditLimit: number | null; autoApproveLimit: number | null;
+  autoApproveLimit: number | null;
   assignedStaffUserId: string | null; assignedStaffName: string | null; assignedStaffPhone: string | null;
   users: AgentUser[];
 };
@@ -43,6 +44,7 @@ const FA: Record<string, string> = {
 };
 
 export default function AgentsSection({ ctx }: { ctx: Ctx }) {
+  const { features } = useFeatures(ctx.tenantId);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
@@ -57,7 +59,6 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
   const [legalName, setLegalName] = useState("");
   const [code, setCode] = useState("");
   const [priceListId, setPriceListId] = useState("");
-  const [creditLimit, setCreditLimit] = useState("");
   const [autoApproveLimit, setAutoApproveLimit] = useState("");
   const [firstPhone, setFirstPhone] = useState("");
   const [firstEmail, setFirstEmail] = useState("");
@@ -105,7 +106,7 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
   useEffect(() => { load(ctx.tenantId); }, [ctx.tenantId, load]);
 
   function resetForm() {
-    setLegalName(""); setCode(""); setPriceListId(""); setCreditLimit(""); setAutoApproveLimit("");
+    setLegalName(""); setCode(""); setPriceListId(""); setAutoApproveLimit("");
     setFirstPhone(""); setFirstEmail(""); setAssignedStaffUserId("");
   }
 
@@ -115,7 +116,6 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
     const res = await postJson("/api/agents", {
       tenantId: ctx.tenantId, legalName: legalName.trim(), code: code.trim(),
       priceListId: priceListId || null,
-      creditLimit: creditLimit.trim() ? Number(creditLimit) : null,
       autoApproveLimit: autoApproveLimit.trim() ? Number(autoApproveLimit) : null,
       assignedStaffUserId: assignedStaffUserId || null,
       firstUserPhone: firstPhone.trim(), firstUserEmail: firstEmail.trim() || undefined,
@@ -270,17 +270,22 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
         <label htmlFor="cd">کد</label>
         <input id="cd" value={code} onChange={(e) => setCode(e.target.value)} placeholder="AG-ESF" />
 
-        <label htmlFor="pl">لیستِ قیمت (اختیاری)</label>
-        <select id="pl" value={priceListId} onChange={(e) => setPriceListId(e.target.value)}>
-          <option value="">— بدونِ لیستِ اختصاصی —</option>
-          {priceLists.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
-        </select>
+        {features.price_lists && (
+          <>
+            <label htmlFor="pl">لیستِ قیمت (اختیاری)</label>
+            <select id="pl" value={priceListId} onChange={(e) => setPriceListId(e.target.value)}>
+              <option value="">— لیستِ اصلی —</option>
+              {priceLists.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+            </select>
+          </>
+        )}
 
-        <label htmlFor="cl">سقفِ اعتبار (ریال، اختیاری)</label>
-        <input id="cl" inputMode="numeric" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
-
-        <label htmlFor="aa">سقفِ تأییدِ خودکارِ اختصاصی (ریال، اختیاری — خالی = ارثِ کارخانه)</label>
-        <input id="aa" inputMode="numeric" value={autoApproveLimit} onChange={(e) => setAutoApproveLimit(e.target.value)} />
+        {features.auto_approve && (
+          <>
+            <label htmlFor="aa">سقفِ تأییدِ خودکارِ اختصاصی (ریال، اختیاری — خالی = ارثِ کارخانه)</label>
+            <input id="aa" inputMode="numeric" value={autoApproveLimit} onChange={(e) => setAutoApproveLimit(e.target.value)} />
+          </>
+        )}
 
         <label htmlFor="as">پشتیبانِ ثابت (اختیاری)</label>
         <select id="as" value={assignedStaffUserId} onChange={(e) => setAssignedStaffUserId(e.target.value)}>
@@ -319,9 +324,8 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
             </span>
           </div>
           <div className="muted">
-            {a.priceListName ?? "بدونِ لیستِ اختصاصی"}
-            {a.creditLimit != null && <> · سقفِ اعتبار: {formatMoney(a.creditLimit, ctx.currencyUnit)}</>}
-            {a.autoApproveLimit != null && <> · تأییدِ خودکارِ اختصاصی: {formatMoney(a.autoApproveLimit, ctx.currencyUnit)}</>}
+            {features.price_lists && (a.priceListName ?? "لیستِ اصلی")}
+            {features.auto_approve && a.autoApproveLimit != null && <> · تأییدِ خودکارِ اختصاصی: {formatMoney(a.autoApproveLimit, ctx.currencyUnit)}</>}
           </div>
           <div style={{ marginTop: "var(--sp-2)" }}>
             {a.users.map((u) => (
@@ -371,7 +375,7 @@ export default function AgentsSection({ ctx }: { ctx: Ctx }) {
             )}
           </div>
 
-          <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-2)", borderTop: "1px solid var(--line)" }}>
+          <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-2)", borderTop: "1px solid var(--line)", display: features.agent_price ? undefined : "none" }}>
             <button className="ghost" onClick={() => toggleOverridePanel(a.id)}>
               {overrideFor === a.id ? "بستنِ استثنای قیمت" : "استثنای قیمتِ این نماینده"}
             </button>

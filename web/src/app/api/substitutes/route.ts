@@ -1,25 +1,21 @@
 import { NextResponse } from "next/server";
-import { staffCtx, staffPageCtx as staffPageCtxOf } from "@/auth/httpCtx";
+import { staffCtx, featureOff } from "@/auth/httpCtx";
 import { listSubstitutes, addSubstitute, removeSubstitute } from "@/db/substitutes";
-
-/**
- * GETِ این فهرست را /staff/catalog هم برای شمارشِ «جایگزین‌ها (N)» صدا می‌زند،
- * پس pageKey رویش نمی‌گذاریم (وگرنه staffِ محدود به فقط catalog اینجا هم گیر
- * می‌کرد). ویرایشِ واقعی (POST/DELETE) فقط از /staff/substitutes ممکن است،
- * پس همان‌جا pageKey='substitutes' اعمال می‌شود.
- */
-const staffPageCtx = (tenantId: unknown) => staffPageCtxOf(tenantId, "substitutes");
 
 export async function GET(req: Request) {
   const c = await staffCtx(new URL(req.url).searchParams.get("tenantId"));
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "substitutes");
+  if (off) return off;
   return NextResponse.json({ items: await listSubstitutes(c.tenantId) });
 }
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const c = await staffPageCtx(body?.tenantId);
+  const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "substitutes");
+  if (off) return off;
 
   const { variantId, substituteVariantId, note } = body ?? {};
   if (typeof variantId !== "string" || typeof substituteVariantId !== "string")
@@ -36,8 +32,10 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const c = await staffPageCtx(body?.tenantId);
+  const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
+  const off = await featureOff(c.tenantId, "substitutes");
+  if (off) return off;
   if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   await removeSubstitute({ tenantId: c.tenantId, id: body.id });

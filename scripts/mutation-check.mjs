@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 const RESERVE = "web/src/db/reservations.ts";
 const RESERVE_SUITE = [
   "src/db/stockContention.test.ts", "src/db/reserve.test.ts", "src/db/concurrencyIdempotency.test.ts",
-  "src/db/holdExpiry.test.ts", "src/db/autoApprove.test.ts", "src/db/waitlist.test.ts",
+  "src/db/holdExpiry.test.ts", "src/db/autoApprove.test.ts",
 ];
 const LOCK = "      ORDER BY lot_id\n      FOR UPDATE`;";
 const BACKUP_TEST = ["bash", "scripts/ci-backup-script-test.sh"];

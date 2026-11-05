@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Icon from "../../Icon";
-import { hasPageAccess } from "@/lib/staffPages";
+import { useFeatures } from "@/lib/useFeatures";
+import type { Features } from "@/lib/features";
 import PageShell from "../../PageShell";
 import { TabBar, type Tab } from "../Tabs";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
@@ -27,18 +28,13 @@ const EMPTY_FORM = { name: "", code: "", sku: "", color: "", glaze: "", punch: "
 // این‌ها همیشه دربارهِ *یک* محصولِ مشخص‌اند، روی همان کارتِ محصول باز می‌شوند.
 // فقط «ورود از اکسل» تبِ جداست، چون یک عملیاتِ دسته‌جمعیِ کلِ کارخانه/انبار
 // است و به هیچ محصولِ واحدی تعلق ندارد — روی کارتِ یک محصول جا نمی‌شود.
-const ALL_TABS: (Tab & { pageKey: string })[] = [
-  { key: "catalog", label: "محصولات", pageKey: "catalog" },
-  { key: "import", label: "ورود از اکسل", pageKey: "import" },
-  // pageKeyِ همان «prices» است، نه یکِ تازه — بالک/تک‌قلمی/پله‌ها سه راهِ رسیدن
-  // به همان دسترسی‌اند؛ گیتِ جدا یعنی مدیر باید چندبار همین اجازه را بدهد.
-  { key: "priceImport", label: "ورودِ قیمت از اکسل", pageKey: "prices" },
-  { key: "volumeDiscount", label: "پله‌های تخفیفِ حجمی", pageKey: "prices" },
+const ALL_TABS: (Tab & { feature?: keyof Features })[] = [
+  { key: "catalog", label: "محصولات" },
+  { key: "import", label: "ورود از اکسل" },
+  { key: "priceImport", label: "ورودِ قیمت از اکسل", feature: "price_import" },
+  { key: "volumeDiscount", label: "پله‌های تخفیفِ حجمی", feature: "volume_discount" },
 ];
 type Panel = "edit" | "subs" | "price" | "incoming";
-
-/** آیا این pageKey برای کاربر باز است؟ ادمین همیشه، وگرنه allowed_pages. */
-const canSeePage = (ctx: Ctx, key: string) => ctx.role === "admin" || hasPageAccess(ctx.allowedPages, key);
 
 /**
  * صفحه‌بندی‌شده — کارخانه‌ای با چندصد محصول دیگر کلِ کاتالوگ را در یک fetch
@@ -54,6 +50,7 @@ const fetchProducts = (tenantId: string, q: string, offset: number) =>
 export default function CatalogPage() {
   const { ctx, state } = useContexts("staff");
   const [tab, setTab] = useState("catalog");
+  const { features, loaded: featuresLoaded } = useFeatures(ctx?.tenantId);
   const {
     rows: products, q: query, hasMore: productsHasMore, moreBusy: productsMoreBusy,
     loadErr: productsLoadErr, loaded: productsLoaded, search: searchProducts,
@@ -92,21 +89,16 @@ export default function CatalogPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [uploading, setUploading] = useState(false);
 
-  // پرسیدنِ /api/substitutes|prices|incoming وقتی آن pageKey را نداری فقط ۴۰۳
-  // می‌گیرد — و چون همه‌ی این ۴ درخواست یک loadErr مشترک دارند، همان ۴۰۳ به‌عنوانِ
-  // «دسترسیِ این بخش را نداری» روی کلِ صفحه (که خودش کاملاً در دسترس است) می‌نشیند.
-  // پس هرکدام را فقط وقتی می‌پرسیم که واقعاً بخشِ نمایش‌دهنده‌اش دیده می‌شود.
   // محصولات دیگر اینجا نیستند — صفحه‌بندیِ خودشان را در usePaginatedSearch دارند.
-  const load = useCallback(async (c: Ctx) => {
+  const load = useCallback(async (c: Ctx, f: Features) => {
     const tenantId = c.tenantId;
     const emptySubs = Promise.resolve({ ok: true as const, data: { items: [] as Sub[] } });
     const emptyPrices = Promise.resolve({ ok: true as const, data: { lists: [] as PriceList[], items: [] as PriceItem[] } });
-    const emptyIncoming = Promise.resolve({ ok: true as const, data: { items: [] as IncomingItem[] } });
     const [s, w, pr, inc] = await Promise.all([
-      canSeePage(c, "substitutes") ? getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`) : emptySubs,
+      f.substitutes ? getJson<{ items: Sub[] }>(`/api/substitutes?tenantId=${tenantId}`) : emptySubs,
       getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${tenantId}`),
-      canSeePage(c, "prices") ? getJson<{ lists: PriceList[]; items: PriceItem[] }>(`/api/prices?tenantId=${tenantId}`) : emptyPrices,
-      canSeePage(c, "incoming") ? getJson<{ items: IncomingItem[] }>(`/api/incoming?tenantId=${tenantId}`) : emptyIncoming,
+      f.pricing ? getJson<{ lists: PriceList[]; items: PriceItem[] }>(`/api/prices?tenantId=${tenantId}`) : emptyPrices,
+      getJson<{ items: IncomingItem[] }>(`/api/incoming?tenantId=${tenantId}`),
     ]);
     if (s.ok) setSubs(s.data.items);
     if (w.ok) setWhs(w.data.warehouses);
@@ -117,13 +109,13 @@ export default function CatalogPage() {
     setLoaded(true);
   }, []);
 
-  useEffect(() => { if (ctx) load(ctx); }, [ctx, load]);
+  useEffect(() => { if (ctx && featuresLoaded) load(ctx, features); }, [ctx, load, features, featuresLoaded]);
 
   /** بعدِ هر عملیاتی که ممکن است روی محصول اثر بگذارد (قیمت/موجودی/گالری/ویرایش)
    *  هم بارِ ۴تایی و هم صفحه‌ی جاریِ محصولات را تازه می‌کند. */
   const refreshAll = useCallback(
-    async (c: Ctx) => { await Promise.all([load(c), reloadProducts()]); },
-    [load, reloadProducts],
+    async (c: Ctx) => { await Promise.all([load(c, features), reloadProducts()]); },
+    [load, reloadProducts, features],
   );
 
   // آدرسِ ورودی (مثلاً از سایدبار یا لینکِ قدیمی: ?tab=import) تبِ اولیه را تعیین می‌کند —
@@ -210,16 +202,7 @@ export default function CatalogPage() {
     );
   if (!ctx) return <main><p className="muted"><span className="spinner" /> در حال بارگذاری…</p></main>;
 
-  // v6/v7: پنج صفحه‌ی جدا (کاتالوگ/قیمت‌گذاری/ورودِ اکسل/موجودیِ در راه/جایگزین‌ها)
-  // با «محصول و موجودی» ادغام شدند. قیمت‌گذاری/موجودیِ در راه/جایگزین‌ها دیگر
-  // تبِ خودشان را ندارند — روی کارتِ همان محصول باز می‌شوند — ولی pageKeyِ
-  // قبلی‌شان دست‌نخورده می‌ماند: هرکدام فقط وقتی دکمه‌اش را می‌بینی که آن دسترسی
-  // را داری. اینطور مدیر می‌تواند پشتیبانی را فقط به «قیمت‌گذاری» محدود کند،
-  // بدونِ اینکه او بتواند مشخصاتِ محصول را ویرایش کند.
-  const canSee = (key: string) => canSeePage(ctx, key);
-  const tabs = ctx.role === "admin" ? ALL_TABS : ALL_TABS.filter((t) => hasPageAccess(ctx.allowedPages, t.pageKey));
-  if (tabs.length === 0)
-    return <PageShell ctx={ctx}><main><div className="banner banner--error" role="alert"><Icon name="alert" /><span>دسترسیِ این بخش برایت باز نیست — از مدیر بخواه اضافه‌اش کند.</span></div></main></PageShell>;
+  const tabs = ALL_TABS.filter((t) => !t.feature || features[t.feature]);
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0].key;
 
   const withImage = products.filter((p) => p.imageUrl).length;
@@ -358,7 +341,7 @@ export default function CatalogPage() {
                   {!p.hasStock && (
                     <span className="badge badge--warn" style={{ marginInlineStart: "var(--sp-2)" }}>
                       بدون موجودی
-                      {p.variantId && canSee("incoming") && (
+                      {p.variantId && (
                         <>
                           {" — "}
                           <button type="button" className="link-plain" onClick={() => togglePanel(p.id, "incoming")}
@@ -374,11 +357,11 @@ export default function CatalogPage() {
                 {p.sku ? ` · sku: ${p.sku}` : ""}
               </div>
 
-              <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
+              {features.pricing && <div className="muted" style={{ marginTop: "var(--sp-1)" }}>
                 {p.basePrice !== null
                   ? <>قیمتِ پایه: <span className="metric">{formatMoney(p.basePrice, ctx.currencyUnit)}</span> / کارتن</>
                   : <span className="subtle">قیمتی ثبت نشده</span>}
-              </div>
+              </div>}
 
               {/* بسته‌بندی: تبدیلِ کارتن⇄پالت⇄مترمربعی که نماینده در سفارش می‌بیند، همیشه دیده می‌شود
                   تا پشتیبان بدونِ بازکردنِ ویرایش هم بتواند فرمول را ببیند. */}
@@ -440,17 +423,17 @@ export default function CatalogPage() {
                   onClick={() => togglePanel(p.id, "edit")}>
                   {isOpen(p.id, "edit") ? "بستن ویرایش" : "ویرایش"}
                 </button>
-                {p.variantId && canSee("prices") && (
+                {p.variantId && features.pricing && (
                   <button className="ghost" onClick={() => togglePanel(p.id, "price")}>
                     {isOpen(p.id, "price") ? "بستنِ قیمت" : "قیمت‌گذاری"}
                   </button>
                 )}
-                {p.variantId && canSee("incoming") && (
+                {p.variantId && (
                   <button className="ghost" onClick={() => togglePanel(p.id, "incoming")}>
                     {isOpen(p.id, "incoming") ? "بستنِ موجودیِ در راه" : `موجودی در راه${inFlight.length ? ` (${money(inFlight.length)})` : ""}`}
                   </button>
                 )}
-                {p.variantId && canSee("substitutes") && (
+                {p.variantId && features.substitutes && (
                   <button className="ghost" onClick={() => togglePanel(p.id, "subs")}>
                     {isOpen(p.id, "subs") ? "بستنِ جایگزین‌ها" : `جایگزین‌ها (${money(subs.filter((s) => s.variantId === p.variantId).length)})`}
                   </button>
@@ -476,7 +459,7 @@ export default function CatalogPage() {
 
               {p.variantId && isOpen(p.id, "price") && (
                 <PricePanel ctx={ctx} product={p} priceLists={priceLists} priceItems={priceItems}
-                  onSaved={() => refreshAll(ctx)} onMsg={setMsg} onGoImport={() => go("priceImport")} />
+                  onSaved={() => refreshAll(ctx)} onMsg={setMsg} />
               )}
 
               {p.variantId && isOpen(p.id, "incoming") && (

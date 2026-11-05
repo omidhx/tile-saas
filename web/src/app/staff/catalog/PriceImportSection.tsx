@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Icon from "../../Icon";
 import { getJson, postJson, loadError, actionError } from "@/lib/api";
 import type { Ctx } from "@/lib/useContexts";
+import { useFeatures } from "@/lib/useFeatures";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // فایلِ قیمت هیچ‌وقت واقعاً این‌قدر بزرگ نیست
@@ -24,6 +25,7 @@ const pick = (o: Record<string, unknown>, names: string[]) => {
  * کالایی که در فایل نباشد دست‌نخورده می‌ماند.
  */
 export default function PriceImportSection({ ctx }: { ctx: Ctx }) {
+  const { features } = useFeatures(ctx.tenantId);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [listErr, setListErr] = useState("");
   const [priceListId, setPriceListId] = useState("");
@@ -114,6 +116,7 @@ export default function PriceImportSection({ ctx }: { ctx: Ctx }) {
           {priceLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
 
+        {features.price_lists && (<>
         <label htmlFor="npl" style={{ marginTop: "var(--sp-3)" }}>یا ساختِ سبدِ تازه</label>
         <div className="row row--start">
           <input id="npl" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="مثلاً: لیستِ ۱۴۰۵" />
@@ -121,6 +124,7 @@ export default function PriceImportSection({ ctx }: { ctx: Ctx }) {
             {creating && <span className="spinner" aria-hidden="true" />}ساخت
           </button>
         </div>
+        </>)}
         {createErr && <div className="err" style={{ marginTop: "var(--sp-2)" }}><Icon name="alert" />{createErr}</div>}
       </div>
 

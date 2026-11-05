@@ -11,7 +11,7 @@ export type AgentUser = { userId: string; phone: string; email: string | null };
 export type AgentFull = {
   id: string; legalName: string; code: string; isActive: boolean;
   priceListId: string | null; priceListName: string | null;
-  creditLimit: number | null; autoApproveLimit: number | null;
+  autoApproveLimit: number | null;
   // v5 «پشتیبانِ ثابت»: کسی که پورسانتِ این نمایندگی را می‌گیرد و به نماینده
   // نشان داده می‌شود (reservations/sales-requests). Name/Phone برای نمایشِ
   // مستقیم در همین صفحه؛ Id برای پرکردنِ دراپ‌داونِ ویرایش.
@@ -33,7 +33,7 @@ export async function listAgentsFull(tenantId: string): Promise<AgentFull[]> {
     const agents = await tx<Omit<AgentFull, "users">[]>`
       SELECT aa.id, aa.legal_name AS "legalName", aa.code, aa.is_active AS "isActive",
              aa.price_list_id AS "priceListId", pl.name AS "priceListName",
-             aa.credit_limit AS "creditLimit", aa.auto_approve_limit AS "autoApproveLimit",
+             aa.auto_approve_limit AS "autoApproveLimit",
              aa.assigned_staff_user_id AS "assignedStaffUserId",
              su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone"
       FROM agent_account aa
@@ -70,13 +70,13 @@ export type CreateAgentResult =
 /** ساختِ نمایندگیِ تازه + کاربرِ اولش (find-or-create — همان قاعده‌ی db/team.ts). */
 export async function createAgent(params: {
   tenantId: string; legalName: string; code: string;
-  priceListId?: string | null; creditLimit?: number | null; autoApproveLimit?: number | null;
+  priceListId?: string | null; autoApproveLimit?: number | null;
   assignedStaffUserId?: string | null;
   firstUserPhone: string; firstUserEmail?: string | null;
 }): Promise<CreateAgentResult> {
   const { tenantId, legalName, code } = params;
   const email = params.firstUserEmail?.trim() || null;
-  if (!validLimit(params.creditLimit) || !validLimit(params.autoApproveLimit))
+  if (!validLimit(params.autoApproveLimit))
     return { ok: false, reason: "invalid_limit" };
 
   return withTenant(tenantId, async (tx) => {
@@ -101,9 +101,9 @@ export async function createAgent(params: {
     const { userId, created, tempPassword } = found;
 
     const [agent] = await tx<{ id: string }[]>`
-      INSERT INTO agent_account (tenant_id, legal_name, code, price_list_id, credit_limit, auto_approve_limit, assigned_staff_user_id)
+      INSERT INTO agent_account (tenant_id, legal_name, code, price_list_id, auto_approve_limit, assigned_staff_user_id)
       VALUES (${tenantId}, ${legalName}, ${code}, ${params.priceListId ?? null},
-              ${params.creditLimit ?? null}, ${params.autoApproveLimit ?? null}, ${params.assignedStaffUserId ?? null})
+              ${params.autoApproveLimit ?? null}, ${params.assignedStaffUserId ?? null})
       RETURNING id`;
 
     // عضویتِ کاربر در این tenant با نقشِ 'agent' — پیش‌نیازِ FK آی agent_account_user
@@ -124,10 +124,6 @@ export async function createAgent(params: {
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
       VALUES (${tenantId}, 'sms', ${params.firstUserPhone}, ${JSON.stringify(payload)}::jsonb)`;
-    if (email)
-      await tx`
-        INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-        VALUES (${tenantId}, 'email', ${email}, ${JSON.stringify(payload)}::jsonb)`;
 
     return { ok: true, agentAccountId: agent.id, tempPassword };
   });
@@ -146,11 +142,11 @@ export type UpdateAgentResult = { ok: true } | { ok: false; reason: "code_taken"
 export async function updateAgent(params: {
   tenantId: string; agentAccountId: string; actorUserId: string;
   legalName?: string; code?: string; priceListId?: string | null;
-  creditLimit?: number | null; autoApproveLimit?: number | null; isActive?: boolean;
+  autoApproveLimit?: number | null; isActive?: boolean;
   assignedStaffUserId?: string | null;
 }): Promise<UpdateAgentResult> {
   const { tenantId, agentAccountId } = params;
-  if (!validLimit(params.creditLimit) || !validLimit(params.autoApproveLimit))
+  if (!validLimit(params.autoApproveLimit))
     return { ok: false, reason: "invalid_limit" };
   return withTenant(tenantId, async (tx) => {
     if (params.code) {
@@ -162,13 +158,13 @@ export async function updateAgent(params: {
       && !(await isActiveStaffMember(tx, tenantId, params.assignedStaffUserId)))
       return { ok: false, reason: "invalid_staff" };
 
-    const [before] = (params.creditLimit !== undefined || params.autoApproveLimit !== undefined)
-      ? await tx<{ creditLimit: string | null; autoApproveLimit: string | null }[]>`
-          SELECT credit_limit AS "creditLimit", auto_approve_limit AS "autoApproveLimit"
+    const [before] = params.autoApproveLimit !== undefined
+      ? await tx<{ autoApproveLimit: string | null }[]>`
+          SELECT auto_approve_limit AS "autoApproveLimit"
           FROM agent_account WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`
       : [];
 
-    // هفت UPDATEِ جداگانه، نه یک CASE WHEN: priceListId/creditLimit/autoApproveLimit/
+    // هفت UPDATEِ جداگانه، نه یک CASE WHEN: priceListId/autoApproveLimit/
     // assignedStaffUserId باید بشود صریحاً به NULL برگرداند (مثلاً «ارثِ سقفِ کارخانه»
     // یا «فعلاً پشتیبانِ ثابت ندارد»)، یعنی COALESCE اینجا غلط است — نبودِ کلید را
     // از NULLِ صریح جدا نگه می‌داریم.
@@ -178,8 +174,6 @@ export async function updateAgent(params: {
       await tx`UPDATE agent_account SET code = ${params.code} WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.priceListId !== undefined)
       await tx`UPDATE agent_account SET price_list_id = ${params.priceListId}::uuid WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
-    if (params.creditLimit !== undefined)
-      await tx`UPDATE agent_account SET credit_limit = ${params.creditLimit}::bigint WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.autoApproveLimit !== undefined)
       await tx`UPDATE agent_account SET auto_approve_limit = ${params.autoApproveLimit}::bigint WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
     if (params.assignedStaffUserId !== undefined)
@@ -188,10 +182,6 @@ export async function updateAgent(params: {
       await tx`UPDATE agent_account SET is_active = ${params.isActive} WHERE tenant_id = ${tenantId} AND id = ${agentAccountId}`;
 
     const oldDiff: Record<string, AuditValue> = {}, newDiff: Record<string, AuditValue> = {};
-    if (before && params.creditLimit !== undefined) {
-      const beforeVal = before.creditLimit === null ? null : Number(before.creditLimit);
-      if (beforeVal !== params.creditLimit) { oldDiff.creditLimit = beforeVal; newDiff.creditLimit = params.creditLimit; }
-    }
     if (before && params.autoApproveLimit !== undefined) {
       const beforeVal = before.autoApproveLimit === null ? null : Number(before.autoApproveLimit);
       if (beforeVal !== params.autoApproveLimit) { oldDiff.autoApproveLimit = beforeVal; newDiff.autoApproveLimit = params.autoApproveLimit; }
@@ -247,10 +237,6 @@ export async function addAgentUser(params: {
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
       VALUES (${tenantId}, 'sms', ${phone}, ${JSON.stringify(payload)}::jsonb)`;
-    if (email)
-      await tx`
-        INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-        VALUES (${tenantId}, 'email', ${email}, ${JSON.stringify(payload)}::jsonb)`;
 
     return { ok: true, created, tempPassword };
   });

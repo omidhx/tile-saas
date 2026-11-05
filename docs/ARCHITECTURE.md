@@ -19,7 +19,7 @@ staff/انباردار ────────┘        │
 | `auth/*` | هش، نشست JWT، **chokepoint دسترسی**، rate limiter دو-حالته | [authz.ts](../web/src/auth/authz.ts) |
 | `app/api/*` | route handlerها: auth/login, me, lots, reservations | [api/](../web/src/app/api/) |
 | `app/{login,reserve}` | UI نماینده (pending-state، بدون optimistic) | [reserve/page.tsx](../web/src/app/reserve/page.tsx) |
-| `app/PageShell` | Shell/Sidebarِ مشترکِ صفحاتِ داخلی (staff+agent)؛ فیلترِ `role`/`allowed_pages` را از `NavMenu` می‌گیرد، خودش کپی نمی‌کند؛ برای چاپ/auth غیرفعال‌پذیر | [PageShell.tsx](../web/src/app/PageShell.tsx) |
+| `app/PageShell` | Shell/Sidebarِ مشترکِ صفحاتِ داخلی (staff+agent)؛ فیلترِ `role` را از `NavMenu` می‌گیرد، خودش کپی نمی‌کند؛ برای چاپ/auth غیرفعال‌پذیر | [PageShell.tsx](../web/src/app/PageShell.tsx) |
 | `app/ThemeToggle` | تمِ روشن/تیره؛ `data-theme` + `localStorage`، no-flash script در `layout.tsx` قبل از اولین paint | [ThemeToggle.tsx](../web/src/app/ThemeToggle.tsx) |
 | `middleware` | CSPِ `script-src` با nonceِ تصادفیِ per-request (الگوی رسمیِ Next برای App Router) | [middleware.ts](../web/src/middleware.ts) |
 | `lib/fileCleanup` | حذفِ امنِ فایل‌های آپلودشده از دیسک (ضدِ orphan) | [fileCleanup.ts](../web/src/lib/fileCleanup.ts) |

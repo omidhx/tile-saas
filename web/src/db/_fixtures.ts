@@ -1,4 +1,5 @@
 import { sql } from "./client";
+import { sql as adminSql } from "./_testdb";
 
 /**
  * شناسه‌های ثابتی که تقریباً هر فایلِ db/*.test.ts جداگانه به‌عنوانِ
@@ -23,3 +24,9 @@ export async function seedTenantUser() {
     INSERT INTO app_user (id,phone,password_hash) VALUES ('${U}','0910','x');
   `);
 }
+
+/** همه‌ی امکاناتِ اختیاری را روشن می‌کند — برای تستِ خودِ آن امکانات (پیش‌فرضِ کارخانه: فقط قیمت). */
+export async function enableAllFeatures(tenantId: string = T) {
+  await adminSql`UPDATE tenant SET features = ${adminSql.json(ALL_ON)} WHERE id = ${tenantId}`;
+}
+const ALL_ON = { pricing: true, price_import: true, volume_discount: true, agent_price: true, price_lists: true, auto_approve: true, substitutes: true };

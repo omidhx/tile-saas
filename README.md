@@ -935,7 +935,6 @@ tile-saas/
 │       ├── outbox.ts                       # worker-outbox: claim + send + retry
 │       ├── cleanup-orphan-uploads.ts       # orphan file cleanup (dry-run + --commit)
 │       ├── seed-dev.ts                     # dev seed data
-│       └── staging-mock-db.ts              # staging mock
 │
 ├── scripts/                                # operational scripts (13 bash)
 │   ├── backup-db.sh                        # pg_dump → zstd → GPG → SHA-256
@@ -953,7 +952,6 @@ tile-saas/
 │   └── prodlike-smoke.sh                   # production-like smoke test
 │
 ├── docs/                                   # مستندات (20+ سند)
-│   ├── audits/phase-10-privacy-secret-audit.md
 │   ├── runbooks/                           # 6 operational runbooks
 │   ├── BACKUP_POLICY.md
 │   ├── RESTORE_RUNBOOK.md
@@ -969,7 +967,6 @@ tile-saas/
 │   ├── CODING_STANDARDS.md
 │   ├── KNOWN_ISSUES.md
 │   ├── KNOWN_WARNINGS.md
-│   └── FINAL_AUDIT_REPORT.md
 │
 ├── backups/                                # backup artifacts (gitignored)
 │   ├── daily/                              # database backups (.gpg + .sha256)

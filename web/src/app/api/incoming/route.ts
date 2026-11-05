@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx } from "@/auth/httpCtx";
 import { listIncoming, addIncoming, markArrived, setIncomingStatus } from "@/db/incoming";
 
-/** محموله‌های در راه را کارخانه ثبت می‌کند — staff-only. */
-const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "incoming");
 
 export async function GET(req: Request) {
   const u = new URL(req.url);
@@ -47,8 +45,8 @@ export async function PATCH(req: Request) {
       batchNumber: typeof batchNumber === "string" && batchNumber.trim() ? batchNumber.trim() : null,
     });
     if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "not_found" ? 404 : 409 });
-    // offers/notified برگردانده می‌شوند تا پشتیبان بداند رسیدنِ محموله چه اثری داشت
-    return NextResponse.json({ ok: true, offers: r.offers, notified: r.notified });
+    // notified برگردانده می‌شود تا پشتیبان بداند رسیدنِ محموله چه اثری داشت
+    return NextResponse.json({ ok: true, notified: r.notified });
   }
 
   if (action === "confirm" || action === "cancel") {

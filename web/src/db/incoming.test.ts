@@ -4,7 +4,6 @@ import { sql } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { addIncoming, listIncoming, markArrived, expectedArrivals, setIncomingStatus } from "./incoming";
-import { joinWaitlist } from "./waitlist";
 
 /**
  * موجودی در راه. دو چیز که نباید بشکنند:
@@ -31,7 +30,6 @@ before(async () => {
 
 beforeEach(async () => {
   await sql`DELETE FROM incoming_stock WHERE tenant_id = ${T}`;
-  await sql`DELETE FROM waitlist_entry WHERE tenant_id = ${T}`;
   await sql`DELETE FROM notification_outbox WHERE tenant_id = ${T}`;
   // ترتیب مهم است: هر چیزی که به lot ارجاع می‌دهد اول برود، وگرنه FK جلویش را می‌گیرد
   await sql`DELETE FROM reservation_item WHERE tenant_id = ${T}`;
@@ -115,18 +113,12 @@ test("محموله‌ی دوم از همان بچ، lotِ تکراری نمی‌
   assert.equal(await availableOf(), 150);
 });
 
-test("🔴 با رسیدنِ محموله، صف انتظار جلو می‌رود و اعلان صف می‌شود", async () => {
-  await joinWaitlist({ tenantId: T, agentAccountId: AG, variantId: V, quantityBoxes: 40 });
+test("🔴 با رسیدنِ محموله، کلِ موجودی آزاد می‌شود", async () => {
   await addSoon(200);
   const [row] = await listIncoming(T);
   const r = await markArrived({ tenantId: T, id: row.id, actorUserId: U });
   assert.ok(r.ok);
-  assert.equal(r.offers, 1, "کسی که ماه‌ها منتظر بود باید نوبتش را بگیرد");
-
-  const left = await sql`SELECT 1 FROM waitlist_entry WHERE tenant_id = ${T}`;
-  assert.equal(left.length, 0, "نوبت مصرف شد");
-  // ۴۰ کارتن به صف رفت، ۱۶۰ آزاد ماند
-  assert.equal(await availableOf(), 160);
+  assert.equal(await availableOf(), 200);
 });
 
 test("تعدادِ نامعتبر رد می‌شود", async () => {

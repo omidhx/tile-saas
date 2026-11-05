@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { staffPageCtx } from "@/auth/httpCtx";
+import { staffCtx } from "@/auth/httpCtx";
 import { listProducts, createProduct, updateProduct } from "@/db/products";
 import { isSafeImageUrl } from "@/lib/url";
 
@@ -18,7 +18,6 @@ function optPosInt(v: unknown): { ok: true; value: number | null | undefined } |
   return Number.isInteger(n) && n > 0 ? { ok: true, value: n } : { ok: false };
 }
 
-const staffCtx = (tenantId: unknown) => staffPageCtx(tenantId, "catalog");
 
 /** GET ?tenantId[&q][&offset] — محصولات صفحه‌بندی‌شده + وضعیتِ عکس (پنل کاتالوگ). */
 export async function GET(req: Request) {

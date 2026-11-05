@@ -18,7 +18,6 @@ export type IconName =
   | "bell"       // خبرم کن
   | "info"       // توضیح
   | "warehouse"  // انبار
-  | "queue"      // نوبت در صف
   | "menu"       // بازکردنِ منو
   | "close"      // بستنِ منو
   | "image"      // افزودنِ عکس به گالری
@@ -36,7 +35,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
   bell: <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
   warehouse: <><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z" /><path d="M6 18h12" /><path d="M6 14h12" /></>,
-  queue: <><path d="M3 6h18" /><path d="M3 12h12" /><path d="M3 18h6" /></>,
   menu: <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>,
   close: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
   image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></>,

@@ -1,5 +1,4 @@
 import { withTenant } from "./client";
-import { toJalali, jalaliToDate, JALALI_MONTHS } from "@/lib/date";
 
 /**
  * گزارش‌های مدیریتی (v2، spec ۹: «عملکرد نماینده، کالای پرفروش/راکد»).
@@ -21,24 +20,11 @@ export type AgentPerf = {
 };
 export type TopProduct = { name: string; code: string; boxes: number };
 export type DeadStock = { name: string; code: string; onHand: number };
-/** discountAmount از `sales_request_item.discount_amount` (پله‌ی تخفیفِ حجمیِ لحظه‌ی تأیید) — نه استثنای نماینده که خودش قیمتِ دیگری است، نه «تخفیف» روی همان قیمت. */
-export type DiscountByAgent = { agentId: string; agentName: string; discountedLines: number; discountAmount: number; grossAmount: number };
-export type DiscountByProduct = { name: string; code: string; discountedLines: number; discountAmount: number };
-export type WarehouseBucket = { warehouseId: string; warehouseName: string };
-/** فقط کارتن — نه ارزشِ ریالی. ارزش رویِ `sales_request_item` است که به یک انبارِ
- *  مشخص snapshot نشده (سفارش می‌تواند از چند انبار پر شود)، پس همان قاعده‌ی
- *  «کارتنِ بارگیری‌شده از لجر، جدا از ارزشِ سفارش» اینجا هم رعایت شده. */
-export type AgentByWarehouseRow = { agentId: string; agentName: string; warehouses: { boxes: number }[] };
-
 export type Reports = {
   from: string; to: string;
   agents: AgentPerf[];
   topProducts: TopProduct[];
   deadStock: DeadStock[];
-  discountsByAgent: DiscountByAgent[];
-  discountsByProduct: DiscountByProduct[];
-  warehouseBuckets: WarehouseBucket[];
-  agentsByWarehouse: AgentByWarehouseRow[];
 };
 
 export async function buildReports(p: {
@@ -84,24 +70,6 @@ export async function buildReports(p: {
       ORDER BY boxes DESC
       LIMIT 20`;
 
-    // عملکردِ نماینده به‌تفکیکِ انبار — همان منطقِ پرفروش‌ها (لجرِ dispatch_load،
-    // نه سفارش): یک سفارش می‌تواند از چند انبار پر شود، پس ارزشِ ریالی به یک
-    // انبارِ مشخص snapshot نشده؛ اینجا هم فقط کارتنِ واقعاً بارگیری‌شده گزارش می‌شود.
-    const rawByWarehouse = await tx<{ agentId: string; agentName: string; warehouseId: string; warehouseName: string; boxes: number }[]>`
-      SELECT aa.id AS "agentId", aa.legal_name AS "agentName", w.id AS "warehouseId", w.name AS "warehouseName",
-             SUM(-t.on_hand_delta_boxes)::int AS boxes
-      FROM inventory_transaction t
-      JOIN inventory_lot l    ON l.id = t.lot_id
-      JOIN warehouse w        ON w.id = l.warehouse_id
-      JOIN sales_dispatch sd  ON sd.tenant_id = t.tenant_id AND sd.id = t.reference_id AND t.reference_type = 'sales_dispatch'
-      JOIN agent_account aa   ON aa.id = sd.agent_account_id AND aa.tenant_id = sd.tenant_id
-      WHERE t.tenant_id = ${tenantId} AND t.transaction_type = 'dispatch_load'
-        AND t.created_at >= ${from} AND t.created_at < ${to}
-        AND ${agentAccountId ? tx`aa.id = ${agentAccountId}` : tx`TRUE`}
-        AND ${variantId ? tx`l.variant_id = ${variantId}` : tx`TRUE`}
-      GROUP BY aa.id, aa.legal_name, w.id, w.name
-      ORDER BY aa.legal_name, w.name`;
-
     // راکدها — موجودی دارد ولی در این بازه هیچ بارگیری نداشته (سرمایه‌ی خوابیده).
     // فیلترِ نماینده اینجا بی‌معنی است (موجودی مالِ نماینده‌ی خاصی نیست)، فقط کالا اعمال می‌شود.
     const deadStock = await tx<{ name: string; code: string; onHand: number }[]>`
@@ -121,135 +89,12 @@ export async function buildReports(p: {
       ORDER BY "onHand" DESC
       LIMIT 20`;
 
-    // تخفیف‌های اعمال‌شده به‌تفکیکِ نماینده — discount_amount همان چیزی است که در
-    // لحظه‌ی تأیید از پله‌ی تخفیفِ حجمی کم شده (spec ۵.۷)، مستقل از منبعِ قیمت
-    // (لیست یا استثنای نماینده). HAVING فقط نماینده‌هایی را نشان می‌دهد که واقعاً
-    // تخفیفی گرفته‌اند — وگرنه فهرست پر از صفر می‌شد.
-    const discountsByAgent = await tx<{ agentId: string; agentName: string; discountedLines: number; discountAmount: string; grossAmount: string }[]>`
-      SELECT aa.id AS "agentId", aa.legal_name AS "agentName",
-             count(*) FILTER (WHERE sri.discount_amount > 0)::int AS "discountedLines",
-             COALESCE(SUM(sri.discount_amount), 0)::bigint AS "discountAmount",
-             COALESCE(SUM(sri.unit_price_applied * sri.requested_qty_boxes), 0)::bigint AS "grossAmount"
-      FROM sales_request sr
-      JOIN agent_account aa ON aa.id = sr.agent_account_id AND aa.tenant_id = sr.tenant_id
-      JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
-      WHERE sr.tenant_id = ${tenantId}
-        AND sr.status IN ('approved', 'fulfilled')
-        AND sr.created_at >= ${from} AND sr.created_at < ${to}
-        AND ${agentAccountId ? tx`aa.id = ${agentAccountId}` : tx`TRUE`}
-        AND ${variantId ? tx`sri.variant_id = ${variantId}` : tx`TRUE`}
-      GROUP BY aa.id, aa.legal_name
-      HAVING COALESCE(SUM(sri.discount_amount), 0) > 0
-      ORDER BY "discountAmount" DESC`;
-
-    // همان تخفیف، به‌تفکیکِ کالا — کدام کالا بیشترین تخفیف را در این بازه گرفته
-    const discountsByProduct = await tx<{ name: string; code: string; discountedLines: number; discountAmount: string }[]>`
-      SELECT p.name, p.code,
-             count(*) FILTER (WHERE sri.discount_amount > 0)::int AS "discountedLines",
-             COALESCE(SUM(sri.discount_amount), 0)::bigint AS "discountAmount"
-      FROM sales_request sr
-      JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
-      JOIN product_variant pv ON pv.id = sri.variant_id
-      JOIN product p ON p.id = pv.product_id
-      WHERE sr.tenant_id = ${tenantId}
-        AND sr.status IN ('approved', 'fulfilled')
-        AND sr.created_at >= ${from} AND sr.created_at < ${to}
-        AND ${agentAccountId ? tx`sr.agent_account_id = ${agentAccountId}` : tx`TRUE`}
-        AND ${variantId ? tx`pv.id = ${variantId}` : tx`TRUE`}
-      GROUP BY p.name, p.code
-      HAVING COALESCE(SUM(sri.discount_amount), 0) > 0
-      ORDER BY "discountAmount" DESC
-      LIMIT 20`;
-
-    // باکت‌بندی: انبارهای متمایز (به ترتیبِ نام) + سطرِ هر نماینده هم‌تراز با همان ترتیب
-    const warehouseBuckets: WarehouseBucket[] = [...new Map(
-      rawByWarehouse.map((r) => [r.warehouseId, { warehouseId: r.warehouseId, warehouseName: r.warehouseName }]),
-    ).values()].sort((a, b) => a.warehouseName.localeCompare(b.warehouseName, "fa"));
-
-    const byAgentWh = new Map<string, { name: string; cells: Map<string, number> }>();
-    for (const r of rawByWarehouse) {
-      let agent = byAgentWh.get(r.agentId);
-      if (!agent) { agent = { name: r.agentName, cells: new Map() }; byAgentWh.set(r.agentId, agent); }
-      agent.cells.set(r.warehouseId, (agent.cells.get(r.warehouseId) ?? 0) + r.boxes);
-    }
-    const agentsByWarehouse: AgentByWarehouseRow[] = [...byAgentWh.entries()]
-      .map(([agentId, a]) => ({
-        agentId, agentName: a.name,
-        warehouses: warehouseBuckets.map((b) => ({ boxes: a.cells.get(b.warehouseId) ?? 0 })),
-      }))
-      .sort((x, y) => y.warehouses.reduce((s, w) => s + w.boxes, 0) - x.warehouses.reduce((s, w) => s + w.boxes, 0));
-
     return {
       from: from.toISOString(), to: to.toISOString(),
       // value به‌صورت bigint می‌آید (رشته). مبالغ ریالیِ این مقیاس خیلی زیر
       // MAX_SAFE_INTEGER‌اند، پس Number امن است.
       agents: agents.map((a) => ({ ...a, value: Number(a.value) })),
       topProducts, deadStock,
-      discountsByAgent: discountsByAgent.map((d) => ({
-        ...d, discountAmount: Number(d.discountAmount), grossAmount: Number(d.grossAmount),
-      })),
-      discountsByProduct: discountsByProduct.map((d) => ({ ...d, discountAmount: Number(d.discountAmount) })),
-      warehouseBuckets, agentsByWarehouse,
     };
-  });
-}
-
-export type MonthlyBucket = { jy: number; jm: number; label: string };
-export type AgentMonthlyRow = { agentId: string; agentName: string; months: { boxes: number; value: number }[] };
-export type MonthlyAgentPerf = { buckets: MonthlyBucket[]; rows: AgentMonthlyRow[] };
-
-/**
- * عملکردِ نماینده ماه‌به‌ماه (شمسی) — برایِ دیدنِ روند، نه یک بازه‌ی تکی.
- * چون ماه‌های شمسی روی تقویمِ میلادیِ Postgres منطبق نیستند (`date_trunc` کمکی
- * نمی‌کند)، سطرهای خام در یک کوئری گرفته می‌شوند و باکت‌بندیِ ماهانه در جاوااسکریپت
- * انجام می‌شود — با همان `toJalali`ای که کلِ سایت برایِ تقویمِ شمسی مرجع می‌داند.
- */
-export async function buildMonthlyAgentPerf(p: { tenantId: string; months: number }): Promise<MonthlyAgentPerf> {
-  const { tenantId } = p;
-  // ۰ یا منفی یعنی «حداقل یک ماه»، نه «نامعتبر پس پیش‌فرض» — || شکستِ صفر را می‌گرفت
-  const rawMonths = Math.trunc(p.months);
-  const monthsCount = Number.isFinite(rawMonths) ? Math.min(Math.max(rawMonths, 1), 12) : 6; // ponytail: سقفِ منطقی، نه پرسشِ بی‌نهایتِ سال‌ها
-
-  const todayJ = toJalali(new Date());
-  const buckets: MonthlyBucket[] = [];
-  for (let i = monthsCount - 1; i >= 0; i--) {
-    let jy = todayJ.jy, jm = todayJ.jm - i;
-    while (jm <= 0) { jm += 12; jy -= 1; }
-    buckets.push({ jy, jm, label: `${JALALI_MONTHS[jm - 1]} ${jy.toLocaleString("fa-IR", { useGrouping: false })}` });
-  }
-  const from = jalaliToDate({ jy: buckets[0].jy, jm: buckets[0].jm, jd: 1 });
-
-  return withTenant(tenantId, async (tx) => {
-    const rows = await tx<{ agentId: string; agentName: string; createdAt: string; qty: number; unitPrice: string | null; discount: string | null }[]>`
-      SELECT aa.id AS "agentId", aa.legal_name AS "agentName", sr.created_at AS "createdAt",
-             sri.requested_qty_boxes AS qty, sri.unit_price_applied AS "unitPrice", sri.discount_amount AS discount
-      FROM sales_request sr
-      JOIN agent_account aa ON aa.id = sr.agent_account_id AND aa.tenant_id = sr.tenant_id
-      JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
-      WHERE sr.tenant_id = ${tenantId} AND sr.status IN ('approved', 'fulfilled')
-        AND sr.created_at >= ${from}`;
-
-    const byAgent = new Map<string, { name: string; cells: Map<string, { boxes: number; value: number }> }>();
-    for (const r of rows) {
-      const j = toJalali(new Date(r.createdAt));
-      const key = `${j.jy}-${j.jm}`;
-      let agent = byAgent.get(r.agentId);
-      if (!agent) { agent = { name: r.agentName, cells: new Map() }; byAgent.set(r.agentId, agent); }
-      const cell = agent.cells.get(key) ?? { boxes: 0, value: 0 };
-      cell.boxes += r.qty;
-      // خطِ بدون قیمت (unit_price_applied=NULL) به ارزش صفر اضافه نمی‌شود — «قیمت ثبت نشده» با «رایگان» یکی نیست
-      if (r.unitPrice != null) cell.value += Number(r.unitPrice) * r.qty - Number(r.discount ?? 0);
-      agent.cells.set(key, cell);
-    }
-
-    const outRows: AgentMonthlyRow[] = [...byAgent.entries()]
-      .map(([agentId, a]) => ({
-        agentId, agentName: a.name,
-        months: buckets.map((b) => a.cells.get(`${b.jy}-${b.jm}`) ?? { boxes: 0, value: 0 }),
-      }))
-      // نمایندگیِ پرارزش‌تر (جمعِ کلِ بازه) بالاتر — همان ترتیبی که «عملکرد نمایندگان» دارد
-      .sort((x, y) => y.months.reduce((s, m) => s + m.value, 0) - x.months.reduce((s, m) => s + m.value, 0));
-
-    return { buckets, rows: outRows };
   });
 }

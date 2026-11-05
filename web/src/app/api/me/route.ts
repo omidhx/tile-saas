@@ -11,7 +11,7 @@ export async function GET() {
   const rows = await sql<
     {
       tenant_id: string; tenant_name: string; agent_account_id: string | null; agent_legal_name: string | null;
-      role: string; can_manage_access: boolean; allowed_pages: string[];
+      role: string;
       assigned_staff_name: string | null; assigned_staff_phone: string | null;
       currency_unit: string;
     }[]
@@ -32,8 +32,6 @@ export async function GET() {
       agentAccountId: r.agent_account_id,
       agentLegalName: r.agent_legal_name,
       role: r.role,
-      canManageAccess: r.can_manage_access,
-      allowedPages: r.allowed_pages,
       // v5: پشتیبانِ ثابتِ همین نمایندگی — فقط برای contextِ agent پر است.
       assignedStaffName: r.assigned_staff_name,
       assignedStaffPhone: r.assigned_staff_phone,
