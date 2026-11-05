@@ -14,9 +14,7 @@ export { sql };
 /**
  * بررسیِ امنیتیِ startup — نقشِ اتصال نباید superuser یا BYPASSRLS داشته باشد.
  *
- * این تابع در production باید صدا زده شود (مثلاً در instrumentation.ts یا اولین
- * middleware). اگر نقش ناامن باشد، fail-loud می‌کند.
- *
+ * instrumentation.ts در startup صدایش می‌زند و با خطا پروسه را می‌بندد.
  * در dev نادیده گرفته می‌شود. تست‌ها چک خودشان را در _testdb.ts دارند.
  */
 export async function assertNonSuperuserRole(): Promise<void> {
@@ -35,15 +33,13 @@ export async function assertNonSuperuserRole(): Promise<void> {
 
   if (role.rolsuper) {
     throw new Error(
-      "SECURITY: اپ با نقشِ SUPERUSER وصل شده. RLS بایپس می‌شود. " +
-      "از db/create-app-user.sql برای ساخت نقشِ non-superuser استفاده کنید.",
+      "SECURITY: اپ با نقشِ SUPERUSER وصل شده و RLS بایپس می‌شود. DATABASE_URL باید روی app_user باشد.",
     );
   }
 
   if (role.rolbypassrls) {
     throw new Error(
-      "SECURITY: نقشِ اتصال BYPASSRLS دارد. RLS بایپس می‌شود. " +
-      "ALTER ROLE " + " SET NOT BYPASSRLS.",
+      "SECURITY: نقشِ اتصال BYPASSRLS دارد و RLS بایپس می‌شود. DATABASE_URL باید روی app_user باشد.",
     );
   }
 }

@@ -48,6 +48,19 @@ test("RLS: با tenant A، بدون فیلتر صریح فقط ردیف‌های
   assert.deepEqual(rows.map((r) => r.name), ["A1"]);
 });
 
+test("v_lot_availability زیر RLS خواننده است، نه مالک superuser", async () => {
+  await sql.unsafe(`
+    INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('${A}','${A}','W','W1','main'), ('${B}','${B}','W','W1','main');
+    INSERT INTO product_variant (id,tenant_id,product_id,sku,boxes_per_pallet)
+      SELECT tenant_id, tenant_id, id, 'S1', 96 FROM product;
+    INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${A}','${A}','${A}','${A}'), ('${B}','${B}','${B}','${B}');
+    INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${A}','${A}',10), ('${B}','${B}',20);
+  `);
+  // بدون فیلتر صریح tenant: اگر view با نقش مالک اجرا شود، موجودی B هم برمی‌گردد.
+  const rows = await withTenant(A, (tx) => tx<{ on_hand_qty_boxes: number }[]>`SELECT on_hand_qty_boxes FROM v_lot_availability`);
+  assert.deepEqual(rows.map((r) => r.on_hand_qty_boxes), [10]);
+});
+
 test("RLS: UPDATE و DELETE بدون فیلتر صریح به ردیف tenant دیگر نمی‌رسد", async () => {
   await withTenant(A, (tx) => tx`UPDATE product SET name = 'hacked' WHERE name = 'B1'`);
   await withTenant(A, (tx) => tx`DELETE FROM product WHERE name = 'B1'`);

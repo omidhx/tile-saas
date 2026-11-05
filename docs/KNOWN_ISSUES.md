@@ -43,11 +43,11 @@
 
 ## باز — واقعاً کم است، نه تصمیم
 - ~~**CI نداریم.** تست‌ها فقط با `npm test` دستی معتبرند؛ هیچ‌چیز جلوی مرجِ کدِ تست‌نشکسته را نمی‌گیرد.~~ ✅ رفع شد (Phase 10-post): `.github/workflows/ci.yml` با PostgreSQL داکری، typecheck، test، build.
-- **AUD-009 (Phase 8→9):** فایل‌های آپلودشده در `private/uploads/` (عکسِ محصول، فاکتورها، اسناد) توسطِ سیستمِ backup فاز ۸ پشتیبانی **نمی‌شدند**. این فایل‌ها روی Docker named volume (`uploads`) ذخیره می‌شدند و اگر volume خراب شود، از بین می‌رفتند. **Phase 9 رفع شد:** اسکریپت‌های `scripts/backup-uploads.sh`، `scripts/verify-uploads.sh`، `scripts/restore-uploads.sh`، و `scripts/cleanup-old-uploads-backups.sh` ساخته شدند. این اسکریپت‌ها از الگوی backup دیتابیس پیروی می‌کنند (tar + zstd + GPG + SHA-256 + manifest + flock + CLEANUP_DONE guard). **وضعیت فعلی:** Implementation complete، static verification complete، CI runtime pending (نیازمند Docker برای تست واقعی). مرجع: `docs/BACKUP_POLICY.md` بخش uploads و `docs/UPLOADS_RESTORE_RUNBOOK.md`.
+- **AUD-009:** آپلودها با `scripts/backup-uploads.sh` بکاپ می‌شوند و `scripts/docker-smoke.sh` بازیابی‌شان را روی نصب خالی تست می‌کند.
 
 ## تصمیم‌های آگاهانه (نه باگ)
 - **رزرو lot-based** (نماینده Lot را می‌بیند). auto-pickِ FIFO مقیدِ شید = v2. (spec ۱۴.۱۱)
-- ~~**بدون `db/migrations/`** — چون prod نداریم؛ `schema.sql` نصب مرجع است. اولین دیپلوی = ساخت پوشه‌ی migration. (spec ۱۴.۹)~~ ✅ رفع شد (Phase 10-post): `db/migrations/` با `apply.ts` و دو migration (`0002_migrations_table.sql`, `0003_rate_limit_table.sql`) ساخته شد. `schema.sql` همچنان منبع حقیقت برای نصبِ تازه است.
+- ~~**بدون `db/migrations/`** — چون prod نداریم؛ `schema.sql` نصب مرجع است. اولین دیپلوی = ساخت پوشه‌ی migration. (spec ۱۴.۹)~~ ✅ رفع شد (Phase 10-post): `db/migrations/` با `web/scripts/migrate.ts` و دو migration (`0002_migrations_table.sql`, `0003_rate_limit_table.sql`) ساخته شد. `schema.sql` همچنان منبع حقیقت برای نصبِ تازه است.
 - **بدون آرشیو/پارتیشن رزرو** — مقیاس این پروژه لازمش ندارد؛ index جزئی کافی است. trigger بازبینی: هزاران رزرو فعالِ هم‌زمان. (spec ۱۴.۱۱)
 - **بدون Tailwind/React Query/Zustand** — YAGNI تا وقتی چند صفحه/چند-route شد.
 - **Rate limiter در حالتِ `memory` همچنان درون‌پروسه‌ای است** — ولی حالا `RATE_LIMIT_BACKEND=postgres` هم برای multi-instance موجود است. ponytail: برای تک-instance همون `memory` کافی است.

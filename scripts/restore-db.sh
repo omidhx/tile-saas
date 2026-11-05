@@ -85,18 +85,14 @@ BACKUP_DIR="${PROJECT_ROOT}/backups/daily"
 STATUS_DIR="${PROJECT_ROOT}/backups/status"
 STATUS_FILE="${STATUS_DIR}/backup-status.json"
 
-# Load .env (selectively, same pattern as backup-db.sh)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
   set -a
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
-               BACKUP_GPG_PASSPHRASE BACKUP_RETENTION_DAYS COMPOSE_FILE RESTORE_DB_NAME; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 
-POSTGRES_USER="${POSTGRES_USER:-tile_app}"
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-tile_saas}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required}"

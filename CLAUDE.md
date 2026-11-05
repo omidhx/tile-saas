@@ -78,7 +78,7 @@ v1 و v2 کامل‌اند (spec بخش ۹). برای اینکه **چه چیزی
 
 - `db/schema.sql` — اسکیمای Postgres، **منبع حقیقت**. RLS/composite FK اینجاست، نه در ORM.
   هر چهار تابع `SECURITY DEFINER` با `SET search_path = public, pg_temp` قفل شده‌اند (Phase 10-post).
-- `db/migrations/` — migrationهای forward-only با checksum validation. `apply.ts` اجرای idempotent.
+- `db/migrations/` — migrationهای forward-only با checksum validation. `web/scripts/migrate.ts` تنها مسیر ساخت و ارتقای دیتابیس است (schema، migrationها، نقش `app_user`).
 - `db/test_schema.sql` — تست دود schema (روی Postgres واقعی سبز).
 - `web/` — اپ Next.js (App Router, TS, src-dir) + Drizzle (introspect، نه بازتعریف).
 - `web/src/db/client.ts` — `withTenant()` که `app.tenant_id` را SET می‌کنه (RLS فعال).
@@ -88,13 +88,8 @@ v1 و v2 کامل‌اند (spec بخش ۹). برای اینکه **چه چیزی
 - `docs/ux-wireframes.md` — قرارداد رفتاریِ صفحه‌های نماینده.
 
 ```bash
-# schema روی یه Postgres محلی/تازه (نصب مرجع). هرگز روی prodِ داده‌دار دوباره اجرا نکن —
-# تغییرات prod فقط با migration نسخه‌دار در db/migrations/ (بخش ۱۴.۹ spec).
-psql "$DATABASE_URL" -f db/schema.sql
-
-# اجرای idempotentِ migrationهای اجرا‌نشده:
-node --env-file=web/.env --import tsx db/migrations/apply.ts
-# یا: cd web && npm run migrate
+# دیتابیس خالی را می‌سازد و روی دیتابیس موجود فقط migrationهای اجرانشده را می‌زند. نقش superuser لازم دارد:
+cd web && MIGRATION_DATABASE_URL=postgres://postgres:...@localhost:5432/tile npm run migrate
 
 cd web
 npm run dev        # سرور توسعه
@@ -116,10 +111,12 @@ node scripts/mutation-check.mjs
 اپ باید با نقشِ **non-superuser** به Postgres وصل شه، وگرنه RLS بایپس می‌شه.
 `DATABASE_URL` در `web/.env` (gitignored)؛ نمونه در `.env.example` (ریشه‌ی پروژه).
 
-### Docker (production-ready)
+### Docker (تنها مسیر دیپلوی)
+راهنما: `docs/GO_LIVE.md`. سرور ایران چیزی دانلود نمی‌کند: `scripts/release.sh` فایل نصب را می‌سازد.
 ```bash
-cp .env.example .env  # مقادیر واقعی پر کن
-docker compose up -d  # postgres + web + worker-expire + worker-outbox
+bash scripts/init-env.sh <دامنه یا IP>
+docker compose up -d           # postgres، migrate، web، سه worker، caddy
+bash scripts/docker-smoke.sh   # نصب تمیز تا بازیابی بکاپ، در پوشه‌ی موقت و پروژه‌ی جدا
 ```
 
 ### CI/CD

@@ -25,7 +25,6 @@
 #
 # Usage:
 #   bash scripts/backup-uploads.sh
-#   COMPOSE_FILE=docker-compose.staging.yml bash scripts/backup-uploads.sh
 #
 # Exit codes:
 #   0 — موفق
@@ -102,19 +101,15 @@ BACKUP_DIR="${PROJECT_ROOT}/backups/uploads"
 STATUS_DIR="${PROJECT_ROOT}/backups/status"
 STATUS_FILE="${STATUS_DIR}/uploads-backup-status.json"
 
-# Load .env (selectively)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
   set -a
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in BACKUP_GPG_PASSPHRASE BACKUP_OFFSITE_TARGET BACKUP_OFFSITE_SSH_KEY \
-               BACKUP_OFFSITE_METHOD BACKUP_RETENTION_DAYS COMPOSE_FILE; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 
 # Required env vars
-BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/BACKUP_POLICY.md}"
+BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/GO_LIVE.md}"
 
 # Optional env vars
 BACKUP_OFFSITE_TARGET="${BACKUP_OFFSITE_TARGET:-}"
@@ -504,7 +499,7 @@ if ! tar -tf "${TMP_DIR}/verify.tar" >/dev/null 2>&1; then
 fi
 
 # Count files in the tar — should match FILE_COUNT
-TAR_FILE_COUNT=$(tar -tf "${TMP_DIR}/verify.tar" 2>/dev/null | grep -c "^uploads/[^/]*$" || echo "0")
+TAR_FILE_COUNT=$(tar -tf "${TMP_DIR}/verify.tar" 2>/dev/null | grep -c "^uploads/[^/]\+$" || echo "0")
 if [ "${TAR_FILE_COUNT}" -ne "${FILE_COUNT}" ]; then
   warn "File count mismatch: disk=${FILE_COUNT}, tar=${TAR_FILE_COUNT}"
   warn "This may be OK if files were added/removed during backup"

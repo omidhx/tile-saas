@@ -778,7 +778,8 @@ CREATE INDEX idx_reservation_items_lot_qty ON reservation_item (lot_id, quantity
 -- تکیه کنه — باید ردیف inventory_balance را FOR UPDATE قفل و held را داخل همان
 -- تراکنش دوباره حساب کند (بخش ۶)، چون available در لحظه‌ی قفل معتبر است نه قبلش.
 
-CREATE VIEW v_lot_availability AS
+-- security_invoker: با نقشِ خواننده اجرا می‌شود؛ وگرنه مالکِ superuser از RLS رد می‌شود.
+CREATE VIEW v_lot_availability WITH (security_invoker = true) AS
 SELECT
     b.tenant_id,
     b.lot_id,
@@ -923,7 +924,7 @@ REVOKE EXECUTE ON FUNCTION finish_notification(UUID, BOOLEAN, INT) FROM PUBLIC;
 -- با `IF NOT EXISTS` قابل اجرا روی دیتابیسِ موجود هستند.
 -- ---------------------------------------------------------------------------
 
--- جدولِ ردیابیِ migrationها (apply.ts)
+-- جدولِ ردیابیِ migrationها (web/scripts/migrate.ts)
 CREATE TABLE IF NOT EXISTS _migrations (
     id          INT PRIMARY KEY,
     name        TEXT NOT NULL,

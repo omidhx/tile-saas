@@ -45,7 +45,7 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 
 **تست‌شده:** `auth/authz.test.ts` (IDOR بین‌تننتی و درون‌تننتی)، `db/test_schema.sql` تست ۴ (ایزوله‌ی RLS با نقشِ non-superuser واقعی)، `cancelReservation.test.ts` (نماینده نمی‌تواند رزروِ نمایندگی دیگر را لغو کند — و `not_found` می‌گیرد نه `not_active`، تا وجود idها را هم لو ندهد).
 
-**⚠️ شرطِ حیاتی که در عمل شکست:** RLS فقط وقتی کار می‌کند که اپ با نقشی وصل شود که **نه superuser است نه مالکِ جدول‌ها** — هر دو RLS را دور می‌زنند. در dev ما با superuser وصل می‌شویم، یعنی RLS آنجا عملاً خاموش است. این تفاوت یک باگ واقعی را پنهان کرده بود (بخش ۶ پایین). `scripts/prodlike-smoke.sh` اپ را با نقشِ محدود اجرا می‌کند؛ **قبل از هر دیپلوی اجرایش کن.**
+**⚠️ شرطِ حیاتی که در عمل شکست:** RLS فقط وقتی کار می‌کند که اپ با نقشی وصل شود که **نه superuser است نه مالکِ جدول‌ها** — هر دو RLS را دور می‌زنند. در dev ما با superuser وصل می‌شویم، یعنی RLS آنجا عملاً خاموش است. این تفاوت یک باگ واقعی را پنهان کرده بود (بخش ۶ پایین). `scripts/docker-smoke.sh` اپ را با نقشِ محدود اجرا می‌کند و CI روی هر PR اجرایش می‌کند.
 
 ---
 
@@ -149,7 +149,7 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 |---|---|---|
 | موجودی مشکوک/غلط | `/staff/ledger` → ناترازی | لجر می‌گوید چه کسی، کِی، چقدر. اصلاح **با تراکنش معکوس**، نه `UPDATE` دستی |
 | تغییرِ مشکوکِ قیمت/سقف/محصول/مشتری | `/staff/reports` → دفترِ تغییرات (`audit_log`) | چه کسی، از چه به چه — فقط فیلدهای واقعاً تغییرکرده |
-| ادعای نشتِ بین‌تننتی | تأیید کن اپ با نقشِ non-superuser وصل است | `scripts/prodlike-smoke.sh` را اجرا کن؛ تست‌های IDOR را ببین؛ Sentry را با `tenantId`/`userId` فیلتر کن (هر authorize موفق برچسب می‌زند) |
+| ادعای نشتِ بین‌تننتی | تأیید کن اپ با نقشِ non-superuser وصل است | `scripts/docker-smoke.sh` را اجرا کن؛ تست‌های IDOR را ببین؛ Sentry را با `tenantId`/`userId` فیلتر کن (هر authorize موفق برچسب می‌زند) |
 | brute-force روی ورود | rate limit خودش می‌گیرد (۴۲۹) | لاگ IP؛ در صورت نیاز در پروکسی ببند |
 | پیامک‌ها نمی‌روند | `notification_outbox` با `status='failed'` | dead-letter بعد از ۵ تلاش؛ لاگ worker |
 | نشست لو رفته | کاربر رمز را عوض کند یا staff از `/api/auth/logout-all` برایش بزند | نیازی به عوض‌کردنِ `AUTH_SECRET` نیست — `session_epoch` فقط همان کاربر را می‌کشد |
@@ -170,7 +170,7 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 | رفع | فایل | چرا مهم بود |
 |---|---|---|
 | `SET search_path = public, pg_temp` روی هر چهار تابع `SECURITY DEFINER` | `db/schema.sql` | جلوی search_path injection را می‌گیرد — بدونش، SECURITY DEFINER خودش سطحِ حمله است |
-| ساختارِ `db/migrations/` با `apply.ts` و جدول `_migrations` | `db/migrations/` | migrationهای forward-only با checksum validation — هرگز روی prodِ داده‌دار schema.sql اجرا نکن |
+| ساختارِ `db/migrations/` با `web/scripts/migrate.ts` و جدول `_migrations` | `db/migrations/` | migrationهای forward-only با checksum validation — هرگز روی prodِ داده‌دار schema.sql اجرا نکن |
 | حذفِ فایلِ فیزیکی در `removeProductImage` | `web/src/db/products.ts` + `web/src/lib/fileCleanup.ts` | جلوی انباشتِ فایل‌های یتیم (orphan) در `public/uploads/` را می‌گیرد |
 | Rate limiter دو-حالته (`RATE_LIMIT_BACKEND=memory\|postgres`) | `web/src/auth/rateLimit.ts` + `db/migrations/0003_rate_limit_table.sql` | multi-instance: سقفِ واقعاً global، نه ضرب‌شده در تعداد پروسه‌ها |
 | GitHub Actions CI | `.github/workflows/ci.yml` | جلوی مرجِ کدِ تست‌نشکسته را می‌گیرد |
@@ -179,6 +179,6 @@ spec بخش ۸ درست تشخیص داده: **خطر واقعیِ این اپ S
 ## ۱۰. قبل از هر دیپلوی
 
 ```bash
-bash scripts/prodlike-smoke.sh   # اپ با نقشِ محدود و RLS واقعاً فعال
+bash scripts/docker-smoke.sh     # نصب تمیز با نقشِ محدود و RLS واقعاً فعال
 cd web && npm test               # ۲۳۰+ تست، شامل IDOR و یکپارچگی موجودی
 ```

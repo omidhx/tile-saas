@@ -23,7 +23,7 @@ staff/انباردار ────────┘        │
 | `app/ThemeToggle` | تمِ روشن/تیره؛ `data-theme` + `localStorage`، no-flash script در `layout.tsx` قبل از اولین paint | [ThemeToggle.tsx](../web/src/app/ThemeToggle.tsx) |
 | `middleware` | CSPِ `script-src` با nonceِ تصادفیِ per-request (الگوی رسمیِ Next برای App Router) | [middleware.ts](../web/src/middleware.ts) |
 | `lib/fileCleanup` | حذفِ امنِ فایل‌های آپلودشده از دیسک (ضدِ orphan) | [fileCleanup.ts](../web/src/lib/fileCleanup.ts) |
-| `db/migrations/` | اسکریپتِ migrationِ idempotent با checksum validation | [apply.ts](../db/migrations/apply.ts) |
+| `db/migrations/` | اسکریپتِ migrationِ idempotent با checksum validation | [migrate.ts](../web/scripts/migrate.ts) |
 
 ## Data Flow — رزرو (مسیر بحرانی)
 1. کلاینت `POST /api/reservations` (بدون refetch-before-submit، pending-state).
@@ -74,7 +74,7 @@ docker compose up -d   # postgres + web + worker-expire + worker-outbox
 | RLS + composite FK **با هم** | یکی | RLS نرم (session)، FK سخت (DB)؛ مکمل |
 | JWT در کوکی HttpOnly | session در DB | ساده، بدون state سمت سرور برای MVP |
 | Rate limiter دو-حالته | فقط in-memory یا فقط Redis | `RATE_LIMIT_BACKEND=memory` برای تک-instance، `postgres` برای multi-instance — هر دو در `rateLimit.ts` |
-| Migration با checksum | schema.sql تنها | `db/migrations/apply.ts` ردِ اجرا و checksum را در `_migrations` نگه می‌دارد |
+| Migration با checksum | schema.sql تنها | `web/scripts/migrate.ts` ردِ اجرا و checksum را در `_migrations` نگه می‌دارد |
 
 ## Assumptions
 - Postgres 16+ (برای `NULLS NOT DISTINCT` احتمالیِ import، `gen_random_uuid`).
@@ -91,6 +91,6 @@ docker compose up -d   # postgres + web + worker-expire + worker-outbox
 - بازطراحیِ بصری (Shell/Sidebar/تمِ تیره‌روشن روی همه‌ی صفحاتِ داخلی، ۴ فاز) بدونِ افزودنِ Tailwind/کتابخانه‌ی کامپوننت — همان توکن‌های `CSS Custom Properties`ِ `globals.css` گسترش یافتند، منطقِ کسب‌وکار/RLS/مجوزها دست‌نخورده ماند.
 - CSPِ nonce-based در `middleware.ts` به‌جای هدرِ استاتیک در `next.config.ts` — nonce باید هر request تازه باشد؛ عوارضِ جانبیِ پذیرفته‌شده: root layout دیگر نمی‌تواند static prerender شود.
 - **هر چهار تابع `SECURITY DEFINER` حالا `SET search_path = public, pg_temp` دارند** (Phase 10-post) — جلوی search_path injection را می‌گیرد. بدونش، SECURITY DEFINER خودش سطحِ حمله است.
-- **`db/migrations/`** با `apply.ts` و جدول `_migrations` (checksum) — forward-only، idempotent. schema.sql همچنان منبع حقیقت برای نصبِ تازه.
+- **`db/migrations/`** با `web/scripts/migrate.ts` و جدول `_migrations` (checksum) — forward-only، idempotent. schema.sql همچنان منبع حقیقت برای نصبِ تازه.
 - **Rate limiter دو-حالته** (`RATE_LIMIT_BACKEND=memory|postgres`) — برای تک-instance همون in-memory کافی، برای multi-instance از جدول `_rate_limit_hits` استفاده می‌کنه.
 - **GitHub Actions CI** (`.github/workflows/ci.yml`) — هر push/PR: PostgreSQL داکری + migration + typecheck + test + build.

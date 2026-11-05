@@ -1,89 +1,34 @@
-# =============================================================================
-# Dockerfile — اپ Next.js روی VPS ایران
-# =============================================================================
-# multi-stage build: مرحله‌ی builder فقط وابستگی‌ها را نصب و بیلد می‌کند.
-# مرحله‌ی runner فقط خروجیِ بیلد + node_modulesِ production را نگه می‌دارد.
+# ایمیج اپ و workerها. روی VPS ایران بیلد نمی‌شود: scripts/release.sh آن را همراه
+# Postgres و Caddy در یک فایل می‌گذارد و سرور فقط docker load می‌کند (docs/GO_LIVE.md).
 #
-# نکته‌ی امنیتی: این image با non-root کاربر اجرا می‌شود (next).
-# در production، volumeی `/app/web/public/uploads` باید جدا باشد.
-#
-# اساس: node:22-alpine چون سبک‌تر از full node است و آسیب‌پذیری کمتری دارد.
-# Node 22 Active LTS (تا آوریل ۲۰۲۷) — Node 20 در آوریل ۲۰۲۶ منقضی شد.
-# =============================================================================
+# خروجی standalone: فقط فایل‌هایی که سرور واقعاً لازم دارد، نه کل node_modules.
+# workerها و migrate با esbuild به یک فایل تبدیل می‌شوند، پس tsx و src داخل ایمیج نیست.
 
-# ---- stage 1: deps ----
-FROM node:22-alpine AS deps
-WORKDIR /app
-
-# فقط package*.json را کپی — از cache شدنِ npm install بهره می‌برد
-COPY web/package.json web/package-lock.json* ./web/
-
+FROM node:22-alpine AS build
 WORKDIR /app/web
-RUN npm ci --include=dev
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_OUTPUT=standalone
+COPY web/package.json web/package-lock.json ./
+# xlsx از vendor نصب می‌شود، نه از cdn.sheetjs.com
+COPY web/vendor ./vendor
+RUN npm ci
+COPY web/ ./
+RUN npm run build && npm run build:scripts
 
-# ---- stage 2: builder ----
-FROM node:22-alpine AS builder
-WORKDIR /app
-
-COPY --from=deps /app/web/node_modules ./web/node_modules
-COPY web/ ./web/
-COPY db/ ./db/
-
-WORKDIR /app/web
-# NEXT_TELEMETRY_DISABLED برای جلوگیری از ارسال تله‌متری به Vercel
-ENV NEXT_TELEMETRY_DISABLED=1
-# SENTRY_DSN خالی — در build-time Sentry فعال نیست (در runtime از env خوانده می‌شود)
-ENV SENTRY_DSN=""
-
-# بیلدِ production — نیاز به DATABASE_URL ندارد در زمان build
-# (این پروژه هیچ query در زمان build نمی‌زند — همگی در runtime)
-RUN npm run build
-
-# ---- stage 3: runner ----
 FROM node:22-alpine AS runner
-WORKDIR /app
-
-# غیرفعال‌کردن telemetry در runtime هم
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# نصبِ curl برای healthcheck
-RUN apk add --no-cache curl
-
-# کاربر non-root
-RUN addgroup -g 1001 -S nodejs && adduser -S next -u 1001 -G nodejs
-
-# کپیِ خروجیِ بیلد
-COPY --from=builder --chown=next:nodejs /app/web/public ./web/public
-COPY --from=builder --chown=next:nodejs /app/web/.next ./web/.next
-COPY --from=builder --chown=next:nodejs /app/web/node_modules ./web/node_modules
-COPY --from=builder --chown=next:nodejs /app/web/package.json ./web/package.json
-COPY --from=builder --chown=next:nodejs /app/web/next.config.ts ./web/next.config.ts
-COPY --from=builder --chown=next:nodejs /app/web/instrumentation.ts ./web/instrumentation.ts
-COPY --from=builder --chown=next:nodejs /app/web/sentry.edge.config.ts ./web/sentry.edge.config.ts
-COPY --from=builder --chown=next:nodejs /app/web/sentry.server.config.ts ./web/sentry.server.config.ts
-# scripts/ برای workerهای expire و outbox
-COPY --from=builder --chown=next:nodejs /app/web/scripts ./web/scripts
-# db/migrations/ برای اجرای migrationها در startup
-COPY --from=builder --chown=next:nodejs /app/db ./db
-
-# ساختِ volume برای آپلودها — در production باید روی volume جدا باشد
-# تا با redeploy فایل‌ها از بین نروند.
-# فایل‌ها در private/uploads ذخیره می‌شوند (خارج از public/) و فقط از طریق
-# /api/uploads/[id] با احراز هویت قابل دسترسی هستند.
-RUN mkdir -p /app/web/private/uploads && chown -R next:nodejs /app/web/private/uploads
-VOLUME ["/app/web/private/uploads"]
-
-USER next
+# bash و GNU tar برای scripts/backup-uploads.sh که با docker exec داخل web اجرا می‌شود
+RUN apk add --no-cache bash tar && addgroup -g 1001 -S nodejs && adduser -S next -u 1001 -G nodejs
 WORKDIR /app/web
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+# فهرست سفید: tracer چون process.cwd() می‌بیند کل پروژه (src، e2e و غیره) را هم در standalone می‌ریزد.
+COPY --from=build --chown=next:nodejs /app/web/.next/standalone/server.js /app/web/.next/standalone/package.json ./
+COPY --from=build --chown=next:nodejs /app/web/.next/standalone/node_modules ./node_modules
+COPY --from=build --chown=next:nodejs /app/web/.next/standalone/.next ./.next
+COPY --from=build --chown=next:nodejs /app/web/.next/static ./.next/static
+COPY --from=build --chown=next:nodejs /app/web/public ./public
+COPY --from=build --chown=next:nodejs /app/web/dist-scripts ./dist-scripts
+COPY --chown=next:nodejs db/ /app/db/
+# volume آپلودها در compose است؛ مالکیت پوشه را volume تازه از همین‌جا می‌گیرد.
+RUN install -d -o next -g nodejs /app/web/private/uploads
+USER next
 EXPOSE 3000
-
-# healthcheck: هر ۳۰ ثانیه، تا ۳ بار شکست قبل از restart
-# /api/health = liveness (فقط process زنده است)
-# /api/ready = readiness (DB هم در دسترس است) — در reverse proxy استفاده شود
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:3000/api/health || exit 1
-
-# Next.js standalone mode (تا image سبک‌تر باشد) — ولی این پروژه از standalone
-# استفاده نمی‌کند چون next.config.ts آن را فعال نکرده. پس next start استفاده می‌کنیم.
-CMD ["npm", "run", "start"]
+CMD ["node", "server.js"]

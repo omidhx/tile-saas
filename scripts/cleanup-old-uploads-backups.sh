@@ -37,10 +37,8 @@ BACKUP_DIR="${PROJECT_ROOT}/backups/uploads"
 
 if [ -f "${PROJECT_ROOT}/.env" ]; then
   set -a
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in BACKUP_RETENTION_DAYS BACKUP_OFFSITE_TARGET; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 

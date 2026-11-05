@@ -8,21 +8,16 @@
 --    migration با مالکِ جدول (یا superuser) اجرا می‌شود.
 --    runtime با `app_user` اجرا می‌شود که فقط DML دارد نه DDL.
 --
--- اجرا:
---   psql "$DATABASE_URL" -f db/create-app-user.sql
---   سپس رمز را عوض کنید:
---   ALTER ROLE app_user PASSWORD 'رمزِ قویِ واقعی';
+-- دستی اجرا نمی‌شود: web/scripts/migrate.ts آن را اجرا می‌کند و رمز را از APP_USER_PASSWORD می‌گیرد.
+-- reset تست‌ها همین فایل را می‌خوانند، پس نقشِ تست و production یکی است.
 -- =============================================================================
 
 -- ۱. ساخت نقش (اگر وجود ندارد)
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-        -- رمزِ موقت — حتماً بعد از اجرا عوض کنید
-        CREATE ROLE app_user LOGIN PASSWORD 'TEMPORARY_CHANGE_ME' NOBYPASSRLS;
-        RAISE NOTICE 'نقش app_user ساخته شد. رمز را حتماً عوض کنید: ALTER ROLE app_user PASSWORD ''...''';
-    ELSE
-        RAISE NOTICE 'نقش app_user از قبل وجود دارد.';
+        -- بدون رمز، تا کسی با مقدار پیش‌فرضِ معلوم وارد نشود.
+        CREATE ROLE app_user LOGIN NOBYPASSRLS;
     END IF;
 END $$;
 
@@ -60,7 +55,7 @@ GRANT SELECT, INSERT, UPDATE ON password_reset TO app_user;
 GRANT SELECT ON v_lot_availability TO app_user;
 
 -- ۶. جداول زیرساختی — least privilege
---    _migrations: فقط SELECT (apply.ts با migration role اجرا می‌شود)
+--    _migrations: فقط SELECT (migrate.ts با نقش superuser اجرا می‌شود)
 --    _rate_limit_hits: SELECT, INSERT, DELETE (rate limiter نیاز دارد)
 GRANT SELECT ON _migrations TO app_user;
 GRANT SELECT, INSERT, DELETE ON _rate_limit_hits TO app_user;
@@ -75,6 +70,13 @@ GRANT EXECUTE ON FUNCTION user_contexts(UUID) TO app_user;
 GRANT EXECUTE ON FUNCTION expire_due_reservations() TO app_user;
 GRANT EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) TO app_user;
 GRANT EXECUTE ON FUNCTION finish_notification(UUID, BOOLEAN, INT) TO app_user;
+
+-- بکاپ با --no-privileges گرفته می‌شود؛ بعد از بازیابی این REVOKEهای schema.sql برنمی‌گردند مگر اینجا.
+REVOKE EXECUTE ON FUNCTION user_contexts(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION expire_due_reservations() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION claim_pending_notifications(INT, INT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION finish_notification(UUID, BOOLEAN, INT) FROM PUBLIC;
+REVOKE ALL ON _rate_limit_hits FROM PUBLIC;
 
 -- ۹. جداول آینده هم GRANT بگیرند (برای migrationهای بعدی)
 --    فقط روی جدول‌های tenant-scoped — مالک باید این را بعد از CREATE TABLE بزند

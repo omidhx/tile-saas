@@ -35,4 +35,4 @@ test("هر چهار تابعِ SECURITY DEFINER باید SET search_path داش�
 //   ۱. اضافی بود — تستِ بالا همین را پوشش می‌دهد (schema.sql شاملِ search_path است)
 //   ۲. مسیر فایل migration اشتباه بود (../../ به‌جای ../../../)
 //   ۳. بعد از شکست این تست، test runner هنگ می‌کرد و ۲۸ دقیقه معطل می‌شد
-// اعتبارسنجیِ واقعیِ migration 0004 در CI stepِ "Run migrations (apply.ts)" انجام می‌شود.
+// اعتبارسنجیِ واقعیِ migration 0004 در CI stepِ "Fresh install (scripts/migrate.ts)" انجام می‌شود.

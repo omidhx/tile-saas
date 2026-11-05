@@ -9,7 +9,7 @@
 #
 # ⚠️  این اسکریپت فقط بکاپ‌های LOCAL را حذف می‌کند. برایِ بکاپ‌های off-site،
 #     باید به‌صورتِ جداگانه روی storage هدف اجرا شود (مثلاً با SSH).
-#     این مورد در `docs/BACKUP_POLICY.md` بخشِ ۵ توضیح داده شده.
+#     
 #
 # Usage:
 #   bash scripts/cleanup-old-backups.sh
@@ -62,13 +62,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="${PROJECT_ROOT}/backups/daily"
 
-# Load .env (selectively)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
   set -a
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in BACKUP_RETENTION_DAYS BACKUP_OFFSITE_TARGET BACKUP_OFFSITE_SSH_KEY; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 
@@ -90,7 +87,7 @@ log "Cleaning up LOCAL backups older than ${RETENTION_DAYS} days"
 log "Backup directory: ${BACKUP_DIR}"
 if [ -n "${BACKUP_OFFSITE_TARGET:-}" ]; then
   warn "Off-site backups at '${BACKUP_OFFSITE_TARGET}' are NOT cleaned by this script."
-  warn "Run cleanup on the off-site host separately (see docs/BACKUP_POLICY.md section 5)."
+  warn "Run cleanup on the off-site host separately."
 fi
 
 # Find and delete old backup files (.gpg and .sha256 pairs)

@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### فاز ۳: یک مسیر دیپلوی
+
+- دو نقش دیتابیس و یک مسیر: `web/scripts/migrate.ts` و `docker-compose.yml`. `db/migrations/apply.ts`، staging compose و Caddyfile جدا رفتند.
+- workerها در ایمیج قبلی اصلاً اجرا نمی‌شدند (`MODULE_NOT_FOUND` پشت `|| true`). حالا با esbuild بیلد می‌شوند و شکستشان دیده می‌شود.
+- اپ با URL superuser از پروسه خارج می‌شود، به‌جای اینکه بالا بماند و ۵۰۰ بدهد.
+- `v_lot_availability` با `security_invoker` (migration 0007).
+- `scripts/release.sh` فایل نصب بدون نیاز به اینترنت می‌سازد و `scripts/docker-smoke.sh` نصب تمیز تا بازیابی را در CI اجرا می‌کند.
+- `xlsx` از `web/vendor` نصب می‌شود، نه از `cdn.sheetjs.com`.
+- اسناد DR و staging حذف شدند و `docs/GO_LIVE.md` تنها راهنمای نصب است. جدول «Production-Readiness» پایین قدیمی است؛ وضعیت را از `docs/PHASES.md` بخوانید.
+
 ### Production-Readiness Status — Honest Assessment
 
 > **Phase 8 is statically hardened and partially runtime-verified;
