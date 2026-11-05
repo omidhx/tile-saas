@@ -231,7 +231,8 @@ else
 fi
 
 # Run pg_restore --list, count entries
-TABLE_COUNT=$("${pg_restore_cmd[@]}" --list "${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || echo "0")
+# فایل روی host است، پس از stdin می‌خوانیم تا داخل کانتینر هم کار کند.
+TABLE_COUNT=$("${pg_restore_cmd[@]}" --list <"${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || true)
 if [ "${TABLE_COUNT}" -lt 10 ]; then
   error "pg_restore --list returned too few entries (${TABLE_COUNT})"
   error "Expected ≥ 10 tables, got ${TABLE_COUNT}"

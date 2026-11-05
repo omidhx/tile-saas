@@ -499,7 +499,7 @@ if ! tar -tf "${TMP_DIR}/verify.tar" >/dev/null 2>&1; then
 fi
 
 # Count files in the tar — should match FILE_COUNT
-TAR_FILE_COUNT=$(tar -tf "${TMP_DIR}/verify.tar" 2>/dev/null | grep -c "^uploads/[^/]\+$" || echo "0")
+TAR_FILE_COUNT=$(tar -tf "${TMP_DIR}/verify.tar" 2>/dev/null | grep -c "^uploads/[^/]\+$" || true)
 if [ "${TAR_FILE_COUNT}" -ne "${FILE_COUNT}" ]; then
   warn "File count mismatch: disk=${FILE_COUNT}, tar=${TAR_FILE_COUNT}"
   warn "This may be OK if files were added/removed during backup"

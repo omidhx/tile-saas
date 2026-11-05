@@ -51,7 +51,7 @@ decrypt "$DB_BACKUP" | compose exec -T postgres pg_restore -U "$POSTGRES_USER" -
 
 echo "→ جابه‌جایی نام‌ها؛ دیتابیس قبلی: ${OLD_DB}"
 # اتصال باز روی دیتابیس فعلی نباید جابه‌جایی را متوقف کند؛ اپ و workerها همین الان متوقف شده‌اند.
-psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('${POSTGRES_DB}', '${NEW_DB}') AND pid <> pg_backend_pid()"
+psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('${POSTGRES_DB}', '${NEW_DB}') AND pid <> pg_backend_pid()" >/dev/null
 psql_admin -c "ALTER DATABASE \"${POSTGRES_DB}\" RENAME TO \"${OLD_DB}\"" -c "ALTER DATABASE \"${NEW_DB}\" RENAME TO \"${POSTGRES_DB}\""
 
 if [ -n "$UPLOADS_BACKUP" ]; then

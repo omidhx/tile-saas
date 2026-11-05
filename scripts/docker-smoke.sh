@@ -78,11 +78,17 @@ compose up -d
 wait_for "سایت از Caddy با HTTPS بالا آمد" 180 ready
 expect "migrate موفق خارج شد" 0 "$(docker inspect -f '{{.State.ExitCode}}' "$(compose ps -aq migrate)")"
 expect "HTTP به HTTPS می‌رود" 308 "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/)"
+# standalone پوشه‌ی static را کپی نمی‌کند؛ اگر Dockerfile جا بیندازد صفحه بدون JS و CSS بالا می‌آید.
+ASSET="$(http "$BASE/login" | grep -oE '/_next/static/[^"]+\.js' | sed -n 1p)"
+[ -n "$ASSET" ] || fail "صفحه‌ی ورود فایل JS ندارد"
+expect "فایل‌های static سرو می‌شوند" 200 "$(http -o /dev/null -w '%{http_code}' "$BASE$ASSET")"
 
 step "۲. نقش‌ها"
 expect "app_user نه superuser است نه BYPASSRLS" "f|f" "$(q "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname='app_user'")"
 expect "اپ با app_user وصل است" app_user "$(q "SELECT string_agg(DISTINCT usename, ',') FROM pg_stat_activity WHERE datname='tile_saas' AND pid <> pg_backend_pid()")"
-compose logs web | grep -q "DB role verification passed" || fail "چک نقش در startup اجرا نشد"
+# داخل فایل، نه با pipe: grep -q زود می‌بندد و pipefail آن را شکست حساب می‌کند.
+compose logs web >"$WORK/web.log"
+grep -q "DB role verification passed" "$WORK/web.log" || fail "چک نقش در startup اجرا نشد"
 pass "چک نقش در startup اجرا شد"
 SUPER_URL="postgresql://postgres:${PG_PW}@postgres:5432/tile_saas"
 set +e
@@ -208,7 +214,8 @@ compose restart worker-outbox
 wait_for "worker بعد از بازیابی کار می‌کند" 60 query_is "SELECT status FROM notification_outbox WHERE recipient='09120000096'" sent
 
 step "۹. ارتقای دوباره و ریبوت"
-compose run --rm --no-deps -T migrate | grep -q "0 migration تازه" || fail "migrate دوم چیزی اجرا کرد"
+compose run --rm --no-deps -T migrate >"$WORK/migrate2.log"
+grep -q "0 migration تازه" "$WORK/migrate2.log" || fail "migrate دوم چیزی اجرا کرد"
 pass "migrate دوباره چیزی را عوض نمی‌کند"
 # ریبوت سرور: Docker ترتیب depends_on را رعایت نمی‌کند و اپ ممکن است قبل از Postgres بالا بیاید.
 compose stop web postgres

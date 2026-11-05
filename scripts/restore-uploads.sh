@@ -289,7 +289,7 @@ if [ "${RESTORED_FILE_COUNT}" -eq 0 ]; then
 fi
 
 # 3.2 Check for path traversal (no .. in any path)
-TRAVERSAL_COUNT=$(find "${EXTRACTED_UPLOADS_DIR}" -type f | grep -c "\.\." || echo "0")
+TRAVERSAL_COUNT=$(find "${EXTRACTED_UPLOADS_DIR}" -type f | grep -c "\.\." || true)
 if [ "${TRAVERSAL_COUNT}" -gt 0 ]; then
   error "Path traversal detected in restored files"
   error "Found ${TRAVERSAL_COUNT} files with '..' in path"
