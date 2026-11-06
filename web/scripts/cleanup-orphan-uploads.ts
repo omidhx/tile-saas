@@ -14,8 +14,8 @@
 // ببینید چه‌چیز حذف می‌شود؛ بعد با --commit اجرا کنید.
 //
 // استفاده:
-//   DATABASE_URL=postgres://... node --import tsx scripts/cleanup-orphan-uploads.ts            # dry-run
-//   DATABASE_URL=postgres://... node --import tsx scripts/cleanup-orphan-uploads.ts --commit   # واقعی
+//   MIGRATION_DATABASE_URL=postgres://postgres:...@host/db node --import tsx scripts/cleanup-orphan-uploads.ts   # dry-run
+//   MIGRATION_DATABASE_URL=... node --import tsx scripts/cleanup-orphan-uploads.ts --commit   # واقعی
 //
 // به‌علاوه --max-days=N برای محدودکردنِ فایل‌های قدیمی‌تر از N روز (پیش‌فرض: ۷).
 // فایل‌های تازه‌تر از این سقف رد می‌شوند چون ممکن است در حالِ upload باشند.
@@ -28,9 +28,12 @@ import postgres from "postgres";
 const UPLOADS_DIR = join(process.cwd(), "private", "uploads");
 
 async function main() {
-  const url = process.env.DATABASE_URL;
+  // ارجاع‌ها در جدول‌های دارای RLS هستند و این اسکریپت به هیچ tenantی تعلق ندارد. با نقشِ
+  // app_user صفر ردیف می‌دید و همه‌ی عکس‌های زنده را یتیم حساب می‌کرد (فاز ۴). پس فقط با
+  // نقشی اجرا می‌شود که RLS را دور می‌زند: همان superuserِ migrate.
+  const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) {
-    console.error("DATABASE_URL تنظیم نشده.");
+    console.error("MIGRATION_DATABASE_URL تنظیم نشده (نقشِ superuser، همان که migrate استفاده می‌کند).");
     process.exit(1);
   }
   const commit = process.argv.includes("--commit");
@@ -44,6 +47,17 @@ async function main() {
   const sql = postgres(url, { max: 1, onnotice: () => {} });
 
   try {
+    const [role] = await sql<{ sees_all: boolean }[]>`
+      SELECT rolsuper OR rolbypassrls AS sees_all FROM pg_roles WHERE rolname = current_user`;
+    if (!role?.sees_all) {
+      console.error(
+        "این نقش زیرِ RLS است و ارجاعِ عکس‌ها را نمی‌بیند؛ هر عکسِ زنده یتیم دیده می‌شود. " +
+        "با MIGRATION_DATABASE_URL (superuser) اجرا کنید.",
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     // ۱. خواندنِ همه‌ی فایل‌های روی دیسک
     let filesOnDisk: string[] = [];
     try {

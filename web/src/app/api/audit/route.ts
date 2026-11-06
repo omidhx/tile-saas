@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { listAudit } from "@/db/audit";
+import { isId } from "@/lib/validate";
 
 /** GET /api/audit?tenantId[&q][&offset] — دفترِ تغییراتِ قواعدِ پولی، صفحه‌بندی‌شده. فقط staff. */
 export async function GET(req: Request) {
@@ -9,9 +10,10 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const u = new URL(req.url);
-  const tenantId = u.searchParams.get("tenantId") ?? "";
+  const tenantId = u.searchParams.get("tenantId");
+  if (!isId(tenantId)) return NextResponse.json({ error: "invalid" }, { status: 400 });
   const q = u.searchParams.get("q") ?? undefined;
-  const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
+  const offset = Math.max(0, Math.trunc(Number(u.searchParams.get("offset") ?? "0")) || 0); // منفی/اعشار به OFFSET نرسد
   try {
     await authorizeStaff(userId, tenantId);
   } catch (e) {

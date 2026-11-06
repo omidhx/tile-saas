@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id as uuid, count, parse } from "@/lib/validate";
 import { randomBytes } from "node:crypto";
 import { agentCtx } from "@/auth/httpCtx";
 import { listCatalogs, listPickableVariants, getTenantSlug, createCatalog, updateCatalog, setCatalogActive, deleteCatalog } from "@/db/sharedCatalog";
 import type { CatalogItemInput } from "@/db/sharedCatalog";
 
+// قیمت اختیاری است؛ اگر آمد باید عددِ صحیحِ نامنفی باشد (قانون ۷)
+const Items = z.array(z.object({ variantId: uuid, customerPrice: count.nullish() })).min(1);
+const Target = z.object({ id: uuid });
+const Active = z.object({ id: uuid, isActive: z.boolean() });
+
 /** اعتبارسنجیِ آرایه‌ی آیتم‌ها از بدنه‌ی درخواست. null یعنی نامعتبر. */
 function parseItems(raw: unknown): CatalogItemInput[] | null {
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  const out: CatalogItemInput[] = [];
-  for (const it of raw) {
-    if (!it || typeof it.variantId !== "string") return null;
-    const cp = it.customerPrice;
-    // قیمت اختیاری است؛ اگر آمد باید عددِ صحیحِ نامنفی باشد
-    if (cp != null && (typeof cp !== "number" || !Number.isInteger(cp) || cp < 0)) return null;
-    out.push({ variantId: it.variantId, customerPrice: cp == null ? null : cp });
-  }
-  return out;
+  const r = Items.safeParse(raw);
+  return r.success ? r.data.map((it) => ({ variantId: it.variantId, customerPrice: it.customerPrice ?? null })) : null;
 }
 
 export async function GET(req: Request) {
@@ -32,7 +31,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await agentCtx(body?.tenantId, body?.agentAccountId);
   if ("err" in c) return c.err;
 
@@ -57,10 +56,11 @@ export async function POST(req: Request) {
  *   { id, title, items }    → ویرایشِ عنوان و آیتم‌ها (token دست‌نخورده می‌ماند)
  */
 export async function PATCH(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await agentCtx(body?.tenantId, body?.agentAccountId);
   if ("err" in c) return c.err;
-  if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const t = parse(Target, body);
+  if ("err" in t) return t.err;
 
   if ("items" in body || "title" in body) {
     if (typeof body.title !== "string" || !body.title.trim())
@@ -68,23 +68,25 @@ export async function PATCH(req: Request) {
     const items = parseItems(body.items);
     if (!items) return NextResponse.json({ error: "no_items" }, { status: 400 });
     await updateCatalog({
-      tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: body.id, title: body.title, items,
+      tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: t.data.id, title: body.title, items,
       showDetails: body.showDetails === true,
     });
     return NextResponse.json({ ok: true });
   }
 
-  if (typeof body.isActive !== "boolean") return NextResponse.json({ error: "invalid" }, { status: 400 });
-  await setCatalogActive({ tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: body.id, isActive: body.isActive });
+  const a = parse(Active, body);
+  if ("err" in a) return a.err;
+  await setCatalogActive({ tenantId: c.tenantId, agentAccountId: c.agentAccountId, ...a.data });
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await agentCtx(body?.tenantId, body?.agentAccountId);
   if ("err" in c) return c.err;
-  if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const t = parse(Target, body);
+  if ("err" in t) return t.err;
 
-  await deleteCatalog({ tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: body.id });
+  await deleteCatalog({ tenantId: c.tenantId, agentAccountId: c.agentAccountId, id: t.data.id });
   return NextResponse.json({ ok: true });
 }

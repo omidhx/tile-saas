@@ -123,7 +123,7 @@ export async function createAgent(params: {
       : { type: "agent_invite", tenantName: tenant.name, agentName: legalName, identifier: params.firstUserPhone, tempPassword: "— با رمزِ فعلیِ خود وارد شوید —" };
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-      VALUES (${tenantId}, 'sms', ${params.firstUserPhone}, ${JSON.stringify(payload)}::jsonb)`;
+      VALUES (${tenantId}, 'sms', ${params.firstUserPhone}, ${tx.json(payload)})`;
 
     return { ok: true, agentAccountId: agent.id, tempPassword };
   });
@@ -236,7 +236,7 @@ export async function addAgentUser(params: {
       : { type: "agent_invite", tenantName: tenant.name, agentName: agent.legal_name, identifier: phone, tempPassword: "— با رمزِ فعلیِ خود وارد شوید —" };
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-      VALUES (${tenantId}, 'sms', ${phone}, ${JSON.stringify(payload)}::jsonb)`;
+      VALUES (${tenantId}, 'sms', ${phone}, ${tx.json(payload)})`;
 
     return { ok: true, created, tempPassword };
   });

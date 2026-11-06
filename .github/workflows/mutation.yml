@@ -16,6 +16,7 @@ on:
       - "web/src/db/reservations.ts"
       - "web/src/db/dispatches.ts"
       - "web/src/db/customers.ts"
+      - "web/src/db/ledger.ts"
       - "web/src/db/_testdb.ts"
       - "web/src/auth/**"
       - "web/src/proxy.ts"

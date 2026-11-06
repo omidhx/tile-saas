@@ -45,6 +45,8 @@ mkdir -p "$TMP/bin"
 cat > "$TMP/bin/docker" <<'SHIM'
 #!/bin/bash
 # docker compose -f FILE ps postgres | docker compose -f FILE exec -T -e X postgres CMD...
+# argv ثبت می‌شود: رمز نباید در خطِ فرمانِ docker باشد، چون در ps دیده می‌شود.
+printf '%s\n' "$*" >> "$DOCKER_ARGV_LOG"
 case "$4" in
   ps) echo postgres; exit 0 ;;
   exec) shift 4; while [ "$1" != "postgres" ]; do shift; done; shift; exec "$@" ;;
@@ -58,8 +60,13 @@ cp -r "$ROOT/scripts" "$TMP/project/scripts"
 
 PATH="$TMP/bin:$PATH" \
   POSTGRES_USER="$ADMIN_USER" POSTGRES_DB="$DB" POSTGRES_PASSWORD="$PGPASSWORD" \
-  BACKUP_GPG_PASSPHRASE="$PASSPHRASE" BACKUP_LOCK_FILE="$TMP/lock" \
+  BACKUP_GPG_PASSPHRASE="$PASSPHRASE" BACKUP_LOCK_FILE="$TMP/lock" DOCKER_ARGV_LOG="$TMP/argv" \
   bash "$TMP/project/scripts/backup-db.sh"
+
+# رمزِ CI کوتاه است ("pw")؛ جست‌وجوی خودِ مقدار در مسیرها هم پیدا می‌شد، پس الگوی انتقالش را می‌گردیم.
+if grep -q 'PGPASSWORD=' "$TMP/argv"; then
+  echo "FAIL: رمزِ Postgres در argvِ docker است و در ps دیده می‌شود" >&2; exit 1
+fi
 
 BACKUP="$(ls -t "$TMP"/project/backups/daily/*.gpg | head -1)"
 

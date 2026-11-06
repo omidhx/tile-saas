@@ -1,7 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { parse } from "@/lib/validate";
 import { adminCtx } from "@/auth/httpCtx";
 import { getSmsConfig, updateSmsConfig, SMS_NOTIFICATION_TYPES } from "@/db/smsConfig";
 import { SMS_PROVIDERS } from "@/notify/smsProviders";
+
+const providerIds = SMS_PROVIDERS.map((p) => p.id) as [(typeof SMS_PROVIDERS)[number]["id"], ...(typeof SMS_PROVIDERS)[number]["id"][]];
+const Patch = z.object({
+  enabled: z.boolean().optional(),
+  provider: z.enum(providerIds).nullish(), // null = پاک‌کردنِ انتخاب
+  senderNumber: z.string().optional(), apiKey: z.string().optional(),
+  username: z.string().optional(), password: z.string().optional(),
+  patterns: z.partialRecord(
+    z.enum(SMS_NOTIFICATION_TYPES), z.object({ patternCode: z.string(), paramNames: z.string().optional() }),
+  ).optional(),
+});
 
 /** GET/PATCH پنلِ پیامکیِ کارخانه (provider/کلید/شماره/پترن‌ها). admin-only، مثلِ بقیه‌ی تنظیماتِ کارخانه. */
 export async function GET(req: Request) {
@@ -11,30 +24,13 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await adminCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { enabled, provider, senderNumber, apiKey, username, password, patterns } = body ?? {};
-  if (provider !== undefined && provider !== null && !SMS_PROVIDERS.some((p) => p.id === provider))
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
-  if (patterns !== undefined) {
-    if (typeof patterns !== "object" || patterns === null)
-      return NextResponse.json({ error: "invalid" }, { status: 400 });
-    for (const key of Object.keys(patterns))
-      if (!SMS_NOTIFICATION_TYPES.includes(key as (typeof SMS_NOTIFICATION_TYPES)[number]))
-        return NextResponse.json({ error: "invalid" }, { status: 400 });
-  }
+  const p = parse(Patch, body);
+  if ("err" in p) return p.err;
 
-  await updateSmsConfig({
-    tenantId: c.tenantId, actorUserId: c.userId,
-    enabled: typeof enabled === "boolean" ? enabled : undefined,
-    provider: provider === undefined ? undefined : provider,
-    senderNumber: typeof senderNumber === "string" ? senderNumber : undefined,
-    apiKey: typeof apiKey === "string" ? apiKey : undefined,
-    username: typeof username === "string" ? username : undefined,
-    password: typeof password === "string" ? password : undefined,
-    patterns,
-  });
+  await updateSmsConfig({ tenantId: c.tenantId, actorUserId: c.userId, ...p.data });
   return NextResponse.json({ ok: true });
 }

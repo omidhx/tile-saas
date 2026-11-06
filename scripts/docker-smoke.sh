@@ -124,6 +124,14 @@ UPLOAD_NAME="$(sed -E 's#.*"/uploads/([^"]+)".*#\1#' <<<"$UPLOAD")"
 UPLOAD_SHA="$(sha256sum "$WORK/pixel.png" | cut -d' ' -f1)"
 file_sha() { compose exec -T web sha256sum "/app/web/private/uploads/$UPLOAD_NAME" | cut -d' ' -f1; }
 expect "فایل آپلودشده روی volume است" "$UPLOAD_SHA" "$(file_sha)"
+# همان URLی که در DB ذخیره می‌شود، از Caddy و بدون نشست (کاتالوگِ اشتراکی ورود ندارد)
+url_sha() { http "$BASE/uploads/$UPLOAD_NAME" | sha256sum | cut -d' ' -f1; }
+expect "عکس با URLِ ذخیره‌شده و بدون ورود دیده می‌شود" "$UPLOAD_SHA" "$(url_sha)"
+
+# پیامکِ دعوت: payload باید شیء باشد، نه رشته‌ی jsonb (متنِ پیامک در production لاگ نمی‌شود)
+INVITE="$(http -b "$WORK/tenant.jar" "${ORIGIN[@]}" -X POST "$BASE/api/team"   -d "{\"tenantId\":\"$TENANT_ID\",\"phone\":\"09120000095\",\"role\":\"staff\"}")"
+grep -q '"created":true' <<<"$INVITE" || fail "دعوت شکست خورد: $INVITE"
+expect "payloadِ پیامکِ دعوت شیءِ JSON است و رمز دارد" "object t"   "$(q "SELECT jsonb_typeof(payload), payload ? 'tempPassword' FROM notification_outbox WHERE recipient='09120000095'" | tr '|' ' ')"
 
 step "۵. workerها واقعاً کار می‌کنند"
 q "
@@ -229,6 +237,7 @@ bash "$WORK/scripts/restore-prod.sh" --overwrite-production "$DB_BACKUP" "$UPLOA
 wait_for "سایت بعد از بازیابی بالا آمد" 180 ready
 expect "داده همان است" "$BEFORE" "$(q "SELECT (SELECT count(*) FROM tenant), (SELECT count(*) FROM app_user), (SELECT sum(on_hand_qty_boxes) FROM inventory_balance), (SELECT status FROM reservation WHERE id='$T')")"
 expect "فایل آپلود همان است" "$UPLOAD_SHA" "$(file_sha)"
+expect "عکس بعد از بازیابی با همان URL دیده می‌شود" "$UPLOAD_SHA" "$(url_sha)"
 expect "مدیر پلتفرم با همان رمز وارد می‌شود" 200 "$(login "$WORK/after.jar" "$ADMIN_PHONE" "$ADMIN_PASSWORD")"
 expect "مدیر کارخانه با همان رمز وارد می‌شود" 200 "$(login "$WORK/after2.jar" 09120000098 "$TENANT_PW")"
 expect "نشست بعد از بازیابی معتبر است" 200 "$(http -o /dev/null -w '%{http_code}' -b "$WORK/after.jar" "$BASE/api/me")"

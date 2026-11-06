@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 // هدرهای امنیتی (spec بخش ۸). HSTS عمداً اینجا نیست — کارِ reverse proxy (Caddy/Nginx)
 // است که TLS را terminate می‌کند؛ ست‌کردنش از اپ روی HTTP لوکال فقط دردسر می‌سازد.

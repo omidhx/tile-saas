@@ -69,6 +69,18 @@ const MUTATIONS = [
     edits: [["if (m && m.checksum !== a.checksum) {", "if (false && m && m.checksum !== a.checksum) {"]], tests: ["src/db/migrate.test.ts"] },
   { id: "bh12", expect: "rejects RESTORE_DB_NAME", why: "گارد RESTORE_DB_NAME == POSTGRES_DB حذف شد", file: "scripts/restore-db.sh",
     edits: [['if [ "${RESTORE_DB_NAME}" = "${POSTGRES_DB}" ]; then', "if false; then"]], tests: ["src/lib/backupHardening.test.ts"] },
+  // فاز ۴: محافظِ اصلاح‌ها
+  { id: "p4r", expect: "لغوِ هم‌زمان با ساختِ حواله", why: "قفلِ درخواست در ساختِ حواله حذف شد", file: "web/src/db/dispatches.ts",
+    edits: [["      WHERE id = ${salesRequestId} AND tenant_id = ${tenantId}\n      FOR UPDATE`;", "      WHERE id = ${salesRequestId} AND tenant_id = ${tenantId}`;"]],
+    tests: ["src/db/dispatchRaces.test.ts"] },
+  { id: "p4c", expect: "کدِ خودکار ۵۰۰ نمی‌دهد", why: "قفلِ کدِ حواله حذف شد", file: "web/src/db/dispatches.ts",
+    edits: [['  await tx`SELECT pg_advisory_xact_lock(hashtext(${"dispatch_code:" + tenantId}))`;\n', ""]],
+    tests: ["src/db/dispatchRaces.test.ts"] },
+  { id: "p4l", expect: "سقف در چند insert موازی", why: "قفلِ کلید در rate limiterِ Postgres حذف شد", file: "web/src/auth/rateLimit.ts",
+    edits: [['    await tx`SELECT pg_advisory_xact_lock(hashtext(${"rate:" + key}))`;\n', ""]],
+    tests: ["src/auth/rateLimitPostgres.test.ts"] },
+  { id: "p4m", expect: "listMovements و findDrift با RLS خاموش", why: "فیلتر tenant در لجر حذف شد", file: "web/src/db/ledger.ts",
+    edits: [["      WHERE t.tenant_id = ${p.tenantId}\n", "      WHERE TRUE\n"]], tests: ["src/db/crossTenantIsolation.test.ts"] },
 ];
 
 const repo = resolve(fileURLToPath(import.meta.url), "../..");

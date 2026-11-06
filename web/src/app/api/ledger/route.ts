@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { staffCtx } from "@/auth/httpCtx";
+import { isId } from "@/lib/validate";
 import { listMovements, findDrift } from "@/db/ledger";
 
 /**
@@ -13,9 +14,10 @@ export async function GET(req: Request) {
   if ("err" in c) return c.err;
 
   const lotId = u.searchParams.get("lotId") ?? undefined;
+  if (lotId !== undefined && !isId(lotId)) return NextResponse.json({ error: "invalid" }, { status: 400 });
   const q = u.searchParams.get("q") ?? undefined;
-  const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
-  const limit = Math.min(Number(u.searchParams.get("limit")) || 100, 20_000);
+  const offset = Math.max(0, Math.trunc(Number(u.searchParams.get("offset") ?? "0")) || 0);
+  const limit = Math.min(Math.max(1, Math.trunc(Number(u.searchParams.get("limit"))) || 100), 20_000);
 
   const [{ items: movements, hasMore }, drift] = await Promise.all([
     listMovements({ tenantId: c.tenantId, lotId, q, offset, limit }),

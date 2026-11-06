@@ -165,3 +165,17 @@ test("v5: updateAgent می‌تواند assignedStaffUserId را صریحاً NU
   const invalid = await updateAgent({ tenantId: T, agentAccountId: id, actorUserId: U, assignedStaffUserId: "00000000-0000-0000-0000-000000000000" });
   assert.deepEqual(invalid, { ok: false, reason: "invalid_staff" });
 });
+
+test("فاز ۴: پیامکِ دعوتِ نمایندگی (createAgent و addAgentUser) شیءِ JSON است و رمز را دارد", async () => {
+  const { renderMessage } = await import("@/notify/sender");
+  const a = await createAgent({ tenantId: T, legalName: "نمایندگی پیامک", code: "AG-SMS", firstUserPhone: "09121119001" });
+  assert.ok(a.ok && a.tempPassword);
+  const b = await addAgentUser({ tenantId: T, agentAccountId: a.agentAccountId, phone: "09121119002" });
+  assert.ok(b.ok && b.tempPassword);
+  for (const [phone, pw] of [["09121119001", a.tempPassword], ["09121119002", b.tempPassword]] as const) {
+    const [row] = await sql<{ kind: string; payload: Record<string, unknown> }[]>`
+      SELECT jsonb_typeof(payload) AS kind, payload FROM notification_outbox WHERE recipient = ${phone}`;
+    assert.equal(row.kind, "object", `${phone}: payload رشته‌ی jsonb است`);
+    assert.ok(renderMessage(row.payload).includes(pw!), `${phone}: رمز در متن نیست`);
+  }
+});

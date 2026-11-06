@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, parse } from "@/lib/validate";
 import { staffCtx, featureOff } from "@/auth/httpCtx";
 import { listSubstitutes, addSubstitute, removeSubstitute } from "@/db/substitutes";
+
+const Add = z.object({ variantId: id, substituteVariantId: id, note: z.string().nullish() });
+const Remove = z.object({ id });
 
 export async function GET(req: Request) {
   const c = await staffCtx(new URL(req.url).searchParams.get("tenantId"));
@@ -11,33 +16,34 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
   const off = await featureOff(c.tenantId, "substitutes");
   if (off) return off;
 
-  const { variantId, substituteVariantId, note } = body ?? {};
-  if (typeof variantId !== "string" || typeof substituteVariantId !== "string")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Add, body);
+  if ("err" in p) return p.err;
+  const { variantId, substituteVariantId, note } = p.data;
   if (variantId === substituteVariantId)
     return NextResponse.json({ error: "same_variant" }, { status: 400 });
 
   await addSubstitute({
     tenantId: c.tenantId, variantId, substituteVariantId,
-    note: typeof note === "string" && note.trim() ? note.trim() : null,
+    note: note?.trim() || null,
   });
   return NextResponse.json({ ok: true }, { status: 201 });
 }
 
 export async function DELETE(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
   const off = await featureOff(c.tenantId, "substitutes");
   if (off) return off;
-  if (typeof body?.id !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Remove, body);
+  if ("err" in p) return p.err;
 
-  await removeSubstitute({ tenantId: c.tenantId, id: body.id });
+  await removeSubstitute({ tenantId: c.tenantId, id: p.data.id });
   return NextResponse.json({ ok: true });
 }

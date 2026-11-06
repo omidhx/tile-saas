@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const c = await staffCtx(u.searchParams.get("tenantId"));
   if ("err" in c) return c.err;
   const q = u.searchParams.get("q") ?? undefined;
-  const offset = Number(u.searchParams.get("offset") ?? "0") || 0;
+  const offset = Math.max(0, Math.trunc(Number(u.searchParams.get("offset") ?? "0")) || 0);
   const { items, hasMore } = await listBackorderItems({ tenantId: c.tenantId, q, offset });
   return NextResponse.json({ items, hasMore });
 }

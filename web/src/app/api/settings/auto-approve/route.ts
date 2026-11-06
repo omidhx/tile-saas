@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, isId, count, parse } from "@/lib/validate";
 import { currentUserId } from "@/auth/session";
 import { authorizeAdmin, AuthzError } from "@/auth/authz";
 import { featureOff } from "@/auth/httpCtx";
@@ -13,13 +15,18 @@ import { writeAudit } from "@/db/audit";
  *   ۰    → نماینده: هرگز خودکار
  */
 
-type Body = { tenantId?: unknown; scope?: unknown; agentAccountId?: unknown; limit?: unknown };
+// مسیرِ پول: limit باید صریحاً null (خاموش/ارث) یا عددِ صحیحِ نامنفی باشد؛ نبودنش رد می‌شود.
+const Put = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("tenant"), tenantId: id, limit: count.nullable() }),
+  z.object({ scope: z.literal("agent"), tenantId: id, agentAccountId: id, limit: count.nullable() }),
+]);
 
 export async function GET(req: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
-  const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
+  const tenantId = new URL(req.url).searchParams.get("tenantId");
+  if (!isId(tenantId)) return NextResponse.json({ error: "invalid" }, { status: 400 });
   try {
     await authorizeAdmin(userId, tenantId);
   } catch (e) {
@@ -48,17 +55,12 @@ export async function PUT(req: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
-  const body: Body = await req.json().catch(() => ({}));
-  const { tenantId, scope, agentAccountId, limit } = body;
-  if (typeof tenantId !== "string" || (scope !== "tenant" && scope !== "agent"))
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-
   // مسیرِ پول: مقدارِ نامعتبر باید رد شود، نه اینکه بی‌سروصدا به NULL/NaN تبدیل شود —
   // NULL یعنی «خاموش»، و رسیدنِ تصادفی به آن سقف را برمی‌دارد.
-  if (limit !== null && (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 0))
-    return NextResponse.json({ error: "invalid limit" }, { status: 400 });
-  if (scope === "agent" && typeof agentAccountId !== "string")
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  const p = parse(Put, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { tenantId, scope, limit } = p.data;
+  const agentAccountId = p.data.scope === "agent" ? p.data.agentAccountId : undefined;
 
   try {
     await authorizeAdmin(userId, tenantId);

@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { parse } from "@/lib/validate";
 import { platformAdminCtx } from "@/auth/httpCtx";
 import { createTenant } from "@/db/platform";
+
+const Create = z.object({
+  name: z.string(), slug: z.string(), adminPhone: z.string(),
+  adminEmail: z.string().nullish(), adminFullName: z.string().nullish(),
+});
 
 /**
  * POST /api/platform/tenants — ساختِ کارخانه‌ی تازه + اولین مدیرش.
@@ -12,16 +19,11 @@ export async function POST(req: Request) {
   const c = await platformAdminCtx();
   if ("err" in c) return c.err;
 
-  const body = await req.json().catch(() => ({}));
-  const { name, slug, adminPhone, adminEmail, adminFullName } = body ?? {};
-  if (typeof name !== "string" || typeof slug !== "string" || typeof adminPhone !== "string")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Create, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { name, slug, adminPhone, adminEmail, adminFullName } = p.data;
 
-  const r = await createTenant({
-    name, slug, adminPhone,
-    adminEmail: typeof adminEmail === "string" ? adminEmail : undefined,
-    adminFullName: typeof adminFullName === "string" ? adminFullName : undefined,
-  });
+  const r = await createTenant({ name, slug, adminPhone, adminEmail, adminFullName });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "invalid" ? 400 : 409 });
   return NextResponse.json({ tenantId: r.tenantId, tempPassword: r.tempPassword }, { status: 201 });
 }

@@ -62,7 +62,7 @@ function checkRateMemory(key: string, limit: number, windowMs: number, now = Dat
 
 /**
  * Postgres-based sliding window — برای multi-instance.
- * پیاده‌سازی با یک تراکنش: DELETE قدیمی‌ها، COUNT، INSERT اگر مجاز.
+ * پیاده‌سازی با یک تراکنش: قفلِ advisoryِ کلید، DELETE قدیمی‌ها، COUNT، INSERT اگر مجاز.
  */
 async function checkRatePostgres(
   key: string, limit: number, windowMs: number, now = Date.now(),
@@ -70,6 +70,9 @@ async function checkRatePostgres(
   const windowStart = new Date(now - windowMs);
 
   const result = await sql.begin(async (tx) => {
+    // بدونِ این، COUNT و INSERTِ درخواست‌های هم‌زمان هم را نمی‌دیدند و هر ۱۰ درخواست
+    // با سقفِ ۵ رد می‌شدند (معلقِ فاز ۱). قفل فقط همین کلید را سریال می‌کند.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${"rate:" + key}))`;
     await tx`DELETE FROM _rate_limit_hits WHERE key = ${key} AND hit_at < ${windowStart}`;
 
     const [{ count }] = await tx<{ count: string }[]>`

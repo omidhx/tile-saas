@@ -74,3 +74,28 @@ test("cross-tenant: رزرو tenant A تأثیری روی موجودی tenant B 
   `;
   assert.equal(Number(heldB.held), 0, "held روی tenant B باید صفر باشد");
 });
+
+test("فاز ۴: listMovements و findDrift با RLS خاموش هم فقط همان tenant را برمی‌گردانند", async () => {
+  await resetSchema();
+  const { listMovements, findDrift } = await import("./ledger");
+  for (const [t, n] of [[T1, "1"], [T2, "2"]] as const) {
+    await sql.unsafe(`
+      INSERT INTO tenant (id, name, slug) VALUES ('${t}', 'T${n}', 't${n}');
+      INSERT INTO product (id, tenant_id, code, name) VALUES ('e${n}111111-1111-1111-1111-111111111111', '${t}', 'P${n}', 'کالای ${n}');
+      INSERT INTO product_variant (id, tenant_id, product_id, sku) VALUES ('f${n}111111-1111-1111-1111-111111111111', '${t}', 'e${n}111111-1111-1111-1111-111111111111', 'S${n}');
+      INSERT INTO warehouse (id, tenant_id, name, code, type) VALUES ('d${n}111111-1111-1111-1111-111111111111', '${t}', 'W', 'W${n}', 'main');
+      INSERT INTO inventory_lot (id, tenant_id, variant_id, warehouse_id) VALUES ('c${n}111111-1111-1111-1111-111111111111', '${t}', 'f${n}111111-1111-1111-1111-111111111111', 'd${n}111111-1111-1111-1111-111111111111');
+      -- عمداً ناتراز: balance ۵ ولی لجر ۰، تا findDrift ردیفی برگرداند
+      INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES ('${t}', 'c${n}111111-1111-1111-1111-111111111111', 5);
+      INSERT INTO inventory_transaction (tenant_id, lot_id, transaction_type, on_hand_delta_boxes)
+        VALUES ('${t}', 'c${n}111111-1111-1111-1111-111111111111', 'adjustment', 0);
+    `);
+  }
+  for (const table of ["inventory_transaction", "inventory_lot", "inventory_balance", "product_variant", "product"])
+    await sql.unsafe(`ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`);
+
+  const { items } = await listMovements({ tenantId: T1 });
+  assert.deepEqual(items.map((m) => m.code), ["P1"]);
+  const drift = await findDrift(T1);
+  assert.deepEqual(drift.map((d) => d.code), ["P1"]);
+});

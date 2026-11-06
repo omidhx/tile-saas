@@ -194,18 +194,19 @@ fi
 # Helper functions — defined BEFORE the trap that references them
 # ──────────────────────────────────────────────────────────
 psql_super() {
-  # Run psql inside container, non-interactive (-T), with PGPASSWORD in env
-  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres \
+  # Run psql inside container, non-interactive (-T). No password: the socket is trust,
+  # and -e PGPASSWORD=... would show the password in `ps` on the host.
+  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres \
     psql -U "${POSTGRES_USER}" -v ON_ERROR_STOP=1 "$@"
 }
 
 psql_super_db() {
-  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres \
+  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres \
     psql -U "${POSTGRES_USER}" -d "${RESTORE_DB_NAME}" -v ON_ERROR_STOP=1 "$@"
 }
 
 pg_restore_cmd() {
-  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres \
+  docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres \
     pg_restore "$@"
 }
 

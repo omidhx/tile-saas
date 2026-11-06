@@ -92,13 +92,13 @@ export async function inviteTeamMember(params: {
       : { type: "team_invite", tenantName: tenant.name, identifier: phone, tempPassword: "— با رمزِ فعلیِ خود وارد شوید —" };
     await tx`
       INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
-      VALUES (${tenantId}, 'sms', ${phone}, ${JSON.stringify(payload)}::jsonb)`;
+      VALUES (${tenantId}, 'sms', ${phone}, ${tx.json(payload)})`;
 
     return { ok: true, created, tempPassword };
   });
 }
 
-export type SetMemberResult = { ok: true } | { ok: false; reason: "last_admin" };
+export type SetMemberResult = { ok: true } | { ok: false; reason: "last_admin" | "not_found" };
 
 /**
  * گاردِ مشترکِ setTeamMember/deleteTeamMember: حداقل یک adminِ فعال باید بماند،
@@ -107,7 +107,7 @@ export type SetMemberResult = { ok: true } | { ok: false; reason: "last_admin" }
 async function guardLastAdmin(
   tx: Parameters<Parameters<typeof withTenant>[1]>[0],
   tenantId: string, membershipId: string,
-): Promise<SetMemberResult | null> {
+): Promise<{ ok: false; reason: "last_admin" } | null> {
   const [target] = await tx<{ role: Role }[]>`
     SELECT role FROM tenant_membership WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
   if (target?.role !== "admin") return null;
@@ -128,18 +128,17 @@ export async function setTeamMember(params: {
       if (blocked) return blocked;
     }
 
-    await tx`
+    const [member] = await tx<{ user_id: string }[]>`
       UPDATE tenant_membership SET
         role = COALESCE(${params.role ?? null}, role),
         is_active = COALESCE(${params.isActive ?? null}, is_active)
-      WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
+      WHERE id = ${membershipId} AND tenant_id = ${tenantId}
+      RETURNING user_id`;
+    if (!member) return { ok: false, reason: "not_found" };
     // fullName صرفاً برچسبِ نمایشی است، نه اعتبارنامه — برخلافِ ایمیل، همیشه
     // قابلِ بازنویسی است (مدیر باید بتواند تایپوی نام را اصلاح کند).
-    if (params.fullName !== undefined) {
-      const [{ user_id }] = await tx<{ user_id: string }[]>`
-        SELECT user_id FROM tenant_membership WHERE id = ${membershipId} AND tenant_id = ${tenantId}`;
-      await tx`UPDATE app_user SET full_name = ${params.fullName.trim() || null} WHERE id = ${user_id}`;
-    }
+    if (params.fullName !== undefined)
+      await tx`UPDATE app_user SET full_name = ${params.fullName.trim() || null} WHERE id = ${member.user_id}`;
     return { ok: true };
   });
 }
