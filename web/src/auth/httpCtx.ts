@@ -7,6 +7,7 @@ import {
 import { checkRateAsync } from "./rateLimit";
 import { getFeatures } from "@/db/features";
 import type { FeatureKey } from "@/lib/features";
+import { isId } from "@/lib/validate";
 
 /**
  * الگوی «userId از نشست → rate limit → اعتبارسنجیِ tenantId → authorize → نگاشتِ AuthzError به ۴۰۳»
@@ -48,7 +49,8 @@ async function ctx<T extends object>(
 ): Promise<Err | (T & { tenantId: string; userId: string })> {
   const userId = await currentUserId();
   if (!userId) return unauthenticated();
-  if (typeof tenantId !== "string") return invalidTenant();
+  // uuidِ خراب به Postgres نرسد: 22P02 → ۵۰۰ با بدنه‌ی خالی (E1-F11)
+  if (!isId(tenantId)) return invalidTenant();
 
   // Rate limit — اگر key تابع داده شد، از آن استفاده کن
   if (rateLimitKey) {
@@ -80,7 +82,7 @@ export const adminCtx = (tenantId: unknown) =>
 export async function agentCtx(tenantId: unknown, agentAccountId: unknown): Promise<Err | AgentContext> {
   const userId = await currentUserId();
   if (!userId) return unauthenticated();
-  if (typeof tenantId !== "string" || typeof agentAccountId !== "string") return invalidTenant();
+  if (!isId(tenantId) || !isId(agentAccountId)) return invalidTenant();
 
   // Rate limit برای agent — ۶۰/min
   const rl = await checkRateAsync(

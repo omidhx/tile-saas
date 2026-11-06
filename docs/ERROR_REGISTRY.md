@@ -26,7 +26,7 @@
 | `forbidden` | 403 | کاربر احراز هویت شده اما دسترسی ندارد (نقش اشتباه یا tenant اشتباه) | staff/admin/platform routes |
 | `invalid` | 400 | ورودی نامعتبر (بدنه، نوع، یا مقدار) | اکثر mutation routes |
 | `invalid body` | 400 | بدنه‌ی request قابل parse نیست یا فیلدهای ضروری ندارد | mutation routes با JSON body |
-| `not_found` | 404 | منبع مورد نظر وجود ندارد | /api/uploads/[id], /api/settings/tenant |
+| `not_found` | 404 | منبع مورد نظر وجود ندارد | /api/settings/tenant |
 | `too_large` | 413 | فایل آپلودی بزرگ‌تر از حد مجاز (3MB) | /api/upload |
 | `too_many` | 429 | Rate limit exceeded | /api/auth/login, /api/auth/password, /api/auth/reset, /api/upload, /api/imports, /api/reservations |
 | `too_many_rows` | 413 | تعداد ردیف‌های import بیش از حد مجاز | /api/imports |

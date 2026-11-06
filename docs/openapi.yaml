@@ -918,26 +918,6 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/BadRequest" }
 
-  /api/uploads/{id}:
-    get:
-      tags: [Uploads]
-      summary: Download uploaded file (auth + tenant ownership)
-      security: [{ sessionCookie: [] }]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-          description: Filename (UUID.ext)
-      responses:
-        "200":
-          description: File content
-          content:
-            application/octet-stream:
-              schema: { type: string, format: binary }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-
   # ─── Platform ───
   /api/platform/tenants:
     post:

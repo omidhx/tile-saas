@@ -61,6 +61,12 @@ test("گذارِ backorder_status: pending_production → ready → fulfilled", 
 
   const [after] = await sql<{ backorder_status: string }[]>`SELECT backorder_status FROM sales_dispatch_item WHERE id = ${item.id}`;
   assert.equal(after.backorder_status, "fulfilled");
+  // فاز ۴، بازتولیدِ یافته‌ی «fulfilled اثری روی موجودی ندارد»: عمدی است، طبقِ spec ۵.۶ و
+  // بخشِ ۱۴ («item backorder: هیچ mutation موجودی»). کالای backorder هرگز واردِ lot نشده.
+  const [bal] = await sql`SELECT on_hand_qty_boxes FROM inventory_balance WHERE lot_id = ${LOT}`;
+  assert.equal(bal.on_hand_qty_boxes, 100);
+  const [{ n }] = await sql`SELECT count(*)::int AS n FROM inventory_transaction WHERE lot_id = ${LOT}`;
+  assert.equal(n, 0);
 });
 
 test("guard: گذارِ نامجاز backorder → invalid_transition", async () => {

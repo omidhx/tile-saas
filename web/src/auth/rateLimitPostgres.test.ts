@@ -10,9 +10,8 @@ before(async () => {
   ({ checkRateAsync, resetRates } = await import("@/auth/rateLimit"));
 });
 
-// باگ واقعی، در docs/PHASES.md بخش «معلق»: COUNT و INSERT سریالی نیستند و درخواست‌های هم‌زمان از سقف رد می‌شوند.
-// todo یعنی تست اجرا می‌شود و نتیجه‌اش دیده می‌شود، ولی CI را قرمز نمی‌کند تا فاز ۴ درستش کند.
-test("rate limiter postgres: سقف در چند insert موازی رعایت می‌شود", { todo: "فاز ۴: race بین COUNT و INSERT" }, async () => {
+// فاز ۴: COUNT و INSERT سریالی نبودند و درخواست‌های هم‌زمان از سقف رد می‌شدند.
+test("rate limiter postgres: سقف در چند insert موازی رعایت می‌شود", async () => {
   await resetSchema();
   resetRates();
 

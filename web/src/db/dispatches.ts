@@ -60,11 +60,12 @@ export async function listDispatches(p: {
 async function nextDispatchCode(tx: Tx, tenantId: string, prefix: "D" | "BO"): Promise<string> {
   const jy = toJalali(new Date()).jy;
   const pattern = `^${prefix}-${jy}-(\\d+)`;
+  // MAX+1 بدونِ قفل دو ساختِ هم‌زمان را به UNIQUE می‌زد و یکی ۵۰۰ می‌گرفت (E3-F8، ۴۰ از ۴۸).
+  // قفلِ advisory تا پایانِ تراکنش می‌ماند، پس نفرِ بعدی ردیفِ commitشده‌ی قبلی را می‌بیند.
+  await tx`SELECT pg_advisory_xact_lock(hashtext(${"dispatch_code:" + tenantId}))`;
   const [{ m }] = await tx<{ m: number }[]>`
     SELECT COALESCE(MAX((regexp_match(dispatch_code, ${pattern}))[1]::int), 0) AS m
     FROM sales_dispatch WHERE tenant_id = ${tenantId}`;
-  // ponytail: بدونِ قفل — دو ساختِ هم‌زمان در یک tenant به UNIQUE می‌خورند و یکی 500
-  // می‌گیرد؛ با چند پشتیبانِ انسانی عملاً رخ نمی‌دهد. اگر داد، advisory lock اضافه شود.
   return `${prefix}-${jy}-${String(m + 1).padStart(3, "0")}`;
 }
 
@@ -99,9 +100,15 @@ export async function createDispatchFromRequest(params: {
 }): Promise<CreateDispatchResult> {
   const { tenantId, salesRequestId, createdByUserId, customerName, destination, customerId, referenceNumber } = params;
   return withTenant(tenantId, async (tx) => {
+    // قفلِ درخواست: بدونِ آن، لغوِ حواله‌ای که بینِ این SELECT و گاردِ تکرار commit شود
+    // حواله‌ی تازه روی درخواستِ لغوشده می‌ساخت که بارگیری‌اش allocatedِ دیگران را می‌خورد
+    // (معلقِ فاز ۱). دو ساختِ هم‌زمان هم پشتِ همین قفل سریال می‌شوند (E3-F8).
+    // ترتیبِ قفل: درخواست، بعد advisoryِ کد. لغوِ حواله اول حواله و موجودی را قفل می‌کند
+    // و درخواست را آخر؛ اینجا نه حواله قفل می‌شود نه موجودی، پس چرخه‌ای ساخته نمی‌شود.
     const [req] = await tx<{ agent_account_id: string; status: string }[]>`
       SELECT agent_account_id, status FROM sales_request
-      WHERE id = ${salesRequestId} AND tenant_id = ${tenantId}`;
+      WHERE id = ${salesRequestId} AND tenant_id = ${tenantId}
+      FOR UPDATE`;
     if (!req) return { ok: false, reason: "request_not_found" };
     if (req.status !== "approved") return { ok: false, reason: "request_not_approved" };
 
@@ -247,7 +254,7 @@ export async function getDispatchDetail(tenantId: string, dispatchId: string): P
  *     allocated-=qty. idempotent چون فقط از ready_for_loading اثر می‌ذاره — retry بعد از loaded
  *     گذارِ نامجاز می‌شه و دوباره کم نمی‌کنه.
  *   • cancelled (قبل از loaded): allocated آزاد می‌شه (allocated-=qty)، on_hand دست‌نخورده؛
- *     request مرتبط هم cancelled می‌شه (سازگاری allocated).
+ *     request مرتبط فقط وقتی cancelled می‌شه که حواله‌ی زنده‌ی دیگری نمونده باشه (E3-F4).
  */
 export async function setDispatchStatus(params: {
   tenantId: string; dispatchId: string; toStatus: DispatchStatus; actorUserId: string;
@@ -295,8 +302,19 @@ export async function setDispatchStatus(params: {
                     'sales_dispatch', ${dispatchId}, ${actorUserId})`;
         }
       }
-      if (toStatus === "cancelled" && d.sales_request_id)
-        await tx`UPDATE sales_request SET status = 'cancelled' WHERE id = ${d.sales_request_id} AND tenant_id = ${tenantId}`;
+      // درخواست فقط وقتی لغو می‌شود که هیچ حواله‌ی زنده‌ی دیگری نمانده باشد. سفارشِ
+      // دوانباره دو حواله دارد؛ لغوِ یکی کلِ درخواست را لغو می‌کرد و دیگری بارگیری می‌شد
+      // (E3-F4). قسمتِ لغوشده دوباره ساخته نمی‌شود، چون تخصیصش همین‌جا آزاد شد.
+      // قفلِ درخواست قبل از شمردن، تا دو لغوِ هم‌زمانِ دو حواله هر دو «دیگری زنده است» نبینند.
+      if (toStatus === "cancelled" && d.sales_request_id) {
+        await tx`SELECT id FROM sales_request WHERE id = ${d.sales_request_id} AND tenant_id = ${tenantId} FOR UPDATE`;
+        const [{ live }] = await tx<{ live: number }[]>`
+          SELECT count(*)::int AS live FROM sales_dispatch
+          WHERE tenant_id = ${tenantId} AND sales_request_id = ${d.sales_request_id}
+            AND id <> ${dispatchId} AND status <> 'cancelled'`;
+        if (live === 0)
+          await tx`UPDATE sales_request SET status = 'cancelled' WHERE id = ${d.sales_request_id} AND tenant_id = ${tenantId}`;
+      }
     }
 
     await tx`UPDATE sales_dispatch SET status = ${toStatus} WHERE id = ${dispatchId} AND tenant_id = ${tenantId}`;

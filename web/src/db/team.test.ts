@@ -91,3 +91,57 @@ test("deleteTeamMember: عضوِ عادی حذف می‌شود؛ آخرین admi
   assert.equal(del.ok, true);
   assert.ok(!(await listTeam(T4)).some((m) => m.phone === "09130000012"));
 });
+
+// ── فاز ۴ ────────────────────────────────────────────────────────────────
+
+test("فاز ۴: دعوت روی کاربرِ موجودِ tenantِ دیگر ایمیل نمی‌گذارد (تصاحبِ حساب از راهِ بازیابی رمز)", async () => {
+  const TC = "c3333333-3333-3333-3333-333333333333";
+  const VICTIM = "c5555555-5555-5555-5555-555555555555";
+  await sql.unsafe(`
+    INSERT INTO tenant (id,name,slug) VALUES ('${TC}','کارخانه‌ی دیگر','other');
+    INSERT INTO app_user (id,phone,password_hash) VALUES ('${VICTIM}','09135550001','x');
+    INSERT INTO tenant_membership (tenant_id,user_id,role,is_active) VALUES ('${TC}','${VICTIM}','admin',true);
+  `);
+  // مدیرِ T عضوِ TC نیست، ولی شماره‌ی مدیرِ TC را با ایمیلِ خودش دعوت می‌کند
+  const r = await inviteTeamMember({
+    tenantId: T, phone: "09135550001", email: "chosen-by-attacker@elsewhere.test", fullName: "اسمِ جعلی", role: "staff",
+  });
+  assert.equal(r.ok && r.created, false);
+  const [u] = await sql<{ email: string | null; full_name: string | null }[]>`
+    SELECT email, full_name FROM app_user WHERE id = ${VICTIM}`;
+  assert.equal(u.email, null, "ایمیلِ حسابِ موجود نباید از مسیرِ دعوت عوض شود");
+  assert.equal(u.full_name, null, "نامِ حسابِ موجود هم نباید از مسیرِ دعوت عوض شود");
+});
+
+test("فاز ۴: پیامکِ دعوت شیءِ JSON است و متنش نام کاربری و رمز را دارد", async () => {
+  const { renderMessage } = await import("@/notify/sender");
+  const r = await inviteTeamMember({ tenantId: T, phone: "09135550002", role: "staff" });
+  assert.ok(r.ok && r.tempPassword);
+  const [row] = await sql<{ kind: string; payload: Record<string, unknown> }[]>`
+    SELECT jsonb_typeof(payload) AS kind, payload FROM notification_outbox
+    WHERE recipient = '09135550002'`;
+  assert.equal(row.kind, "object", "payload رشته‌ی jsonb ذخیره شده، نه شیء");
+  const text = renderMessage(row.payload);
+  assert.ok(text.includes("09135550002") && text.includes(r.tempPassword!), `متنِ پیامک: ${text}`);
+});
+
+test("فاز ۴: setTeamMember روی عضوِ ناموجود not_found می‌دهد، نه TypeError", async () => {
+  const r = await setTeamMember({ tenantId: T, membershipId: "99999999-9999-9999-9999-999999999999", fullName: "x" });
+  assert.deepEqual(r, { ok: false, reason: "not_found" });
+});
+
+test("فاز ۴: migration 0008 ردیف‌های صف‌شده با payloadِ رشته‌ای را به شیء برمی‌گرداند", async () => {
+  const { readFileSync } = await import("node:fs");
+  const body = { type: "team_invite", tenantName: "A", identifier: "09135550003", tempPassword: "Tmp-123" };
+  // همان شکلی که کدِ قبلی می‌نوشت: رشته‌ی jsonb
+  await sql`INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
+            VALUES (${T}, 'sms', '09135550003', to_jsonb(${JSON.stringify(body)}::text))`;
+  const migration = readFileSync(new URL("../../../db/migrations/0008_outbox_payload_unwrap.sql", import.meta.url), "utf8")
+    .replace(/^BEGIN;$/m, "").replace(/^COMMIT;$/m, "");
+  await sql.unsafe(migration);
+  await sql.unsafe(migration); // دوباره: بی‌اثر
+  const [row] = await sql<{ kind: string; payload: Record<string, unknown> }[]>`
+    SELECT jsonb_typeof(payload) AS kind, payload FROM notification_outbox WHERE recipient = '09135550003'`;
+  assert.equal(row.kind, "object");
+  assert.deepEqual(row.payload, body);
+});

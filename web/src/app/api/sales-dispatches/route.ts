@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { staffCtx } from "@/auth/httpCtx";
+import { id, positive, parse } from "@/lib/validate";
 import { createDispatchFromRequest, createBackorderDispatch, listDispatches } from "@/db/dispatches";
 
 /** GET /api/sales-dispatches?tenantId[&q][&offset] — لیستِ حواله‌ها برای پنل staff، صفحه‌بندی‌شده. */
@@ -13,33 +15,41 @@ export async function GET(req: Request) {
   return NextResponse.json({ dispatches, hasMore });
 }
 
+// dispatchCode دیگر از کلاینت پذیرفته نمی‌شود: سرور خودش D-1404-003 می‌سازد. کدِ صریح
+// همان راهی بود که E3-F8 با آن هشت حواله‌ی زنده برای یک درخواست ساخت.
+const optText = z.string().nullish();
+const Common = {
+  customerName: optText, destination: optText, referenceNumber: optText,
+  // customerId تنها شناسه‌ی قابل‌اعتماد است؛ customerName فقط برای caller قدیمی می‌ماند.
+  customerId: id.or(z.literal("")).nullish(),
+};
+const FromRequest = z.object({ salesRequestId: id, ...Common });
+const Backorder = z.object({
+  agentAccountId: id,
+  items: z.array(z.object({ variantId: id, quantityBoxes: positive })).min(1),
+  ...Common,
+});
+
 /**
  * POST /api/sales-dispatches — ساخت حواله (staff-only، spec ۵.۶). دو حالت بر اساس body:
  *   • { salesRequestId }        → حواله از SalesRequestِ تأییدشده (اقلام in_stock)
  *   • { agentAccountId, items } → حواله‌ی مستقلِ backorder (محصول ناموجود، بیرون از موجودی)
  */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { salesRequestId, agentAccountId, items } = body ?? {};
-  // dispatchCode دیگر از کلاینت نمی‌آید — سرور خودش D-1404-003 می‌سازد (schema: «auto-generated سمت اپ»)
-  const dispatchCode = typeof body?.dispatchCode === "string" ? body.dispatchCode : undefined;
-  // customerId تنها شناسه‌ی قابل‌اعتماد است؛ customerName فقط برای caller قدیمی می‌ماند.
-  // نوع نامعتبر (مثلاً عدد) اینجا رد می‌شود، نه اینکه بی‌صدا به DB برسد.
-  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
-  const customerName = str(body?.customerName);
-  const destination = str(body?.destination);
-  const customerId = str(body?.customerId);
-  const referenceNumber = str(body?.referenceNumber);
-
-  const result = Array.isArray(items)
-    ? await createBackorderDispatch({ tenantId: c.tenantId, agentAccountId, createdByUserId: c.userId, dispatchCode, customerName, destination, items, customerId, referenceNumber })
-    : typeof salesRequestId === "string"
-      ? await createDispatchFromRequest({ tenantId: c.tenantId, salesRequestId, createdByUserId: c.userId, dispatchCode, customerName, destination, customerId, referenceNumber })
-      : null;
-  if (!result) return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  const p = parse(Array.isArray(body?.items) ? Backorder : FromRequest, body);
+  if ("err" in p) return p.err;
+  const d = p.data;
+  const common = {
+    tenantId: c.tenantId, createdByUserId: c.userId, customerName: d.customerName ?? undefined,
+    destination: d.destination ?? undefined, customerId: d.customerId ?? undefined, referenceNumber: d.referenceNumber,
+  };
+  const result = "items" in d
+    ? await createBackorderDispatch({ ...common, agentAccountId: d.agentAccountId, items: d.items })
+    : await createDispatchFromRequest({ ...common, salesRequestId: d.salesRequestId });
   if (!result.ok) {
     const status = result.reason === "request_not_found" ? 404 : 409;
     return NextResponse.json({ error: result.reason }, { status });

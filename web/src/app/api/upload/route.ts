@@ -22,15 +22,9 @@ import { matchesMagicBytes } from "@/lib/magicBytes";
  *   ۶. نام‌گذاری با randomUUID (ضد path traversal و برخورد نام)
  *   ۷. orphan cleanup اگر عملیات بعدی شکست بخورد
  *
- * ذخیره روی دیسکِ محلی (`public/uploads/`) — برای این مقیاس (چند صد کاشی)
- * S3 over-engineering است. **این پوشه باید در production روی volumeی جدا از
- * کدِ دیپلوی‌شونده باشد** (نگاه کن به GO_LIVE.md).
- *
- * امنیتِ دسترسیِ فایل: فایل‌ها در `public/uploads/` قابل دسترسیِ عمومی هستند.
- * UUID در نام فایل غیرقابل‌حدس است، ولی این یک security-by-obscurity است.
- * اگر tenant isolationِ واقعی روی فایل‌ها لازم باشد، باید یک download route
- * احراز هویت‌شده ساخته شود. فعلاً برای این مقیاس (چند صد کاشی، staff-only
- * upload) قابل قبول است.
+ * ذخیره روی دیسکِ محلی (`private/uploads/`، روی volumeِ جدا در compose) — برای این مقیاس
+ * (چند صد کاشی) S3 over-engineering است. نمایش با `/uploads/<name>` (app/uploads/[name])،
+ * عمومی، چون عکسِ کاتالوگ است و کاتالوگِ اشتراکی ورود ندارد؛ نام از randomUUID است.
  */
 
 const MAX_BYTES = 3 * 1024 * 1024; // ۳ مگابایت — عکسِ کاشی از این بزرگ‌تر بی‌دلیل است
@@ -78,9 +72,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad_type" }, { status: 415 });
 
   // ۷. نام‌گذاری با UUID و ذخیره
-  // فایل‌ها در `private/uploads/` ذخیره می‌شوند (خارج از `public/`).
-  // دسترسی فقط از طریق `/api/uploads/[id]` با احراز هویت و tenant ownership.
-  // این AUD-001 را حل می‌کند — UUID مجوز دسترسی نیست، authorization واقعی است.
+  // فایل‌ها در `private/uploads/` ذخیره می‌شوند (خارج از `public/`) و از app/uploads/[name] سرو می‌شوند.
   const dir = join(process.cwd(), "private", "uploads");
   await mkdir(dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;

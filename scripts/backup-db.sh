@@ -432,9 +432,9 @@ log "Step 1/6: pg_dump (custom format, includes RLS policies + SECURITY DEFINER 
 
 # Run pg_dump inside the container, output to host file via stdout redirect.
 # -T disables TTY allocation (non-interactive, required for CI/cron).
-# -e PGPASSWORD passes the password without it appearing in process args
-#   inside the container (it's in the exec env, not the cmdline).
-docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres \
+# No password: inside the postgres container the Unix socket uses trust auth. Passing
+#   -e PGPASSWORD=... put the password on docker's own command line, visible in `ps`.
+docker compose -f "${PROJECT_ROOT}/${COMPOSE_FILE}" exec -T postgres \
   pg_dump \
     -U "${POSTGRES_USER}" \
     -d "${POSTGRES_DB}" \

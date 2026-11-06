@@ -99,7 +99,7 @@ npm run lint       # ESLint: فقط قواعدی که باگ واقعی می‌�
 npm run test:e2e   # بیلد production + Playwright روی tile_e2e_test؛ هرگز web/.env را نمی‌خواند
 npm run db:pull    # introspect اسکیمای typed از دیتابیس → src/db/generated/
 npm run migrate    # اجرای migrationها
-npm run cleanup:uploads  # حذف فایل‌های یتیم (dry-run؛ --commit برای حذف واقعی)
+MIGRATION_DATABASE_URL=... npm run cleanup:uploads  # حذف فایل‌های یتیم (dry-run؛ --commit برای حذف واقعی)؛ با app_user اجرا نمی‌شود
 
 # از ریشه: باگ عمدی می‌کارد و باید تست قرمز شود (روی لینوکس، با DATABASE_URL تست)
 node scripts/mutation-check.mjs

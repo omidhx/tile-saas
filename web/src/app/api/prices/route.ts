@@ -4,6 +4,10 @@ import { staffCtx, featureOff } from "@/auth/httpCtx";
 import { writeAudit } from "@/db/audit";
 import { listVolumeDiscounts, ensureDefaultPriceList } from "@/db/pricing";
 import { getFeatures } from "@/db/features";
+import { z } from "zod";
+import { id, count, parse } from "@/lib/validate";
+
+const SetPrice = z.object({ priceListId: id, variantId: id, price: count });
 
 
 /** GET ?tenantId — لیست‌های قیمت + اقلامشان + پله‌های تخفیف (پنل قیمت‌گذاری staff). */
@@ -51,15 +55,19 @@ export async function POST(req: Request) {
   const off = await featureOff(c.tenantId, "pricing");
   if (off) return off;
 
-  const { priceListId, variantId, price } = body ?? {};
-  if (typeof priceListId !== "string" || typeof variantId !== "string"
-      || !Number.isInteger(price) || price < 0)
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(SetPrice, body);
+  if ("err" in p) return p.err;
+  const { priceListId, variantId, price } = p.data;
 
   const f = await getFeatures(c.tenantId);
   const written = await withTenant(c.tenantId, async (tx) => {
     // با «چند لیست» خاموش فقط لیستِ اصلی قابلِ نوشتن است؛ لیستِ پنهان نباید مخفیانه پر شود.
-    if (!f.price_lists && priceListId !== await ensureDefaultPriceList(tx, c.tenantId)) return false;
+    if (!f.price_lists && priceListId !== await ensureDefaultPriceList(tx, c.tenantId)) return "feature_off" as const;
+    // لیست یا کالای ناموجود (یا مالِ tenantِ دیگر) قبلاً به FK می‌خورد و ۵۰۰ می‌داد
+    const [found] = await tx<{ list: boolean; variant: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM price_list WHERE id = ${priceListId} AND tenant_id = ${c.tenantId}) AS list,
+             EXISTS (SELECT 1 FROM product_variant WHERE id = ${variantId} AND tenant_id = ${c.tenantId}) AS variant`;
+    if (!found.list || !found.variant) return "not_found" as const;
 
     // قیمتِ قبلی **قبل از** نوشتن خوانده می‌شود: بدون آن، ردپا فقط می‌گوید
     // «قیمت شد X» و سؤالِ اصلی («از چند آمد؟») بی‌جواب می‌ماند.
@@ -81,8 +89,8 @@ export async function POST(req: Request) {
         action: "price.set", entity: "price_list_item", entityId: variantId,
         oldValue: before, newValue: price,
       });
-    return true;
+    return "ok" as const;
   });
-  if (!written) return NextResponse.json({ error: "feature_off" }, { status: 404 });
+  if (written !== "ok") return NextResponse.json({ error: written }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
