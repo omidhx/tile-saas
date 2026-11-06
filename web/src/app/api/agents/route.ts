@@ -1,8 +1,28 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, parse } from "@/lib/validate";
 import { withTenant } from "@/db/client";
 import { staffCtx as authStaffCtx, adminCtx } from "@/auth/httpCtx";
 import { listAgentsFull, createAgent, updateAgent, addAgentUser, deleteAgent } from "@/db/agents";
 import { listStaffOptions } from "@/db/team";
+
+const name = z.string().trim().min(1);
+// سقف را عمداً فقط number می‌گیریم: منفی/اعشار را db/agents.ts با reasonِ «invalid_limit» رد می‌کند.
+const limit = z.number().nullish();
+const Create = z.object({
+  legalName: name, code: name, firstUserPhone: name,
+  priceListId: id.nullish(), autoApproveLimit: limit, assignedStaffUserId: id.nullish(),
+  firstUserEmail: z.string().nullish(),
+});
+// priceListId/assignedStaffUserId سه‌حالته‌اند: نبودن=دست‌نزن، null=پاک‌کن، uuid=ست‌کن.
+const Update = z.object({
+  agentAccountId: id,
+  addUser: z.object({ phone: name, email: z.string().nullish() }).nullish(),
+  legalName: z.string().optional(), code: z.string().optional(),
+  priceListId: id.nullish(), assignedStaffUserId: id.nullish(),
+  autoApproveLimit: limit, isActive: z.boolean().optional(),
+});
+const Remove = z.object({ agentAccountId: id });
 
 /**
  * GET /api/agents?tenantId — نمایندگی‌های فعالِ tenant (برای فرم backorderِ staff، حداقلِ لازم).
@@ -31,20 +51,18 @@ export async function GET(req: Request) {
 
 /** POST /api/agents — نمایندگیِ تازه + کاربرِ اولش. admin-only. */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
-  const { tenantId, legalName, code, priceListId, autoApproveLimit, assignedStaffUserId, firstUserPhone, firstUserEmail } = body ?? {};
-  if (typeof legalName !== "string" || !legalName.trim()
-    || typeof code !== "string" || !code.trim() || typeof firstUserPhone !== "string" || !firstUserPhone.trim())
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-
-  const auth = await adminCtx(tenantId);
+  const body = await req.json().catch(() => null);
+  const auth = await adminCtx(body?.tenantId);
   if ("err" in auth) return auth.err;
+  const p = parse(Create, body);
+  if ("err" in p) return p.err;
+  const d = p.data;
 
   const r = await createAgent({
-    tenantId, legalName: legalName.trim(), code: code.trim(),
-    priceListId: priceListId ?? null, autoApproveLimit: autoApproveLimit ?? null,
-    assignedStaffUserId: assignedStaffUserId ?? null,
-    firstUserPhone: firstUserPhone.trim(), firstUserEmail,
+    tenantId: auth.tenantId, legalName: d.legalName, code: d.code,
+    priceListId: d.priceListId ?? null, autoApproveLimit: d.autoApproveLimit ?? null,
+    assignedStaffUserId: d.assignedStaffUserId ?? null,
+    firstUserPhone: d.firstUserPhone, firstUserEmail: d.firstUserEmail,
   });
   if (!r.ok) {
     const status = r.reason === "seat_limit" ? 403 : r.reason === "invalid_limit" ? 400 : 409;
@@ -60,51 +78,34 @@ export async function POST(req: Request) {
  * admin-only.
  */
 export async function PATCH(req: Request) {
-  const body = await req.json().catch(() => ({}));
-  const { tenantId, agentAccountId, addUser } = body ?? {};
-  if (typeof agentAccountId !== "string")
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-
-  const auth = await adminCtx(tenantId);
+  const body = await req.json().catch(() => null);
+  const auth = await adminCtx(body?.tenantId);
   if ("err" in auth) return auth.err;
+  const p = parse(Update, body);
+  if ("err" in p) return p.err;
+  const { agentAccountId, addUser, ...f } = p.data;
+  const tenantId = auth.tenantId;
 
   if (addUser) {
-    if (typeof addUser.phone !== "string" || !addUser.phone.trim())
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    const r = await addAgentUser({ tenantId, agentAccountId, phone: addUser.phone.trim(), email: addUser.email });
+    const r = await addAgentUser({ tenantId, agentAccountId, phone: addUser.phone, email: addUser.email });
     if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
     return NextResponse.json({ ok: true, created: r.created, tempPassword: r.tempPassword });
   }
 
-  // بدونِ این، مقدارِ نوعِ غلط (مثلاً عدد به‌جایِ رشته) مستقیم به UPDATEِ پارامتری‌شده
-  // می‌رسید — SQL injection نمی‌شد (postgres.js پارامتری می‌کند) ولی یا داده‌ی
-  // غلط می‌نوشت یا کوئری با خطای نوع می‌ترکید (۵۰۰ به‌جای ۴۰۰ی تمیز).
-  // نکته: priceListId/assignedStaffUserId سه‌حالته‌اند (نبودن=دست‌نزن، null=پاک‌کن،
-  // رشته=ست‌کن) — باید undefined را از null جدا نگه داشت، نه هر دو را یکی کرد.
-  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
-  const bool = (v: unknown) => (typeof v === "boolean" ? v : undefined);
-  const strOrNull = (v: unknown) => (v === undefined ? undefined : v === null ? null : str(v));
-  const r = await updateAgent({
-    tenantId, agentAccountId, actorUserId: auth.userId,
-    legalName: str(body.legalName), code: str(body.code), priceListId: strOrNull(body.priceListId),
-    autoApproveLimit: body.autoApproveLimit,
-    isActive: bool(body.isActive), assignedStaffUserId: strOrNull(body.assignedStaffUserId),
-  });
+  const r = await updateAgent({ tenantId, agentAccountId, actorUserId: auth.userId, ...f });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "invalid_limit" ? 400 : 409 });
   return NextResponse.json({ ok: true });
 }
 
 /** DELETE /api/agents — حذفِ واقعی، فقط اگر نمایندگی هیچ سابقه‌ای ندارد. admin-only. */
 export async function DELETE(req: Request) {
-  const body = await req.json().catch(() => ({}));
-  const { tenantId, agentAccountId } = body ?? {};
-  if (typeof agentAccountId !== "string")
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-
-  const auth = await adminCtx(tenantId);
+  const body = await req.json().catch(() => null);
+  const auth = await adminCtx(body?.tenantId);
   if ("err" in auth) return auth.err;
+  const p = parse(Remove, body);
+  if ("err" in p) return p.err;
 
-  const r = await deleteAgent({ tenantId, agentAccountId });
+  const r = await deleteAgent({ tenantId: auth.tenantId, agentAccountId: p.data.agentAccountId });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

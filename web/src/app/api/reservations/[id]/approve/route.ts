@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, isId, parse } from "@/lib/validate";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { approveReservation } from "@/db/salesRequests";
+
+const Body = z.object({ tenantId: id });
 
 /**
  * POST /api/reservations/:id/approve
@@ -12,10 +16,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const { id: reservationId } = await params;
-  const body = await req.json().catch(() => ({}));
-  const { tenantId } = body ?? {};
-  if (typeof tenantId !== "string")
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  if (!isId(reservationId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const p = parse(Body, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { tenantId } = p.data;
 
   try {
     await authorizeStaff(userId, tenantId);

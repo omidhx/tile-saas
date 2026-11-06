@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { staffCtx } from "@/auth/httpCtx";
 import { buildReports } from "@/db/reports";
+import { isId } from "@/lib/validate";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
 
   const agentAccountId = u.searchParams.get("agentAccountId") || null;
   const variantId = u.searchParams.get("variantId") || null;
+  if ((agentAccountId && !isId(agentAccountId)) || (variantId && !isId(variantId))) return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   return NextResponse.json(await buildReports({ tenantId: c.tenantId, from, to, agentAccountId, variantId }));
 }

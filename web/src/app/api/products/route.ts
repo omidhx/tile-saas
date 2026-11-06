@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, isId, parse } from "@/lib/validate";
 import { staffCtx } from "@/auth/httpCtx";
 import { listProducts, createProduct, updateProduct } from "@/db/products";
 import { isSafeImageUrl } from "@/lib/url";
-
-/** ویژگی‌های اختیاریِ متنی از بدنه؛ رشته یا null (خالی → null در لایه‌ی db). */
-const optStr = (v: unknown) => (v === undefined ? undefined : typeof v === "string" ? v : null);
 
 /**
  * عددِ صحیحِ مثبتِ اختیاری (بسته‌بندی): undefined=دست‌نزن، null/""=پاک‌کن، وگرنه
@@ -15,8 +14,18 @@ function optPosInt(v: unknown): { ok: true; value: number | null | undefined } |
   if (v === undefined) return { ok: true, value: undefined };
   if (v === null || v === "") return { ok: true, value: null };
   const n = Number(v);
-  return Number.isInteger(n) && n > 0 ? { ok: true, value: n } : { ok: false };
+  // ≤ حدِ INT (ستونِ INT)؛ بزرگ‌تر 22003 → ۵۰۰ می‌شد
+  return Number.isInteger(n) && n > 0 && n <= 2_147_483_647 ? { ok: true, value: n } : { ok: false };
 }
+
+// بسته‌بندی (boxesPerPallet/sqcmPerBox) و initialStock عمداً اینجا نیستند: کدِ خطای اختصاصی
+// (invalid_packaging / invalid_stock) دارند که UI می‌شناسد، پس دستی چک می‌شوند.
+const Str = z.string().nullish();
+const Attrs = {
+  color: Str, glaze: Str, punch: Str, body: Str, size: Str, thickness: Str, usageArea: Str, description: Str,
+};
+const Create = z.object({ name: z.string(), code: z.string(), sku: z.string(), ...Attrs });
+const Update = z.object({ productId: id, name: z.string().optional(), variantId: id.nullish(), ...Attrs });
 
 
 /** GET ?tenantId[&q][&offset] — محصولات صفحه‌بندی‌شده + وضعیتِ عکس (پنل کاتالوگ). */
@@ -27,20 +36,20 @@ export async function GET(req: Request) {
   const { items, hasMore } = await listProducts({
     tenantId: c.tenantId,
     q: url.searchParams.get("q") ?? undefined,
-    offset: Number(url.searchParams.get("offset")) || 0,
+    offset: Math.max(0, Math.trunc(Number(url.searchParams.get("offset"))) || 0),
   });
   return NextResponse.json({ products: items, hasMore });
 }
 
 /** POST — محصولِ جدید (نام، کد، sku + ویژگی‌ها و عکس اختیاری). */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { name, code, sku, color, glaze, punch, body: bodyType } = body ?? {};
-  if (typeof name !== "string" || typeof code !== "string" || typeof sku !== "string")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Create, body);
+  if ("err" in p) return p.err;
+  const d = p.data;
 
   const bpp = optPosInt(body?.boxesPerPallet);
   const spb = optPosInt(body?.sqcmPerBox);
@@ -52,18 +61,17 @@ export async function POST(req: Request) {
   let initialStock: { warehouseId: string; quantityBoxes: number } | undefined;
   if (rawStock != null) {
     const qty = Number(rawStock?.quantityBoxes);
-    if (typeof rawStock?.warehouseId !== "string" || !rawStock.warehouseId ||
-        !Number.isInteger(qty) || qty <= 0)
+    if (!isId(rawStock?.warehouseId) || !Number.isInteger(qty) || qty <= 0 || qty > 2_147_483_647)
       return NextResponse.json({ error: "invalid_stock" }, { status: 400 });
     initialStock = { warehouseId: rawStock.warehouseId, quantityBoxes: qty };
   }
 
   const r = await createProduct(c.tenantId, {
-    name, code, sku,
-    color: optStr(color) ?? null, glaze: optStr(glaze) ?? null,
-    punch: optStr(punch) ?? null, body: optStr(bodyType) ?? null,
-    size: optStr(body?.size) ?? null, thickness: optStr(body?.thickness) ?? null,
-    usageArea: optStr(body?.usageArea) ?? null, description: optStr(body?.description) ?? null,
+    name: d.name, code: d.code, sku: d.sku,
+    color: d.color ?? null, glaze: d.glaze ?? null,
+    punch: d.punch ?? null, body: d.body ?? null,
+    size: d.size ?? null, thickness: d.thickness ?? null,
+    usageArea: d.usageArea ?? null, description: d.description ?? null,
     imageUrl: typeof body?.imageUrl === "string" && isSafeImageUrl(body.imageUrl) ? body.imageUrl : null,
     boxesPerPallet: bpp.value ?? null, sqcmPerBox: spb.value ?? null,
     initialStock,
@@ -74,22 +82,24 @@ export async function POST(req: Request) {
 
 /** PATCH — ویرایشِ ویژگی‌های محصول (عکس‌ها از راهِ /api/product-images). */
 export async function PATCH(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await staffCtx(body?.tenantId);
   if ("err" in c) return c.err;
-  if (typeof body?.productId !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Update, body);
+  if ("err" in p) return p.err;
+  const d = p.data;
 
   const bpp = optPosInt(body.boxesPerPallet);
   const spb = optPosInt(body.sqcmPerBox);
   if (!bpp.ok || !spb.ok) return NextResponse.json({ error: "invalid_packaging" }, { status: 400 });
 
   await updateProduct({
-    tenantId: c.tenantId, productId: body.productId, actorUserId: c.userId,
-    name: typeof body.name === "string" ? body.name : undefined,
-    color: optStr(body.color), glaze: optStr(body.glaze), punch: optStr(body.punch), body: optStr(body.body),
-    size: optStr(body.size), thickness: optStr(body.thickness),
-    usageArea: optStr(body.usageArea), description: optStr(body.description),
-    variantId: typeof body.variantId === "string" ? body.variantId : undefined,
+    tenantId: c.tenantId, productId: d.productId, actorUserId: c.userId,
+    name: d.name,
+    color: d.color, glaze: d.glaze, punch: d.punch, body: d.body,
+    size: d.size, thickness: d.thickness,
+    usageArea: d.usageArea, description: d.description,
+    variantId: d.variantId ?? undefined,
     boxesPerPallet: bpp.value, sqcmPerBox: spb.value,
   });
   return NextResponse.json({ ok: true });

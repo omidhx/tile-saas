@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { parse } from "@/lib/validate";
 import { sql } from "@/db/client";
 import { verifyPassword } from "@/auth/password";
 import { setSessionCookie, invalidateSessionsIn } from "@/auth/session";
 import { checkRateAsync, clientIp, tooMany } from "@/auth/rateLimit";
 import { assertSameOrigin } from "@/auth/csrf";
+
+const Login = z.object({ identifier: z.string(), password: z.string() });
 
 // app_user سراسریه (بدون tenant_id/RLS) — لاگین قبل از انتخاب tenant اتفاق می‌افته.
 // v3: identifier می‌تواند موبایل یا ایمیل باشد — قطعیِ SMS نباید یعنی کاربر
@@ -16,9 +20,9 @@ export async function POST(req: Request) {
   const csrfFail = assertSameOrigin(req);
   if (csrfFail) return csrfFail;
 
-  const { identifier, password } = await req.json().catch(() => ({}));
-  if (typeof identifier !== "string" || typeof password !== "string")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Login, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { identifier, password } = p.data;
 
   // rate limit دولایه (spec ۸): per-IP جلوی اسپری‌کردن روی کاربرهای مختلف،
   // per-identifier جلوی brute-force روی یک حساب از IPهای چرخان.

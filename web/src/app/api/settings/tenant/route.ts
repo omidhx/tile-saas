@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { positive, parse } from "@/lib/validate";
 import { adminCtx } from "@/auth/httpCtx";
 import { getTenantSettings, updateTenantSettings } from "@/db/tenantSettings";
 import { isSafeImageUrl } from "@/lib/url";
+
+const Patch = z.object({
+  ttlHours: positive.max(8760).optional(), // ≤ یک سال؛ بزرگ‌تر make_interval/timestamp را می‌ترکاند
+  logoUrl: z.string().refine(isSafeImageUrl).nullish(),
+  currencyUnit: z.enum(["rial", "toman"]).optional(),
+});
 
 /** GET/PATCH تنظیماتِ کارخانه (TTLِ پیش‌فرضِ رزرو + لوگو). admin-only. */
 export async function GET(req: Request) {
@@ -13,23 +21,14 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await adminCtx(body?.tenantId);
   if ("err" in c) return c.err;
 
-  const { ttlHours, logoUrl, currencyUnit } = body ?? {};
-  if (ttlHours !== undefined && (!Number.isInteger(ttlHours) || ttlHours <= 0))
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
-  if (logoUrl !== undefined && logoUrl !== null && (typeof logoUrl !== "string" || !isSafeImageUrl(logoUrl)))
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
-  if (currencyUnit !== undefined && currencyUnit !== "rial" && currencyUnit !== "toman")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Patch, body);
+  if ("err" in p) return p.err;
 
-  await updateTenantSettings({
-    tenantId: c.tenantId, actorUserId: c.userId,
-    ttlHours: typeof ttlHours === "number" ? ttlHours : undefined,
-    logoUrl,
-    currencyUnit,
-  });
+  // logoUrl: نبودن=دست‌نزن، null=پاک‌کن
+  await updateTenantSettings({ tenantId: c.tenantId, actorUserId: c.userId, ...p.data });
   return NextResponse.json({ ok: true });
 }

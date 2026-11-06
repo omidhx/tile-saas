@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, parse } from "@/lib/validate";
 import { agentCtx } from "@/auth/httpCtx";
 import { suggestSubstitutes } from "@/db/substitutes";
 import { expectedArrivals } from "@/db/incoming";
 import { getFeatures } from "@/db/features";
 import { subscribeAlert, unsubscribeAlert, listAlertsAndOutOfStock } from "@/db/alerts";
+
+const Body = z.object({ variantId: id });
 
 /** GET ?tenantId&agentAccountId — اشتراک‌های من + کالاهای ناموجود (برای دکمه‌ی «خبرم کن»). */
 export async function GET(req: Request) {
@@ -26,20 +30,22 @@ export async function GET(req: Request) {
 
 /** POST {tenantId, agentAccountId, variantId} — اشتراک. */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await agentCtx(body?.tenantId, body?.agentAccountId);
   if ("err" in c) return c.err;
-  if (typeof body.variantId !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
-  await subscribeAlert({ ...c, variantId: body.variantId });
+  const p = parse(Body, body);
+  if ("err" in p) return p.err;
+  await subscribeAlert({ ...c, variantId: p.data.variantId });
   return NextResponse.json({ ok: true }, { status: 201 });
 }
 
 /** DELETE {tenantId, agentAccountId, variantId} — لغو اشتراک. */
 export async function DELETE(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const c = await agentCtx(body?.tenantId, body?.agentAccountId);
   if ("err" in c) return c.err;
-  if (typeof body.variantId !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 });
-  await unsubscribeAlert({ ...c, variantId: body.variantId });
+  const p = parse(Body, body);
+  if ("err" in p) return p.err;
+  await unsubscribeAlert({ ...c, variantId: p.data.variantId });
   return NextResponse.json({ ok: true });
 }

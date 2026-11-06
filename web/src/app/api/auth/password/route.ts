@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { parse } from "@/lib/validate";
 import { currentUserId, setSessionCookie } from "@/auth/session";
 import { changePassword } from "@/auth/passwordFlows";
 import { checkRateAsync } from "@/auth/rateLimit";
 import { assertSameOrigin } from "@/auth/csrf";
+
+const Change = z.object({ currentPassword: z.string(), newPassword: z.string() });
 
 /** POST /api/auth/password — تغییر رمز توسط کاربرِ واردشده. */
 export async function POST(req: Request) {
@@ -18,10 +22,9 @@ export async function POST(req: Request) {
   if (!rl.ok)
     return NextResponse.json({ error: "too_many" }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
 
-  const body = await req.json().catch(() => ({}));
-  const { currentPassword, newPassword } = body ?? {};
-  if (typeof currentPassword !== "string" || typeof newPassword !== "string")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Change, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { currentPassword, newPassword } = p.data;
 
   const r = await changePassword({ userId, currentPassword, newPassword });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.reason === "wrong_current" ? 401 : 400 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUserId } from "@/auth/session";
 import { authorizeStaff, AuthzError } from "@/auth/authz";
 import { getDispatchDetail } from "@/db/dispatches";
+import { isId } from "@/lib/validate";
 
 /** GET /api/sales-dispatches/:id?tenantId — جزئیاتِ حواله برای برگه‌ی چاپیِ انباردار. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -9,7 +10,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const { id: dispatchId } = await params;
-  const tenantId = new URL(req.url).searchParams.get("tenantId") ?? "";
+  const tenantId = new URL(req.url).searchParams.get("tenantId");
+  if (!isId(tenantId)) return NextResponse.json({ error: "invalid" }, { status: 400 });
+  if (!isId(dispatchId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
   try {
     await authorizeStaff(userId, tenantId);
   } catch (e) {

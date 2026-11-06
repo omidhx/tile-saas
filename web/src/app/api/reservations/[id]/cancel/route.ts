@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, isId, parse } from "@/lib/validate";
 import { currentUserId } from "@/auth/session";
 import { authorizeAgent, authorizeStaff, AuthzError } from "@/auth/authz";
 import { cancelReservation } from "@/db/reservations";
+
+const Body = z.object({ tenantId: id, agentAccountId: id.nullish() });
 
 /**
  * POST /api/reservations/:id/cancel — لغو رزرو (spec ۶: «نماینده/پشتیبان لغو کرد»).
@@ -14,12 +18,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!userId) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const { id: reservationId } = await params;
-  const body = await req.json().catch(() => ({}));
-  const { tenantId, agentAccountId } = body ?? {};
-  if (typeof tenantId !== "string") return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  if (!isId(reservationId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const p = parse(Body, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { tenantId, agentAccountId } = p.data;
 
   try {
-    if (typeof agentAccountId === "string") await authorizeAgent(userId, tenantId, agentAccountId);
+    if (agentAccountId) await authorizeAgent(userId, tenantId, agentAccountId);
     else await authorizeStaff(userId, tenantId);
   } catch (e) {
     if (e instanceof AuthzError) return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -28,7 +33,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const result = await cancelReservation({
     tenantId, reservationId, actorUserId: userId,
-    agentAccountId: typeof agentAccountId === "string" ? agentAccountId : undefined,
+    agentAccountId: agentAccountId ?? undefined,
   });
   if (!result.ok)
     return NextResponse.json({ error: result.reason }, { status: result.reason === "not_found" ? 404 : 409 });

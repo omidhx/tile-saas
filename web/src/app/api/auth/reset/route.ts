@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { parse } from "@/lib/validate";
 import { requestReset, confirmReset } from "@/auth/passwordFlows";
 import { checkRateAsync } from "@/auth/rateLimit";
 import { assertSameOrigin } from "@/auth/csrf";
+
+// بدونِ code = درخواستِ کد؛ با code = تأیید، که newPassword هم لازم دارد.
+const Reset = z.object({
+  identifier: z.string().trim().min(1), code: z.string().optional(), newPassword: z.string().optional(),
+}).refine((v) => v.code === undefined || v.newPassword !== undefined, { path: ["newPassword"] });
 
 /**
  * POST /api/auth/reset — بازیابیِ رمز با کدی که به همه‌ی کانال‌های موجودِ کاربر می‌رود.
@@ -16,15 +23,14 @@ export async function POST(req: Request) {
   const csrfFail = assertSameOrigin(req);
   if (csrfFail) return csrfFail;
 
-  const body = await req.json().catch(() => ({}));
-  const { identifier, code, newPassword } = body ?? {};
-  if (typeof identifier !== "string" || !identifier.trim())
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const p = parse(Reset, await req.json().catch(() => null));
+  if ("err" in p) return p.err;
+  const { identifier, code, newPassword } = p.data;
 
   // کلید بر اساس شناسه: مهاجم نباید بتواند با درخواستِ پیاپی هم صف را پر کند
   // هم کد را بارها عوض کند. (spec ۸: rate limit روی مسیرهای احراز هویت.)
   // failPolicy=closed: اگر DB در دسترس نباشد، fallback به in-memory می‌زند.
-  const isConfirm = typeof code === "string";
+  const isConfirm = code !== undefined;
   const rl = await checkRateAsync(
     `reset:${isConfirm ? "c" : "r"}:${identifier}`,
     isConfirm ? 10 : 3, 15 * 60_000,
@@ -39,10 +45,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  if (typeof newPassword !== "string")
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
-
-  const r = await confirmReset({ identifier, code, newPassword });
+  const r = await confirmReset({ identifier, code, newPassword: newPassword! });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

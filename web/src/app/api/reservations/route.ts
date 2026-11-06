@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { id, positive, parse } from "@/lib/validate";
 import { staffCtx, agentCtx } from "@/auth/httpCtx";
 import { checkRateAsync, tooMany } from "@/auth/rateLimit";
-import { reserve, listReservations, type ReserveItem } from "@/db/reservations";
+import { reserve, listReservations } from "@/db/reservations";
+
+const Reserve = z.object({
+  idempotencyKey: z.string().min(1),
+  items: z.array(z.object({ lotId: id, quantityBoxes: positive.max(2_147_483_647) })).min(1),
+});
 
 /**
  * GET /api/reservations?tenantId[&agentAccountId]
@@ -11,7 +18,7 @@ import { reserve, listReservations, type ReserveItem } from "@/db/reservations";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const tenantId = url.searchParams.get("tenantId");
-  const agentAccountId = url.searchParams.get("agentAccountId");
+  const agentAccountId = url.searchParams.get("agentAccountId") || null; // "" = بدونِ فیلتر
   const c = agentAccountId ? await agentCtx(tenantId, agentAccountId) : await staffCtx(tenantId);
   if ("err" in c) return c.err;
   const reservations = await listReservations({ tenantId: c.tenantId, agentAccountId: agentAccountId ?? undefined });
@@ -25,17 +32,12 @@ export async function GET(req: Request) {
  * ttlHours از خودِ tenant خونده می‌شه، نه از کلاینت.
  */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
-  const { tenantId, agentAccountId, idempotencyKey, items } = body ?? {};
-  if (
-    typeof idempotencyKey !== "string" ||
-    !Array.isArray(items) ||
-    items.length === 0
-  )
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-
-  const c = await agentCtx(tenantId, agentAccountId);
+  const body = await req.json().catch(() => null);
+  const c = await agentCtx(body?.tenantId, body?.agentAccountId);
   if ("err" in c) return c.err;
+  const p = parse(Reserve, body);
+  if ("err" in p) return p.err;
+  const { idempotencyKey, items } = p.data;
 
   // rate limit روی رزرو (spec ۸): جلوی hammer کردنِ مسیر پول/موجودی توسط یک کاربر
   const rl = await checkRateAsync(`reserve:${c.userId}`, 30, 60_000);
@@ -46,7 +48,7 @@ export async function POST(req: Request) {
     agentAccountId: c.agentAccountId,
     ttlHours: c.ttlHours,
     idempotencyKey,
-    items: items as ReserveItem[],
+    items,
   });
 
   if (!result.ok) {
