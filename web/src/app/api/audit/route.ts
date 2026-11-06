@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const tenantId = u.searchParams.get("tenantId");
   if (!isId(tenantId)) return NextResponse.json({ error: "invalid" }, { status: 400 });
   const q = u.searchParams.get("q") ?? undefined;
-  const offset = Math.max(0, Math.trunc(Number(u.searchParams.get("offset") ?? "0")) || 0) // منفی/اعشار به OFFSET نرسد;
+  const offset = Math.max(0, Math.trunc(Number(u.searchParams.get("offset") ?? "0")) || 0); // منفی/اعشار به OFFSET نرسد
   try {
     await authorizeStaff(userId, tenantId);
   } catch (e) {

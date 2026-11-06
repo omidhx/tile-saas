@@ -75,11 +75,15 @@ test("فاز ۴: لغوِ هم‌زمان با ساختِ حواله، حوال�
   // اتصالِ جدا نقشِ «لغوِ در حالِ اجرا» را بازی می‌کند و همه‌ی قفل‌هایش را از اول می‌گیرد،
   // تا ترتیب قطعی باشد: ساختِ حواله بعد از خواندنِ درخواست، پشتِ این تراکنش گیر می‌کند.
   const admin = postgres(process.env.TEST_ADMIN_DATABASE_URL!, { max: 1, onnotice: () => {} });
-  let release!: () => void;
+  let release!: () => void, locked!: () => void;
   const gate = new Promise<void>((r) => (release = r));
+  const isLocked = new Promise<void>((r) => (locked = r));
   const cancel = admin.begin(async (tx) => {
     await tx`LOCK TABLE sales_dispatch IN ACCESS EXCLUSIVE MODE`;
     await tx`SELECT id FROM sales_request WHERE id = ${req} FOR UPDATE`;
+    // فقط بعد از هر دو قفل: اگر ساختِ حواله بینِ این دو دستور قفلِ درخواست را بگیرد،
+    // خودِ این شبیه‌سازی (که برخلافِ لغوِ واقعی جدول را قفل می‌کند) deadlock می‌سازد.
+    locked();
     await gate;
     // همان نوشتن‌هایی که setDispatchStatus(cancelled) روی تنها حواله‌ی درخواست انجام می‌دهد
     await tx`UPDATE sales_dispatch SET status = 'cancelled' WHERE id = ${first.dispatchIds[0]}`;
@@ -89,15 +93,7 @@ test("فاز ۴: لغوِ هم‌زمان با ساختِ حواله، حوال�
     await tx`UPDATE sales_request SET status = 'cancelled' WHERE id = ${req}`;
   });
 
-  // قفل‌ها گرفته شده‌اند؟ (قبل از شروعِ ساخت)
-  for (let i = 0; i < 100; i++) {
-    const [{ n }] = await sql<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
-      WHERE c.relname = 'sales_dispatch' AND l.mode = 'AccessExclusiveLock' AND l.granted`;
-    if (n > 0) break;
-    await new Promise((r) => setTimeout(r, 20));
-  }
-
+  await isLocked;
   const create = createDispatchFromRequest({ tenantId: T, salesRequestId: req, createdByUserId: U });
   await waitForLockWait();
   release();
@@ -176,6 +172,17 @@ test("فاز ۴: لغوِ یک حواله از سفارشِ دوانباره د�
   assert.ok((await setDispatchStatus({ tenantId: T, dispatchId: dB, toStatus: "ready_for_loading", actorUserId: U })).ok);
   assert.ok((await setDispatchStatus({ tenantId: T, dispatchId: dB, toStatus: "loaded", actorUserId: U })).ok);
   assert.equal(await status(), "approved");
+
+  // گزارشِ نماینده فقط نیمه‌ی بارگیری‌شده را می‌شمارد: نه ۳۵ (کلِ سفارش)، نه ۰ (درخواستِ لغوشده)
+  const { buildReports } = await import("./reports");
+  const day = 86_400_000;
+  const r = await buildReports({ tenantId: T, from: new Date(Date.now() - day), to: new Date(Date.now() + day), agentAccountId: AG });
+  // درخواست‌های دیگرِ همین فایل هیچ سهمِ لغوشده‌ای ندارند، پس کاملشان شمرده می‌شود
+  const [{ n }] = await sql<{ n: number }[]>`
+    SELECT COALESCE(SUM(sri.requested_qty_boxes), 0)::int AS n FROM sales_request_item sri
+    JOIN sales_request sr ON sr.id = sri.request_id
+    WHERE sr.agent_account_id = ${AG} AND sr.status IN ('approved','fulfilled') AND sr.id <> ${req}`;
+  assert.equal(r.agents[0]?.boxes, n + 15, "سهمِ لغوشده‌ی ۲۰ کارتنی هنوز در گزارش شمرده می‌شود");
 });
 
 test("فاز ۴: لغوِ آخرین حواله‌ی زنده درخواست را لغو می‌کند", async () => {

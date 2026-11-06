@@ -6,9 +6,11 @@
 -- renderMessage فقط «اعلان جدید» می‌فرستاد، بدونِ نام کاربری و رمز. کد اصلاح شد؛
 -- این migration ردیف‌های قبلی را به شیء برمی‌گرداند تا pendingها با متنِ درست بروند.
 -- ردیف‌های sent دوباره صف نمی‌شوند: رمزِ موقت ممکن است عوض شده باشد و مدیر همان
--- رمز را موقعِ دعوت روی صفحه دیده است. تکرارِ این migration بی‌اثر است.
+-- رمز را موقعِ دعوت روی صفحه دیده است. تکرارِ این migration بی‌اثر است. رشته‌ای که JSONِ
+-- معتبر نیست دست نمی‌خورد، تا یک ردیفِ عجیب کلِ migrate را متوقف نکند (Postgres 16+).
 BEGIN;
 UPDATE notification_outbox
 SET payload = (payload #>> '{}')::jsonb
-WHERE jsonb_typeof(payload) = 'string';
+WHERE jsonb_typeof(payload) = 'string'
+  AND pg_input_is_valid(payload #>> '{}', 'jsonb');
 COMMIT;

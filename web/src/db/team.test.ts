@@ -136,6 +136,9 @@ test("فاز ۴: migration 0008 ردیف‌های صف‌شده با payloadِ �
   // همان شکلی که کدِ قبلی می‌نوشت: رشته‌ی jsonb
   await sql`INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
             VALUES (${T}, 'sms', '09135550003', to_jsonb(${JSON.stringify(body)}::text))`;
+  // رشته‌ای که JSON نیست نباید migrate را متوقف کند
+  await sql`INSERT INTO notification_outbox (tenant_id, channel, recipient, payload)
+            VALUES (${T}, 'sms', '09135550004', to_jsonb('not json'::text))`;
   const migration = readFileSync(new URL("../../../db/migrations/0008_outbox_payload_unwrap.sql", import.meta.url), "utf8")
     .replace(/^BEGIN;$/m, "").replace(/^COMMIT;$/m, "");
   await sql.unsafe(migration);
@@ -144,4 +147,7 @@ test("فاز ۴: migration 0008 ردیف‌های صف‌شده با payloadِ �
     SELECT jsonb_typeof(payload) AS kind, payload FROM notification_outbox WHERE recipient = '09135550003'`;
   assert.equal(row.kind, "object");
   assert.deepEqual(row.payload, body);
+  const [odd] = await sql<{ kind: string }[]>`
+    SELECT jsonb_typeof(payload) AS kind FROM notification_outbox WHERE recipient = '09135550004'`;
+  assert.equal(odd.kind, "string");
 });

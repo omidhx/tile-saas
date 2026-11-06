@@ -38,13 +38,26 @@ export async function buildReports(p: {
     const agents = await tx<{ agentId: string; agentName: string; requests: number; boxes: number; value: string; unpricedLines: number }[]>`
       SELECT aa.id AS "agentId", aa.legal_name AS "agentName",
              count(DISTINCT sr.id)::int AS requests,
-             COALESCE(SUM(sri.requested_qty_boxes), 0)::int AS boxes,
-             COALESCE(SUM(sri.unit_price_applied * sri.requested_qty_boxes
-                          - COALESCE(sri.discount_amount, 0)), 0)::bigint AS value,
+             COALESCE(SUM(sri.requested_qty_boxes - cx.qty), 0)::int AS boxes,
+             COALESCE(SUM(sri.unit_price_applied * (sri.requested_qty_boxes - cx.qty)
+                          - ROUND(COALESCE(sri.discount_amount, 0) * (sri.requested_qty_boxes - cx.qty)
+                                  / NULLIF(sri.requested_qty_boxes, 0))), 0)::bigint AS value,
              count(*) FILTER (WHERE sri.id IS NOT NULL AND sri.unit_price_applied IS NULL)::int AS "unpricedLines"
       FROM sales_request sr
       JOIN agent_account aa ON aa.id = sr.agent_account_id AND aa.tenant_id = sr.tenant_id
       LEFT JOIN sales_request_item sri ON sri.request_id = sr.id AND sri.tenant_id = sr.tenant_id
+      -- سهمِ لغوشده‌ی سفارشِ دوانباره (E3-F4): درخواست تأییدشده می‌ماند ولی حواله‌ی یک انبار
+      -- لغو شده و تخصیصش آزاد شده؛ آن کارتن‌ها فروش نیستند. هر تخصیص دقیقاً یک قلمِ حواله است
+      -- (همان lot)، پس کمِ تخصیص‌هایی که حواله‌شان لغو شده. تخفیف هم به همان نسبت، مثلِ برگه‌ی حواله.
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(sra.allocated_qty_boxes), 0)::int AS qty
+        FROM sales_request_allocation sra
+        WHERE sra.sales_request_item_id = sri.id AND sra.tenant_id = sr.tenant_id
+          AND EXISTS (SELECT 1 FROM sales_dispatch_item sdi
+                      JOIN sales_dispatch sd ON sd.id = sdi.dispatch_id AND sd.tenant_id = sdi.tenant_id
+                      WHERE sd.tenant_id = sr.tenant_id AND sd.sales_request_id = sr.id
+                        AND sd.status = 'cancelled' AND sdi.lot_id = sra.lot_id)
+      ) cx ON TRUE
       WHERE sr.tenant_id = ${tenantId}
         AND sr.status IN ('approved', 'fulfilled')
         AND sr.created_at >= ${from} AND sr.created_at < ${to}
