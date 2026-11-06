@@ -1,7 +1,8 @@
-# CI روی لینوکس منبع حقیقت است. سه job برای required status check روی main:
-#   lint  بدون دیتابیس: چک خود CI، gitleaks، tsc، ESLint، قرارداد API
-#   test  Postgres واقعی با نقش محدود app_user: migration، db/test_schema.sql، npm test، بکاپ
-#   e2e   بیلد production و Playwright با نقش محدود روی DB جدا، و smoke
+# CI روی لینوکس منبع حقیقت است. چهار job برای required status check روی main:
+#   lint    بدون دیتابیس: چک خود CI، gitleaks، tsc، ESLint، قرارداد API
+#   test    Postgres واقعی با نقش محدود app_user: migration، db/test_schema.sql، npm test، بکاپ
+#   e2e     بیلد production و Playwright با نقش محدود روی DB جدا، و smoke
+#   docker  نصب تمیز با همان compose سرور: ورود، workerها، بکاپ و بازیابی روی نصب خالی
 # هر مرحله باید بتواند شکست بخورد؛ scripts/lint-ci.sh الگوهای پنهان‌کننده را رد می‌کند.
 
 name: CI
@@ -106,15 +107,12 @@ jobs:
           # pg_dump نسخه‌ی بالاتر روی runner خروجی‌ای می‌دهد که سرور ۱۶ نمی‌فهمد (transaction_timeout)
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
 
-      - name: Fresh install (schema.sql, create-app-user.sql, apply.ts)
+      - name: Fresh install (scripts/migrate.ts, same as docker-compose)
         working-directory: web
         env:
-          DATABASE_URL: ${{ env.TEST_ADMIN_DATABASE_URL }}
-          NODE_PATH: ${{ github.workspace }}/web/node_modules
-        run: |
-          psql -v ON_ERROR_STOP=1 -q -h localhost -U postgres -d tile_test -f ../db/schema.sql
-          psql -v ON_ERROR_STOP=1 -q -h localhost -U postgres -d tile_test -f ../db/create-app-user.sql
-          node --import tsx ../db/migrations/apply.ts
+          MIGRATION_DATABASE_URL: ${{ env.TEST_ADMIN_DATABASE_URL }}
+          APP_USER_PASSWORD: ci_app_pw
+        run: npm run migrate
 
       - name: Schema smoke test (db/test_schema.sql)
         run: |
@@ -145,6 +143,21 @@ jobs:
           BACKUP_GPG_PASSPHRASE: ci-test-passphrase-only-not-for-production
           BACKUP_RETENTION_DAYS: "30"
         run: bash scripts/ci-uploads-backup-test.sh
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install backup tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd rsync
+
+      - name: Clean Docker install (scripts/docker-smoke.sh)
+        run: bash scripts/docker-smoke.sh
 
   e2e:
     name: e2e

@@ -235,10 +235,10 @@ mkdir -p "${BACKUP_DIR}" "${STATUS_DIR}"
 # ──────────────────────────────────────────────────────────
 # The test suite (web/src/db/_testdb.ts resetSchema) does DROP SCHEMA + recreates
 # from schema.sql. schema.sql creates the _migrations table but does NOT populate
-# it — that's apply.ts's job. So after tests, _migrations exists but is empty.
+# it — that's migrate.ts's job. So after tests, _migrations exists but is empty.
 #
-# In production, apply.ts runs at deploy time and populates _migrations. To make
-# the CI backup test realistic, we re-run apply.ts here so the backup captures
+# In production, migrate.ts runs at deploy time and populates _migrations. To make
+# the CI backup test realistic, we re-run migrate.ts here so the backup captures
 # a realistic state (with migration history).
 #
 # We also seed a minimal tenant + platform admin if none exist, because the
@@ -246,27 +246,17 @@ mkdir -p "${BACKUP_DIR}" "${STATUS_DIR}"
 #
 # Note: we do NOT re-run schema.sql here because it uses CREATE TABLE (not
 # CREATE TABLE IF NOT EXISTS for all tables) and would fail with "relation
-# already exists". apply.ts is idempotent and safe to re-run.
+# already exists". migrate.ts is idempotent and safe to re-run.
 log "--- Step 0/9: Re-apply migrations + seed minimal data ---"
 
-# Run apply.ts to populate _migrations table (needs node + tsx from web/)
-# NODE_PATH is needed because apply.ts is in db/migrations/ but node_modules is in web/
-if [ -f "${PROJECT_ROOT}/db/migrations/apply.ts" ]; then
-  cd "${PROJECT_ROOT}/web"
-  DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}" \
-    AUTH_SECRET="ci-secret-must-be-at-least-32-characters-long-for-tests-only" \
-    NODE_PATH="${PROJECT_ROOT}/web/node_modules" \
-    node --import tsx "${PROJECT_ROOT}/db/migrations/apply.ts" \
-    2>"${TMP_DIR}/migrations_apply.log" || {
-    error "apply.ts failed"
-    cat "${TMP_DIR}/migrations_apply.log" >&2
-    exit 1
-  }
-  cd "${PROJECT_ROOT}"
-  ok "Migrations re-applied"
-else
-  warn "apply.ts not found — skipping migration re-apply (migrations table may be empty)"
-fi
+cd "${PROJECT_ROOT}/web"
+MIGRATION_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"   npm run --silent migrate >"${TMP_DIR}/migrations_apply.log" 2>&1 || {
+  error "migrate failed"
+  cat "${TMP_DIR}/migrations_apply.log" >&2
+  exit 1
+}
+cd "${PROJECT_ROOT}"
+ok "Migrations re-applied"
 
 # Seed minimal data: at least 1 tenant + 1 platform admin (if none exist)
 # This is needed because the integrity checks expect them.

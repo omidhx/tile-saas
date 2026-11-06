@@ -13,7 +13,7 @@
 ## دیتابیس
 - **مسیر قفل/پول با raw SQL** (postgres.js)، نه query-builder — صراحت مهم‌تر از اختصار.
 - **schema.sql منبع حقیقت.** جدول را در TS بازتعریف نکن؛ `db:pull` introspect کن.
-- **تغییرات prod با migrationهای forward-only در `db/migrations/`** (Phase 10-post) — `apply.ts` رد اجرا را با checksum نگه می‌دارد. `schema.sql` فقط برای نصبِ تازه است.
+- **تغییرات prod با migrationهای forward-only در `db/migrations/`** (Phase 10-post) — `web/scripts/migrate.ts` رد اجرا را با checksum نگه می‌دارد. `schema.sql` فقط برای نصبِ تازه است.
 - هر کار روی داده‌ی tenant داخل `withTenant()` (که `SET LOCAL app.tenant_id` می‌زند). هرگز کوئری دامنه‌ای بیرون آن.
 - پول = ریال/BIGINT، متراژ = cm²/INT، زمان = UTC. اعشار فقط در UI.
 - **هر تابع `SECURITY DEFINER` باید `SET search_path = public, pg_temp` داشته باشد** (Phase 10-post) — بدونش، تابع در برابرِ search_path injection آسیب‌پذیر است.
@@ -56,6 +56,6 @@
 
 ## Decision Log
 - بدون ORM برای مسیر رزرو (raw SQL) — ARCHITECTURE Trade-offs.
-- Migration با checksum (Phase 10-post) — `db/migrations/apply.ts`.
+- Migration با checksum (Phase 10-post) — `web/scripts/migrate.ts`.
 - Rate limiter دو-حالته (Phase 10-post) — `RATE_LIMIT_BACKEND=memory|postgres`.
 - SECURITY DEFINER با `SET search_path` (Phase 10-post) — همه‌ی چهار تابع.

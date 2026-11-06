@@ -17,6 +17,7 @@ backups/uploads/*
 !backups/README.md
 
 # خروجی‌های قابلِ بازتولید
+tile-saas-*.tar
 node_modules/
 .next/
 test-results/

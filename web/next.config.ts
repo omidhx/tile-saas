@@ -18,6 +18,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // فقط Dockerfile این را ست می‌کند؛ `next start` در تست و CI با standalone کار نمی‌کند.
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   poweredByHeader: false, // نسخه‌ی فریم‌ورک را لو نده
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

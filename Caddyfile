@@ -1,37 +1,18 @@
-# Caddyfile — Reverse proxy برای staging
+# DOMAIN از .env می‌آید. دامنه‌ی واقعی: گواهی Let's Encrypt.
+# localhost یا IP: گواهی داخلی Caddy که مرورگر به آن هشدار می‌دهد؛ فقط برای تست.
 #
-# این فایل Caddy را به‌عنوان reverse proxy با HTTPS تنظیم می‌کند.
-# Caddy به‌صورت خودکار Let's Encrypt certificate می‌گیرد (نیاز به دامنه واقعی).
-# برای localhost، از internal CA استفاده می‌کند (caddy trust).
+# default_sni: کلاینت برای IP نام نمی‌فرستد و بدون این، TLS با internal error قطع می‌شود.
+{
+	default_sni {$DOMAIN}
+}
 
-# برای دامنه واقعی، این خط را به‌روزرسانی کنید:
-# staging.example.com {
-# برای localhost:
-:443 {
-    # Reverse proxy به Next.js app
-    reverse_proxy web:3000 {
-        # ⚠️ مهم: X-Forwarded-Proto را از client پاک می‌کنیم و خودمان ست می‌کنیم
-        # این جلوی spoofing را می‌گیرد — client نمی‌تواند این header را بفرستد
-        header_up X-Forwarded-Proto {scheme}
-
-        # Health check — Caddy فقط به app ترافیک می‌فرستد اگر /api/ready 200 بدهد
-        health_uri /api/ready
-        health_interval 10s
-        health_timeout 5s
-        health_fails 3
-    }
-
-    # HSTS در سطح Caddy (defense-in-depth کنار middleware)
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Frame-Options "DENY"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-
-    # لاگ
-    log {
-        output stdout
-        format console
-    }
+# Caddy هدرهای X-Forwarded-For و X-Forwarded-Proto ارسالی کلاینت را خودش بازنویسی می‌کند
+# و اپ سقف درخواست و HSTS را از همین‌ها می‌خواند. هدرهای امنیتی دیگر را خود اپ می‌گذارد.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+	log {
+		output stdout
+		format console
+	}
 }

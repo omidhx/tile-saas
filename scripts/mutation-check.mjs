@@ -63,6 +63,10 @@ const MUTATIONS = [
   { id: "m7", expect: "تغییر رمز همه‌ی نشست‌ها", why: "تغییر رمز sessionها را باطل نمی‌کند", file: "web/src/auth/passwordFlows.ts",
     edits: [["await tx`UPDATE app_user SET password_hash = ${hash} WHERE id = ${p.userId}`;\n    await invalidateSessionsIn(tx, p.userId);", "await tx`UPDATE app_user SET password_hash = ${hash} WHERE id = ${p.userId}`;"]],
     tests: ["src/auth/passwordFlows.test.ts"] },
+  { id: "p3v", expect: "v_lot_availability زیر RLS", why: "view دوباره با نقش مالک اجرا می‌شود", file: "db/schema.sql",
+    edits: [["CREATE VIEW v_lot_availability WITH (security_invoker = true) AS", "CREATE VIEW v_lot_availability AS"]], tests: ["src/db/appRole.test.ts"] },
+  { id: "p3c", expect: "migrate: تغییر فایل", why: "چک checksum در migrate حذف شد", file: "web/scripts/migrate.ts",
+    edits: [["if (m && m.checksum !== a.checksum) {", "if (false && m && m.checksum !== a.checksum) {"]], tests: ["src/db/migrate.test.ts"] },
   { id: "bh12", expect: "rejects RESTORE_DB_NAME", why: "گارد RESTORE_DB_NAME == POSTGRES_DB حذف شد", file: "scripts/restore-db.sh",
     edits: [['if [ "${RESTORE_DB_NAME}" = "${POSTGRES_DB}" ]; then', "if false; then"]], tests: ["src/lib/backupHardening.test.ts"] },
 ];

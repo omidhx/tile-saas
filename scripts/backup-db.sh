@@ -26,7 +26,6 @@
 #
 # Usage:
 #   bash scripts/backup-db.sh
-#   COMPOSE_FILE=docker-compose.staging.yml bash scripts/backup-db.sh
 #
 # Exit codes:
 #   0 — موفق
@@ -158,26 +157,18 @@ BACKUP_DIR="${PROJECT_ROOT}/backups/daily"
 STATUS_DIR="${PROJECT_ROOT}/backups/status"
 STATUS_FILE="${STATUS_DIR}/backup-status.json"
 
-# Load .env if present (for local testing). ما فقطِ متغیرهای BE_*/BACKUP_*/POSTGRES_*
-# را می‌خوانیم تا نشت ناخواسته پیش نیاید.
 if [ -f "${PROJECT_ROOT}/.env" ]; then
-  # shellcheck disable=SC1091
   set -a
-  # Source را در subshell اجرا کن تا exit کد را تحت تاثیر نگذارد
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB \
-               BACKUP_GPG_PASSPHRASE BACKUP_OFFSITE_TARGET BACKUP_OFFSITE_SSH_KEY \
-               BACKUP_OFFSITE_METHOD BACKUP_RETENTION_DAYS COMPOSE_FILE; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 
 # Required env vars — fail loud
-POSTGRES_USER="${POSTGRES_USER:-tile_app}"
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-tile_saas}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
-BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/BACKUP_POLICY.md}"
+BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/GO_LIVE.md}"
 
 # Optional env vars
 BACKUP_OFFSITE_TARGET="${BACKUP_OFFSITE_TARGET:-}"
@@ -340,7 +331,7 @@ write_status_success() {
     "null" \
     "null" \
     "${LAST_SUCCESS_SIZE}" \
-    "\"${LAST_SUCCESS_SHA256}\"" \
+    "${LAST_SUCCESS_SHA256}" \
     "${PREV_RESTORE_SUCCESS_AT}" \
     "${PREV_RESTORE_FAILURE_AT}"
 }

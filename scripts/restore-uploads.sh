@@ -73,13 +73,10 @@ BACKUP_DIR="${PROJECT_ROOT}/backups/uploads"
 STATUS_DIR="${PROJECT_ROOT}/backups/status"
 STATUS_FILE="${STATUS_DIR}/uploads-backup-status.json"
 
-# Load .env (selectively)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
   set -a
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in BACKUP_GPG_PASSPHRASE BACKUP_RETENTION_DAYS COMPOSE_FILE; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 
@@ -292,7 +289,7 @@ if [ "${RESTORED_FILE_COUNT}" -eq 0 ]; then
 fi
 
 # 3.2 Check for path traversal (no .. in any path)
-TRAVERSAL_COUNT=$(find "${EXTRACTED_UPLOADS_DIR}" -type f | grep -c "\.\." || echo "0")
+TRAVERSAL_COUNT=$(find "${EXTRACTED_UPLOADS_DIR}" -type f | grep -c "\.\." || true)
 if [ "${TRAVERSAL_COUNT}" -gt 0 ]; then
   error "Path traversal detected in restored files"
   error "Found ${TRAVERSAL_COUNT} files with '..' in path"
@@ -301,7 +298,7 @@ fi
 ok "Path traversal check: ${TRAVERSAL_COUNT} suspicious files (expected 0)"
 
 # 3.3 Manifest verification (if manifest exists)
-MANIFEST_FILE="${BACKUP_FILE%.gpg}.manifest"
+MANIFEST_FILE="${BACKUP_FILE%.tar.zst.gpg}.manifest"
 if [ -f "${MANIFEST_FILE}" ]; then
   log "Verifying against manifest: ${MANIFEST_FILE}"
 

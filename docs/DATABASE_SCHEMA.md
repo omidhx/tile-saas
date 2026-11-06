@@ -74,14 +74,11 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
 `schema.sql` = نصب مرجع/تازه. **هرگز روی prodِ داده‌دار دوباره اجرا نشود.** تغییرات prod فقط با migrationهای forward-only در `db/migrations/` (Phase 10-post):
 
 ```bash
-# اجرای idempotentِ همه‌ی migrationهای اجرا‌نشده:
-node --env-file=web/.env --import tsx db/migrations/apply.ts
-
-# یا:
-cd web && npm run migrate
+# با نقش superuser، idempotent:
+cd web && MIGRATION_DATABASE_URL=postgres://postgres:...@localhost:5432/tile npm run migrate
 ```
 
-`apply.ts` ردِ اجرا را در جدول `_migrations` نگه می‌دارد (با checksum)؛ در صورت شکستِ mid-way،
+`web/scripts/migrate.ts` ردِ اجرا را در جدول `_migrations` نگه می‌دارد (با checksum)؛ در صورت شکستِ mid-way،
 تراکنش rollback می‌شود. spec ۱۴.۹.
 
 ### Migrationهای موجود

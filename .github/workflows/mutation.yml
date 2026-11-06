@@ -21,6 +21,7 @@ on:
       - "web/src/proxy.ts"
       - "db/schema.sql"
       - "db/create-app-user.sql"
+      - "web/scripts/migrate.ts"
       - "scripts/backup-db.sh"
       - "scripts/restore-db.sh"
 

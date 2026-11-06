@@ -21,7 +21,6 @@
 #
 # Usage:
 #   bash scripts/verify-backup.sh [backup-file]
-#   COMPOSE_FILE=docker-compose.staging.yml bash scripts/verify-backup.sh
 #
 # Exit codes:
 #   0 — verify موفق
@@ -65,17 +64,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="${PROJECT_ROOT}/backups/daily"
 
-# Load .env (selectively, same pattern as backup-db.sh)
 if [ -f "${PROJECT_ROOT}/.env" ]; then
   set -a
-  ( source "${PROJECT_ROOT}/.env" 2>/dev/null && \
-    for var in BACKUP_GPG_PASSPHRASE COMPOSE_FILE; do
-      if [ -n "${!var:-}" ]; then echo "${var}=${!var}"; fi
-    done ) | while IFS='=' read -r k v; do export "${k}=${v}"; done
+  # shellcheck disable=SC1091
+  source "${PROJECT_ROOT}/.env"
   set +a
 fi
 
-BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/BACKUP_POLICY.md}"
+BACKUP_GPG_PASSPHRASE="${BACKUP_GPG_PASSPHRASE:?BACKUP_GPG_PASSPHRASE is required — see docs/GO_LIVE.md}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 
 # Find backup file to verify
@@ -235,7 +231,8 @@ else
 fi
 
 # Run pg_restore --list, count entries
-TABLE_COUNT=$("${pg_restore_cmd[@]}" --list "${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || echo "0")
+# فایل روی host است، پس از stdin می‌خوانیم تا داخل کانتینر هم کار کند.
+TABLE_COUNT=$("${pg_restore_cmd[@]}" --list <"${TMP_VERIFY}/dump.sql" 2>/dev/null | grep -c "; " || true)
 if [ "${TABLE_COUNT}" -lt 10 ]; then
   error "pg_restore --list returned too few entries (${TABLE_COUNT})"
   error "Expected ≥ 10 tables, got ${TABLE_COUNT}"

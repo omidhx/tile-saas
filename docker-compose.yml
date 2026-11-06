@@ -1,158 +1,119 @@
-# =============================================================================
-# docker-compose.yml — محیطِ development و production تک‌نود
-# =============================================================================
-# شامل:
-#   - postgres: دیتابیس
-#   - web: اپ Next.js (port 3000)
-#   - worker-expire: انقضای رزروها (هر ۱۰ دقیقه)
-#   - worker-outbox: ارسال پیامک (هر ۲ دقیقه)
-#   - worker-housekeeping: پاکسازیِ ردیف‌های قدیمیِ _rate_limit_hits (هر ۶ ساعت)
+# تنها مسیر دیپلوی: production، staging و تست نصب (scripts/docker-smoke.sh) همگی همین فایل‌اند.
+# راهنما: docs/GO_LIVE.md. مقادیر: .env که scripts/init-env.sh می‌سازد.
 #
-# **تک منبعِ زمان‌بندی:** این compose file زمان‌بندیِ workerها را برعهده دارد.
-# اگر این compose file را استفاده می‌کنید، cronهای جدا در `docs/GO_LIVE.md`
-# را روشن نکنید — هر دو را هم‌زمان اجرا نکنید. (دو worker با `SKIP LOCKED` و
-# `idempotent` معمولاً تحمل می‌کنند، ولی مواردِ لبه‌ای مثل دو بار `expire` ممکن
-# است در N+1 حالت راکتور بزند.)
-#
-# استفاده:
-#   dev:        docker compose up
-#   production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-#
-# در production، فایل .env با متغیرهای واقعی لازم است (نگاه کنید به .env.example).
-# =============================================================================
+# دو نقش دیتابیس، همین و بس:
+#   POSTGRES_USER (superuser): فقط سرویس migrate و بکاپ. مالک جدول‌ها.
+#   app_user: اپ و workerها، زیر RLS. نقش و grantهایش را migrate می‌سازد.
+
+x-logging: &logging
+  # بدون سقف، لاگ Docker دیسک VPS را پر می‌کند.
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-app: &app
+  image: tile-saas:${IMAGE_TAG:-local}
+  build: .
+  restart: unless-stopped
+  # sh به SIGTERM جواب نمی‌دهد؛ بدون init هر stop ده ثانیه طول می‌کشد.
+  init: true
+  logging: *logging
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://app_user:${APP_USER_PASSWORD:?run scripts/init-env.sh}@postgres:5432/${POSTGRES_DB:-tile_saas}
+  # رمزنگاری کلیدهای پیامک هم با همین است؛ گم شدنش یعنی آن کلیدها باید دوباره وارد شوند.
+  AUTH_SECRET: ${AUTH_SECRET:?run scripts/init-env.sh}
 
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-tile_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-prod}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/init-env.sh}
       POSTGRES_DB: ${POSTGRES_DB:-tile_saas}
     volumes:
-      # داده‌ی دیتابیس روی volume ماندگار — با rebuild از بین نمی‌رود
       - pgdata:/var/lib/postgresql/data
-      # اسکیمای اولیه (فقط هنگام initialization اجرا می‌شود)
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    # در production این پورت را expose نکنید — دیتابیس نباید بیرون از container
-    # قابل دسترس باشد. این خط فقط برای dev است.
-    # ports:
-    #   - "5432:5432"
+    # پورت منتشر نمی‌شود: Docker از ufw رد می‌شود و دیتابیس روی اینترنت می‌افتد.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tile_app}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+
+  # با هر `docker compose up` یک‌بار اجرا می‌شود و تا موفق نشود اپ بالا نمی‌آید.
+  migrate:
+    <<: *app
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?run scripts/init-env.sh}@postgres:5432/${POSTGRES_DB:-tile_saas}
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?run scripts/init-env.sh}
+    command: ["node", "dist-scripts/migrate.js"]
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    <<: *app
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
-      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, min 32 chars}
-      NODE_ENV: production
-      # rate limit: postgres برای multi-instance، memory برای تک-instance.
-      # پیش‌فرض postgres چون این compose چند سرویس داره (web + 3 worker) — اگرچه
-      # همه‌ی workerها در یک instance هستند، ولی web + worker باید سقفِ مشترک ببینند.
+      <<: *app-env
       RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-postgres}
-      # Sentry: خالی = غیرفعال
       SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
-      # آپلودها روی volume ماندگار — با redeploy از بین نمی‌رود
       - uploads:/app/web/private/uploads
-      # Phase 8 — backup status file به‌صورتِ read-only در container mount می‌شود
-      # تا /api/metrics بتواند وضعیتِ backup را گزارش کند. این فایل فقط metadata
-      # دارد (timestamp, size, checksum) — هرگز secret یا path حساس.
+      # فقط timestamp و حجم بکاپ برای /api/metrics
       - ./backups/status:/app/backups-status:ro
-      # Phase 9 — uploads backup status file (AUD-009) — برای /api/metrics
       - ./backups/status:/app/uploads-backups-status:ro
-    ports:
-      - "${WEB_PORT:-3000}:3000"
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
-  # worker انقضای رزرو — هر ۱۰ دقیقه
+  # worker اگر شکست بخورد کانتینر خارج می‌شود: Docker با backoff دوباره می‌سازد
+  # و `docker compose ps` آن را Restarting نشان می‌دهد، نه اینکه خطا پنهان بماند.
   worker-expire:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
-      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, min 32 chars}
-      NODE_ENV: production
-    entrypoint: []
-    command: >
-      /bin/sh -c "
-        echo 'Starting expire worker — runs every 10 minutes';
-        while true; do
-          node --import tsx scripts/expire.ts || true;
-          sleep 600;
-        done
-      "
-    working_dir: /app/web
+    <<: *app
+    environment: *app-env
+    command: ["sh", "-c", "while :; do node dist-scripts/expire.js || exit 1; sleep 600; done"]
 
-  # worker outbox (پیامک) — هر ۲ دقیقه
   worker-outbox:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    <<: *app
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
-      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, min 32 chars}
-      NODE_ENV: production
-    entrypoint: []
-    command: >
-      /bin/sh -c "
-        echo 'Starting outbox worker — runs every 2 minutes';
-        while true; do
-          node --import tsx scripts/outbox.ts || true;
-          sleep 120;
-        done
-      "
-    working_dir: /app/web
+      <<: *app-env
+      SMS_PROVIDER: ${SMS_PROVIDER:-log}
+    command: ["sh", "-c", "while :; do node dist-scripts/outbox.js || exit 1; sleep 120; done"]
 
-  # worker housekeeping — هر ۶ ساعت، ردیف‌های قدیمیِ _rate_limit_hits را پاک می‌کند
-  # بدون این، جدول rate limit با گذشتِ زمان بزرگ می‌شود و کوئری‌ها کند می‌شوند.
   worker-housekeeping:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app
+    environment: *app-env
+    command: ["sh", "-c", "while :; do node dist-scripts/housekeeping.js || exit 1; sleep 21600; done"]
+
+  caddy:
+    image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging
     depends_on:
-      postgres:
+      web:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tile_app}:${POSTGRES_PASSWORD:-change-me-in-prod}@postgres:5432/${POSTGRES_DB:-tile_saas}
-      NODE_ENV: production
-    entrypoint: []
-    command: >
-      /bin/sh -c "
-        echo 'Starting housekeeping worker — runs every 6 hours';
-        while true; do
-          node -e \"
-            const postgres = require('postgres');
-            const sql = postgres(process.env.DATABASE_URL, { max: 1 });
-            sql\`DELETE FROM _rate_limit_hits WHERE hit_at < now() - interval '24 hours'\`
-              .then(r => { console.log('housekeeping: deleted', r.count, 'rows'); return sql.end(); })
-              .catch(e => { console.error('housekeeping failed:', e); });
-          \" || true;
-          sleep 21600;
-        done
-      "
-    working_dir: /app/web
+      DOMAIN: ${DOMAIN:?run scripts/init-env.sh}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
 
 volumes:
   pgdata:
   uploads:
-
+  caddy-data:
+  caddy-config:

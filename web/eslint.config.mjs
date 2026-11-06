@@ -3,7 +3,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 
 // فقط قواعدی که باگ واقعی می‌گیرند؛ قواعد سلیقه‌ای عمداً نیستند تا هر خطا معنا داشته باشد.
 export default tseslint.config(
-  { ignores: [".next/**", "node_modules/**", "src/db/generated/**", "public/**", "next-env.d.ts"] },
+  { ignores: [".next/**", "dist-scripts/**", "node_modules/**", "src/db/generated/**", "public/**", "next-env.d.ts"] },
   {
     files: ["**/*.{ts,tsx,mts}"],
     languageOptions: {
