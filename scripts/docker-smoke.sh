@@ -129,9 +129,9 @@ url_sha() { http "$BASE/uploads/$UPLOAD_NAME" | sha256sum | cut -d' ' -f1; }
 expect "عکس با URLِ ذخیره‌شده و بدون ورود دیده می‌شود" "$UPLOAD_SHA" "$(url_sha)"
 
 # پیامکِ دعوت: payload باید شیء باشد، نه رشته‌ی jsonb (متنِ پیامک در production لاگ نمی‌شود)
-INVITE="$(http -b "$WORK/tenant.jar" "${ORIGIN[@]}" -X POST "$BASE/api/team"   -d "{\"tenantId\":\"$TENANT_ID\",\"phone\":\"09120000096\",\"role\":\"staff\"}")"
+INVITE="$(http -b "$WORK/tenant.jar" "${ORIGIN[@]}" -X POST "$BASE/api/team"   -d "{\"tenantId\":\"$TENANT_ID\",\"phone\":\"09120000095\",\"role\":\"staff\"}")"
 grep -q '"created":true' <<<"$INVITE" || fail "دعوت شکست خورد: $INVITE"
-expect "payloadِ پیامکِ دعوت شیءِ JSON است و رمز دارد" "object t"   "$(q "SELECT jsonb_typeof(payload), payload ? 'tempPassword' FROM notification_outbox WHERE recipient='09120000096'" | tr '|' ' ')"
+expect "payloadِ پیامکِ دعوت شیءِ JSON است و رمز دارد" "object t"   "$(q "SELECT jsonb_typeof(payload), payload ? 'tempPassword' FROM notification_outbox WHERE recipient='09120000095'" | tr '|' ' ')"
 
 step "۵. workerها واقعاً کار می‌کنند"
 q "
