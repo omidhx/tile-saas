@@ -1,138 +1,157 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Icon from "../../Icon";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
+import { sheetRows } from "@/lib/importRows";
 import type { Ctx } from "@/lib/useContexts";
+import type { ImportResult, ImportError } from "@/db/imports";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // فایلِ موجودی هیچ‌وقت واقعاً این‌قدر بزرگ نیست
 
 type Wh = { id: string; name: string; code: string };
-type Row = { sku: string; warehouseCode: string; batchNumber: string | null; shadeCode: string | null; caliberCode: string | null; onHand: number; imageUrl: string | null; name: string | null; color: string | null; glaze: string | null; punch: string | null; body: string | null };
-type Result = { applied: number; zeroed: number; deduped: boolean; errors: { row: number | null; reason: string; detail?: string }[] };
+type Batch = { id: string; filename: string; status: string; committedAt: string | null; rows: number };
 
-// انتخابِ ستون بر اساس نام هدر (fa/en، case-insensitive)
-const pick = (o: Record<string, unknown>, names: string[]) => {
-  for (const k of Object.keys(o)) if (names.includes(k.trim().toLowerCase())) return o[k];
-  return undefined;
+const REASON: Record<string, string> = {
+  missing_quantity: "موجودی خالی است",
+  bad_quantity: "موجودی عددِ صحیحِ نامنفی نیست",
+  missing_sku: "کدِ کالا خالی است",
+  missing_warehouse: "انبار خالی است",
+  unknown_sku: "کالایی با این کد نیست (برای ساختِ کالای تازه ستونِ نام لازم است)",
+  unknown_warehouse: "انباری با این کد نیست",
+  out_of_scope: "بیرون از دامنه‌ی انتخاب‌شده",
+  duplicate_row: "این lot دو بار در فایل آمده",
+  ambiguous_lot: "دو lot با همین مشخصات هست",
+  below_committed: "کمتر از مقدارِ رزرو و تخصیص‌شده",
+  absent_but_committed: "در فایل نیست ولی رزرو یا تخصیص دارد",
+  missing_shade_caliber: "شید و کالیبر برای این کارخانه اجباری است",
+  empty_file: "فایل هیچ ردیفی ندارد",
 };
-const s = (v: unknown) => (v == null || String(v).trim() === "" ? null : String(v).trim());
+const UNDO_ERROR: Record<string, string> = {
+  not_latest: "فقط آخرین ایمپورت برمی‌گردد.",
+  not_committed: "این ایمپورت قبلاً برگردانده شده.",
+  below_committed: "برگشت موجودی را زیرِ رزرو و تخصیصِ فعلی می‌برد؛ انجام نشد.",
+};
+
+function Errors({ errors }: { errors: ImportError[] }) {
+  return (
+    <ul style={{ marginBottom: 0 }}>
+      {errors.slice(0, 50).map((e, i) => (
+        <li key={i}>{e.row ? `ردیف ${n(e.row)}: ` : ""}{REASON[e.reason] ?? e.reason}{e.detail ? ` (${e.detail})` : ""}</li>
+      ))}
+      {errors.length > 50 && <li>و {n(errors.length - 50)} خطای دیگر</li>}
+    </ul>
+  );
+}
 
 export default function ImportSection({ ctx }: { ctx: Ctx }) {
   const [warehouses, setWarehouses] = useState<Wh[]>([]);
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [fileName, setFileName] = useState("");
   const [scopeType, setScopeType] = useState<"tenant" | "warehouse">("warehouse");
   const [scopeWh, setScopeWh] = useState("");
   const [key, setKey] = useState("");
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const [preview, setPreview] = useState<ImportResult | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
   const [err, setErr] = useState("");
-  const [skipped, setSkipped] = useState(0);
   const [whErr, setWhErr] = useState("");
+  const [batches, setBatches] = useState<Batch[]>([]);
+
+  const loadBatches = useCallback(async () => {
+    const b = await getJson<{ imports: Batch[] }>(`/api/imports?tenantId=${ctx.tenantId}`);
+    if (b.ok) setBatches(b.data.imports);
+  }, [ctx.tenantId]);
 
   useEffect(() => {
     (async () => {
       const w = await getJson<{ warehouses: Wh[] }>(`/api/warehouses?tenantId=${ctx.tenantId}`);
-      // شکستِ خاموش اینجا فقط آزاردهنده نیست، **خطرناک** است: کاربری که نمی‌تواند
-      // انبار انتخاب کند طبیعتاً دامنه را روی «کل کارخانه» می‌گذارد تا جلو برود —
-      // یعنی همان گزینه‌ای که موجودیِ همه‌ی انبارها را صفر می‌کند.
+      // بدونِ فهرستِ انبار کاربر به «کل کارخانه» هُل داده می‌شود؛ پس قفل می‌کنیم
       if (w.ok) setWarehouses(w.data.warehouses);
       else setWhErr(loadError(w.status));
+      await loadBatches();
     })();
-  }, [ctx.tenantId]);
+  }, [ctx.tenantId, loadBatches]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    setErr(""); setResult(null); setSkipped(0);
+    setErr(""); setResult(null); setPreview(null); setRows([]);
     const file = e.target.files?.[0];
     if (!file) return;
-    // پارسِ اکسل سمتِ مرورگر (نه سرور) یعنی آسیب‌پذیریِ xlsx (prototype pollution)
-    // در تبِ همین کارمند اجرا می‌شود؛ سقفِ حجم قبل از parse دستِ‌کم فایلِ
-    // غول‌پیکر/ساختگی را رد می‌کند.
+    // پارسِ xlsx در تبِ همین کارمند اجرا می‌شود؛ سقفِ حجم فایلِ غول‌پیکر را قبل از parse رد می‌کند
     if (file.size > MAX_FILE_BYTES) { setErr(`فایل خیلی بزرگ است (حداکثر ${MAX_FILE_BYTES / 1024 / 1024} مگابایت).`); return; }
     setFileName(file.name);
     try {
-      // import پویا: xlsx (~۷۰۰KB) فقط وقتی لازم است که کاربر واقعاً فایلی انتخاب کند.
-      const XLSX = await import("xlsx");
-      const wb = XLSX.read(await file.arrayBuffer());
-      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]]);
-      const all: Row[] = json.map((o) => ({
-        sku: String(pick(o, ["sku", "کد", "code"]) ?? "").trim(),
-        warehouseCode: String(pick(o, ["warehouse", "انبار", "wh", "code_wh"]) ?? "").trim(),
-        batchNumber: s(pick(o, ["batch", "بچ", "batch_number", "بچ‌نامبر"])),
-        shadeCode: s(pick(o, ["shade", "شید"])),
-        caliberCode: s(pick(o, ["caliber", "کالیبر"])),
-        onHand: Math.trunc(Number(pick(o, ["on_hand", "onhand", "موجودی", "قابل‌سفارش", "count", "qty"]) ?? 0)),
-        imageUrl: s(pick(o, ["image", "عکس", "image_url", "تصویر", "img"])),
-        // v2 ساختِ خودکار: اگر ستونِ نام بود و sku ناموجود، محصول ساخته می‌شود
-        name: s(pick(o, ["name", "نام", "محصول", "title"])),
-        color: s(pick(o, ["color", "رنگ"])),
-        glaze: s(pick(o, ["glaze", "لعاب"])),
-        punch: s(pick(o, ["punch", "پانچ"])),
-        body: s(pick(o, ["body", "بدنه"])),
-      }));
-      const parsed = all.filter((r) => r.sku && r.warehouseCode);
-      // ردیف‌های بدونِ sku/انبار بی‌سروصدا کنار گذاشته می‌شدند. در یک snapshot این
-      // خطرناک است: ردیفی که خوانده نشود «غایب» حساب می‌شود و موجودی‌اش **صفر** می‌رود.
-      setSkipped(all.length - parsed.length);
-      setRows(parsed);
-      setKey(crypto.randomUUID()); // کلید ثابت برای این فایل → re-submit امن (dedupe)
+      const XLSX = await import("xlsx"); // ~۷۰۰KB، فقط وقتی فایلی انتخاب شد
+      // هیچ تفسیری این‌جا نیست: خالی صفر نمی‌شود و ردیفی دور ریخته نمی‌شود. سرور می‌سنجد.
+      setRows(sheetRows(XLSX, await file.arrayBuffer()));
+      setKey(crypto.randomUUID()); // یک کلید برای این فایل → فرستادنِ دوباره امن است
     } catch {
       setErr("خواندن فایل ناموفق بود. یک .xlsx معتبر انتخاب کن.");
     }
   }
 
-  async function submit() {
-    if (rows.length === 0) return;
-    if (scopeType === "warehouse" && !scopeWh) { setErr("انبار را برای scope انتخاب کن."); return; }
+  const scope = scopeType === "tenant" ? { type: "tenant" as const } : { type: "warehouse" as const, warehouseId: scopeWh };
+  const send = (isPreview: boolean) => postJson("/api/imports", {
+    tenantId: ctx.tenantId, idempotencyKey: key, filename: fileName, scope, rows, preview: isPreview,
+  });
+
+  async function runPreview() {
+    setErr(""); setResult(null); setPending(true);
+    try {
+      const res = await send(true);
+      if (res.ok) setPreview(res.data as ImportResult);
+      else setErr(res.error === "scope_not_found" ? "انبارِ انتخاب‌شده پیدا نشد." : actionError(res.status));
+    } finally { setPending(false); }
+  }
+
+  async function apply() {
     setErr(""); setPending(true);
     try {
-      const res = await postJson("/api/imports", {
-        tenantId: ctx.tenantId, idempotencyKey: key, filename: fileName,
-        scope: scopeType === "tenant" ? { type: "tenant" } : { type: "warehouse", warehouseId: scopeWh },
-        rows,
-      });
-      if (res.ok) setResult(res.data as Result);
-      else setErr(actionError(res.status));
+      const res = await send(false);
+      if (res.ok) { setResult(res.data as ImportResult); setPreview(null); setRows([]); await loadBatches(); }
+      else if (res.status === 422) {
+        // بین پیش‌نمایش و اعمال موجودی عوض شد (مثلاً رزروِ تازه). چیزی نوشته نشد.
+        setPreview(res.data as ImportResult);
+        setErr("موجودی بعد از پیش‌نمایش عوض شد و فایل دیگر قابلِ اعمال نیست. هیچ تغییری ثبت نشد.");
+      } else setErr(actionError(res.status));
+    } finally { setPending(false); }
+  }
+
+  async function undo(b: Batch) {
+    if (!confirm(`ایمپورتِ «${b.filename}» برگردانده شود؟ موجودیِ هر lot به اندازه‌ی تغییرِ همین ایمپورت برمی‌گردد.`)) return;
+    setErr(""); setPending(true);
+    try {
+      const res = await postJson("/api/imports", { tenantId: ctx.tenantId, batchId: b.id }, "DELETE");
+      if (!res.ok) setErr(UNDO_ERROR[res.error ?? ""] ?? actionError(res.status));
+      else setResult(null);
+      await loadBatches();
     } finally { setPending(false); }
   }
 
   const scopeName = warehouses.find((w) => w.id === scopeWh)?.name;
-  // وقتی فهرستِ انبارها نیامده، «کل کارخانه» هم قفل می‌شود: نباید شکستِ بارگذاری
-  // کاربر را به‌سمتِ گزینه‌ی مخرب هُل بدهد.
-  const ready = rows.length > 0 && !whErr && (scopeType === "tenant" || !!scopeWh);
+  const scopeReady = rows.length > 0 && !whErr && (scopeType === "tenant" || !!scopeWh);
+  const canApply = scopeReady && preview?.ok === true && !preview.deduped;
+  const latest = batches.find((b) => b.status === "committed");
 
   return (
     <>
-      {/* این عملیات مخرب است (موجودیِ غایب صفر می‌شود) — قبل از هر فیلدی گفته می‌شود */}
       <div className="banner banner--info">
         <Icon name="info" />
         <span>
           این یک <strong>Snapshot</strong> است: هر کالایی که در فایل <strong>نباشد</strong>،
-          موجودی‌اش داخلِ دامنه‌ی انتخابی <strong>صفر می‌شود</strong>.
-          فایل در مرورگر خوانده می‌شود و فقط ردیف‌ها به سرور می‌روند، نه خودِ فایل.
+          موجودی‌اش داخلِ دامنه‌ی انتخابی <strong>صفر می‌شود</strong>. اول پیش‌نمایش را ببینید؛
+          فایلی که حتی یک ردیفِ خراب دارد اعمال نمی‌شود. ایمپورتِ آخر را می‌شود برگرداند.
         </span>
       </div>
 
       <h2>۱. فایل</h2>
       <div className="card">
-        <label htmlFor="xl">فایل اکسل — ستون‌ها: sku، انبار، موجودی (بچ/شید/کالیبر اختیاری)</label>
+        <label htmlFor="xl">فایل اکسل — ستون‌ها: کد (sku)، انبار، موجودی (بچ/شید/کالیبر و نام اختیاری)</label>
         <input id="xl" type="file" accept=".xlsx,.xls" onChange={onFile} />
         {fileName && <div className="subtle" style={{ marginTop: "var(--sp-2)" }}>{fileName}</div>}
         {rows.length > 0 && (
           <div className="row row--start" style={{ marginTop: "var(--sp-2)" }}>
-            <span className="badge badge--ok"><Icon name="check" size={13} />{n(rows.length)} ردیفِ معتبر</span>
-            {skipped > 0 && <span className="badge badge--warn">{n(skipped)} ردیف نادیده گرفته شد</span>}
-          </div>
-        )}
-        {/* ردیفِ ناخوانده = کالایی که «غایب» حساب می‌شود و صفر می‌رود. سکوت اینجا گران است. */}
-        {skipped > 0 && (
-          <div className="banner banner--warn" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
-            <Icon name="alert" />
-            <span>
-              {n(skipped)} ردیف چون ستونِ <strong>sku</strong> یا <strong>انبار</strong> نداشت خوانده نشد.
-              اگر این کالاها باید در فایل می‌بودند، موجودی‌شان <strong>صفر خواهد شد</strong> — قبل از اعمال فایل را بررسی کنید.
-            </span>
+            <span className="badge badge--ok"><Icon name="check" size={13} />{n(rows.length)} ردیف خوانده شد</span>
           </div>
         )}
       </div>
@@ -141,54 +160,54 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
       {whErr && (
         <div className="banner banner--error" role="alert">
           <Icon name="alert" />
-          <span>
-            {whErr} فهرستِ انبارها نیامد، پس اعمالِ Snapshot قفل است — تا اشتباهاً
-            دامنه‌ی «کل کارخانه» انتخاب نشود. صفحه را دوباره باز کنید.
-          </span>
+          <span>{whErr} فهرستِ انبارها نیامد، پس ایمپورت قفل است. صفحه را دوباره باز کنید.</span>
         </div>
       )}
       <div className="card">
         <label htmlFor="scope">ردیف‌های غایب فقط داخل همین دامنه صفر می‌شوند</label>
         <div className="row row--start">
           <select id="scope" value={scopeType} style={{ maxWidth: 180 }}
-            onChange={(e) => setScopeType(e.target.value as "tenant" | "warehouse")}>
+            onChange={(e) => { setScopeType(e.target.value as "tenant" | "warehouse"); setPreview(null); }}>
             <option value="warehouse">یک انبار</option>
             <option value="tenant">کل کارخانه</option>
           </select>
           {scopeType === "warehouse" && (
-            <select value={scopeWh} onChange={(e) => setScopeWh(e.target.value)} aria-label="انتخاب انبار"
+            <select value={scopeWh} onChange={(e) => { setScopeWh(e.target.value); setPreview(null); }} aria-label="انتخاب انبار"
               style={{ maxWidth: 260 }}>
               <option value="">انبار…</option>
               {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
             </select>
           )}
         </div>
-
-        {/* «کل کارخانه» یعنی فایلِ یک انبار می‌تواند انبارِ دیگر را پاک کند (spec ۱۴.۵) */}
         {scopeType === "tenant" && (
           <div className="banner banner--error" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
             <Icon name="alert" />
             <span>
               دامنه <strong>کلِ کارخانه</strong> است: موجودیِ هر کالایی که در این فایل نباشد،
-              <strong> در همه‌ی انبارها</strong> صفر می‌شود. اگر این فایل فقط مالِ یک انبار است،
-              دامنه را روی همان انبار بگذارید.
+              <strong> در همه‌ی انبارها</strong> صفر می‌شود.
             </span>
           </div>
         )}
       </div>
 
-      <h2>۳. اعمال</h2>
+      <h2>۳. پیش‌نمایش و اعمال</h2>
       <div className="card">
         <p className="muted" style={{ marginTop: 0 }}>
-          {ready
-            ? <>‎{n(rows.length)} ردیف روی <strong>{scopeType === "tenant" ? "کل کارخانه" : scopeName}</strong> اعمال می‌شود.</>
+          {scopeReady
+            ? <>‎{n(rows.length)} ردیف روی <strong>{scopeType === "tenant" ? "کل کارخانه" : scopeName}</strong>.</>
             : rows.length === 0 ? "اول فایل را انتخاب کنید." : "دامنه را انتخاب کنید."}
         </p>
-        <button onClick={submit} disabled={pending || !ready} aria-busy={pending}
-          className={scopeType === "tenant" ? "danger" : "primary"}>
-          {pending && <span className="spinner" aria-hidden="true" />}
-          {pending ? "در حال اعمال…" : "اعمال Snapshot"}
-        </button>
+        <div className="row row--start">
+          <button onClick={runPreview} disabled={pending || !scopeReady} aria-busy={pending} className="secondary">
+            {pending && !preview && <span className="spinner" aria-hidden="true" />}
+            پیش‌نمایش
+          </button>
+          <button onClick={apply} disabled={pending || !canApply} aria-busy={pending}
+            className={scopeType === "tenant" ? "danger" : "primary"}>
+            {pending && preview && <span className="spinner" aria-hidden="true" />}
+            اعمال
+          </button>
+        </div>
         {err && (
           <div className="banner banner--error" role="alert" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
             <Icon name="alert" /><span>{err}</span>
@@ -196,30 +215,72 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
         )}
       </div>
 
-      {result && (
-        <>
-          <h2>نتیجه</h2>
-          <div className={`banner banner--${result.errors.length > 0 ? "warn" : "ok"}`} role="status">
-            <Icon name={result.errors.length > 0 ? "alert" : "check"} />
-            <span>{result.deduped ? "این فایل قبلاً اعمال شده بود — چیزی دوباره اعمال نشد." : "اعمال شد."}</span>
-          </div>
-          <div className="card">
-            <div className="row row--start" style={{ gap: "var(--sp-4)" }}>
-              <span><span className="metric">{n(result.applied)}</span> <span className="muted">به‌روزرسانی/ساخت</span></span>
-              {/* صفرشده عددِ مخرب است: اگر بزرگ‌تر از صفر باشد باید به چشم بیاید */}
-              <span>
-                <span className="metric" style={result.zeroed > 0 ? { color: "var(--warn)" } : undefined}>{n(result.zeroed)}</span>{" "}
-                <span className="muted">صفرشده (غایب در فایل)</span>
-              </span>
-              <span><span className="metric">{n(result.errors.length)}</span> <span className="muted">خطا</span></span>
+      {preview && (
+        <div className="card" aria-label="پیش‌نمایش">
+          {preview.deduped ? <p>این فایل قبلاً اعمال شده بود.</p> : preview.ok ? (
+            <div className="banner banner--ok" role="status"><Icon name="check" /><span>فایل سالم است. هنوز چیزی ثبت نشده.</span></div>
+          ) : (
+            <div className="banner banner--error" role="alert">
+              <Icon name="alert" />
+              <span>{n(preview.errors.length)} خطا. تا فایل اصلاح نشود هیچ ردیفی اعمال نمی‌شود.</span>
             </div>
-            {result.errors.length > 0 && (
-              <ul className="muted" style={{ marginBottom: 0 }}>
-                {result.errors.slice(0, 20).map((e, i) => (
-                  <li key={i}>ردیف {e.row ?? "-"}: {e.reason}{e.detail ? ` (${e.detail})` : ""}</li>
-                ))}
-              </ul>
-            )}
+          )}
+          {!preview.ok && <Errors errors={preview.errors} />}
+          {preview.ok && !preview.deduped && (
+            <>
+              <div className="row row--start" style={{ gap: "var(--sp-4)" }}>
+                <span><span className="metric">{n(preview.changes.length - preview.zeroed)}</span> <span className="muted">تغییر</span></span>
+                <span><span className="metric">{n(preview.newLots)}</span> <span className="muted">lot تازه</span></span>
+                <span><span className="metric">{n(preview.newProducts)}</span> <span className="muted">کالای تازه</span></span>
+                <span>
+                  <span className="metric" style={preview.zeroed > 0 ? { color: "var(--warn)" } : undefined}>{n(preview.zeroed)}</span>{" "}
+                  <span className="muted">صفر می‌شود (غایب در فایل)</span>
+                </span>
+              </div>
+              {preview.changes.length > 0 && (
+                <table>
+                  <thead><tr><th>ردیف</th><th>کد</th><th>انبار</th><th>بچ</th><th>قبل</th><th>بعد</th></tr></thead>
+                  <tbody>
+                    {preview.changes.slice(0, 100).map((c, i) => (
+                      <tr key={i}>
+                        <td>{c.row ? n(c.row) : "غایب"}</td><td>{c.sku}</td><td>{c.warehouseCode}</td>
+                        <td>{c.batchNumber ?? "-"}{c.shadeCode ? ` / ${c.shadeCode}` : ""}{c.caliberCode ? ` / ${c.caliberCode}` : ""}</td>
+                        <td>{c.lotId ? n(c.before) : "تازه"}</td><td>{n(c.after)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {preview.changes.length > 100 && <p className="muted">و {n(preview.changes.length - 100)} تغییرِ دیگر</p>}
+            </>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="banner banner--ok" role="status">
+          <Icon name="check" />
+          <span>{result.deduped ? "این فایل قبلاً اعمال شده بود — چیزی دوباره اعمال نشد." : `اعمال شد: ${n(result.applied)} ردیف، ${n(result.zeroed)} صفرشده.`}</span>
+        </div>
+      )}
+
+      {batches.length > 0 && (
+        <>
+          <h2>ایمپورت‌های اخیر</h2>
+          <div className="card">
+            <ul style={{ margin: 0 }}>
+              {batches.map((b) => (
+                <li key={b.id}>
+                  {b.filename} · {n(b.rows)} ردیف · {b.status === "reverted" ? "برگردانده شد" : "اعمال‌شده"}
+                  {b.committedAt && <span className="muted"> · {new Date(b.committedAt).toLocaleString("fa-IR")}</span>}
+                  {b === latest && (
+                    <button className="secondary" style={{ marginInlineStart: "var(--sp-2)" }} disabled={pending} onClick={() => undo(b)}>
+                      برگرداندن
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         </>
       )}

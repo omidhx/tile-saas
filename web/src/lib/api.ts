@@ -36,7 +36,7 @@ export function loadError(status: number): string {
  * `load()` صدا زده شود، رزرو **هنوز آنجاست** — پشتیبان دوباره کلیک می‌کند، باز هیچ،
  * و نمی‌فهمد چرا. شکستِ عملیاتِ پول نباید خاموش باشد.
  */
-export type WriteResult = { ok: true; data: unknown } | { ok: false; status: number; error?: string };
+export type WriteResult = { ok: true; data: unknown } | { ok: false; status: number; error?: string; data?: unknown };
 
 export async function postJson(
   url: string, body: unknown, method: "POST" | "PATCH" | "DELETE" | "PUT" = "POST",
@@ -49,7 +49,7 @@ export async function postJson(
     const json = await res.json().catch(() => ({}));
     // error: کدِ رشته‌ایِ سرور (مثلاً "seat_limit") — صفحه‌هایی که چند دلیلِ رد
     // متفاوت دارند (نه فقط ۴۰۹/۴۰۳ عمومی) از همین می‌خوانند، وگرنه actionError(status).
-    if (!res.ok) return { ok: false, status: res.status, error: typeof json?.error === "string" ? json.error : undefined };
+    if (!res.ok) return { ok: false, status: res.status, error: typeof json?.error === "string" ? json.error : undefined, data: json };
     return { ok: true, data: json };
   } catch {
     return { ok: false, status: 0 };

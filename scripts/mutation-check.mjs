@@ -81,6 +81,16 @@ const MUTATIONS = [
     tests: ["src/auth/rateLimitPostgres.test.ts"] },
   { id: "p4m", expect: "listMovements و findDrift با RLS خاموش", why: "فیلتر tenant در لجر حذف شد", file: "web/src/db/ledger.ts",
     edits: [["      WHERE t.tenant_id = ${p.tenantId}\n", "      WHERE TRUE\n"]], tests: ["src/db/crossTenantIsolation.test.ts"] },
+  // فاز ۵: ایمپورت
+  { id: "p5v", expect: "کدِ کالای غلط در یک ردیف", why: "ایمپورت با ردیفِ خراب هم اعمال می‌شود", file: "web/src/db/imports.ts",
+    edits: [["    if (errors.length > 0) return result;\n", ""]], tests: ["src/db/importBroken.test.ts"] },
+  { id: "p5h", expect: "E3-F3: on_hand زیرِ heldِ رزروِ زنده", why: "held از تعهدِ ایمپورت حذف شد", file: "web/src/db/imports.ts",
+    edits: [["    for (const l of scopeLots) l.committed += held.get(l.id) ?? 0;\n", ""]], tests: ["src/db/importBroken.test.ts"] },
+  { id: "p5u", expect: "برگرداندن on_hand را زیرِ heldِ زنده نمی‌برد", why: "held از چکِ برگرداندن حذف شد", file: "web/src/db/imports.ts",
+    edits: [["      const committed = x.committed + (held.get(x.lot_id) ?? 0);", "      const committed = x.committed;"]], tests: ["src/db/importBroken.test.ts"] },
+  { id: "p5q", expect: "سلولِ موجودیِ خالی", why: "سلولِ خالی دوباره صفر خوانده می‌شود", file: "web/src/lib/importRows.ts",
+    edits: [['  if (v == null || (typeof v === "string" && v.trim() === "")) return { ok: false, reason: "missing_quantity" };', '  if (v == null || (typeof v === "string" && v.trim() === "")) return { ok: true, value: 0 };']],
+    tests: ["src/db/importBroken.test.ts"] },
 ];
 
 const repo = resolve(fileURLToPath(import.meta.url), "../..");

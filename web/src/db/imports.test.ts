@@ -75,31 +75,11 @@ test("guard below_committed: on_hand زیر allocated+blocked نمی‌ره", as
 test("absent_but_committed: lotِ دارای تعهد که در فایل نیست، صفر نمی‌شه", async () => {
   const res = await applySnapshot({
     tenantId: T, uploaderUserId: U, idempotencyKey: "imp-C", scope: { type: "warehouse", warehouseId: WC },
-    rows: [],  // LC1 غایب، ولی allocated 5 دارد
+    rows: [{ sku: "S1", warehouseCode: "C", batchNumber: "B9", onHand: 1 }],  // LC1 غایب، ولی allocated 5 دارد
   });
-  assert.equal(res.zeroed, 0);
+  assert.equal(res.ok, false, "کلِ فایل رد می‌شود (فاز ۵)");
   assert.ok(res.errors.some((e) => e.reason === "absent_but_committed"));
   assert.equal(await onHand(LC1), 10, "نباید صفر شه — تعهد زنده دارد");
-});
-
-test("ردیف تکراری برای یک Lot: آخرین مقدار می‌ماند و جمعِ لجر با on_hand می‌خواند", async () => {
-  const res = await applySnapshot({
-    tenantId: T, uploaderUserId: U, idempotencyKey: "imp-dup", scope: { type: "warehouse", warehouseId: WD },
-    rows: [
-      { sku: "S1", warehouseCode: "D", batchNumber: "B1", onHand: 70 },
-      { sku: "S1", warehouseCode: "D", batchNumber: "B1", onHand: 55 }, // همان Lot، دوباره
-    ],
-  });
-  assert.equal(res.errors.length, 0);
-  assert.equal(await onHand(LD1), 55, "آخرین مقدار باید بماند");
-
-  // LD1 در seed مستقیماً روی ۴۰ گذاشته شده (بدون لجر)، پس جمعِ لجر = ۵۵−۴۰ = ۱۵.
-  // نکته‌ی اصلی: deltaها باید [+۳۰, −۱۵] باشند — یعنی ردیف دوم از مقدارِ اعمال‌شده (۷۰)
-  // حساب شده نه از مقدارِ اولیه (۴۰). اگر base کهنه می‌ماند، delta دوم +۱۵ می‌شد.
-  const deltas = (await sql<{ d: number }[]>`
-    SELECT on_hand_delta_boxes AS d FROM inventory_transaction
-    WHERE lot_id = ${LD1} ORDER BY created_at, d DESC`).map((r) => Number(r.d));
-  assert.deepEqual(deltas, [30, -15], "delta دوم باید از مقدارِ اعمال‌شده حساب شود");
 });
 
 test("idempotency: کلید تکراری → deduped، بدون اعمال دوباره", async () => {
@@ -150,7 +130,7 @@ test("رشته‌ی خالی در ستونِ عکس هم پاک نمی‌کند 
 
 test("skuِ ناموجود با ستونِ نام → محصولِ جدید ساخته می‌شود", async () => {
   await applySnapshot({
-    tenantId: T, uploaderUserId: U, idempotencyKey: "auto-1", scope: { type: "tenant" },
+    tenantId: T, uploaderUserId: U, idempotencyKey: "auto-1", scope: { type: "warehouse", warehouseId: WA },
     rows: [{ sku: "NEW-1", warehouseCode: "A", batchNumber: "B1", onHand: 40,
              name: "تسلا طوسی", color: "طوسی", glaze: "مات" }],
   });
@@ -172,7 +152,7 @@ test("🔴 skuِ ناموجود بدونِ نام → خطا، نه محصولِ
     rows: [{ sku: "GHOST-1", warehouseCode: "A", batchNumber: "B1", onHand: 10 }],  // بدون name
   });
   assert.equal(res.applied, 0);
-  assert.ok(res.errors.some((e) => e.reason === "unknown_sku_or_warehouse"),
+  assert.ok(res.errors.some((e) => e.reason === "unknown_sku"),
     "بدونِ نام نباید محصولِ بی‌نام ساخته شود — احتمالاً sku اشتباه است");
   const ghost = await sql`SELECT 1 FROM product_variant WHERE sku = 'GHOST-1'`;
   assert.equal(ghost.length, 0, "هیچ محصولی نباید ساخته شده باشد");

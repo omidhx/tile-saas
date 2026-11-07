@@ -1056,13 +1056,33 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/imports:
-    post:
+    get:
       tags: [Catalog]
-      summary: Import inventory from Excel (staff)
+      summary: Recent imports (staff)
       security: [{ sessionCookie: [] }]
       responses:
-        "200": { description: Import results }
+        "200": { description: Last imports with status committed or reverted }
+    post:
+      tags: [Catalog]
+      summary: Preview or apply an inventory snapshot from Excel (staff)
+      description: >
+        Rows are raw sheet_to_json objects; the server parses them. preview=true writes nothing.
+        A file with any row error is never applied.
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Preview result (may contain errors), or deduplicated apply }
+        "201": { description: Applied }
+        "404": { description: Scope warehouse or brand not found in this tenant }
+        "422": { description: Not applied; errors listed, nothing changed }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Catalog]
+      summary: Undo the latest applied import (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Reverted }
+        "404": { description: Import not found }
+        "409": { description: Not the latest, already reverted, or would go below committed stock }
 
   /api/incoming:
     get:
