@@ -20,6 +20,7 @@ type Drift = {
 const TYPE_FA: Record<string, string> = {
   import_snapshot: "ورود از اکسل",
   import_snapshot_zero: "صفرشدن (غایب در اکسل)",
+  import_undo: "برگرداندنِ ورود از اکسل",
   reservation_hold: "رزرو (نگه‌داشت)",
   reservation_convert: "تأیید → تخصیص",
   reservation_cancel: "لغوِ رزرو (آزادسازی)",

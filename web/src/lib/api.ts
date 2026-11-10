@@ -39,12 +39,12 @@ export function loadError(status: number): string {
 export type WriteResult = { ok: true; data: unknown } | { ok: false; status: number; error?: string; data?: unknown };
 
 export async function postJson(
-  url: string, body: unknown, method: "POST" | "PATCH" | "DELETE" | "PUT" = "POST",
+  url: string, body: unknown, method: "POST" | "PATCH" | "DELETE" | "PUT" = "POST", timeoutMs = TIMEOUT_MS,
 ): Promise<WriteResult> {
   try {
     const res = await fetch(url, {
       method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const json = await res.json().catch(() => ({}));
     // error: کدِ رشته‌ایِ سرور (مثلاً "seat_limit") — صفحه‌هایی که چند دلیلِ رد

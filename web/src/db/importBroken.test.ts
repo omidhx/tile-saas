@@ -225,9 +225,10 @@ test("رقمِ فارسی و جداکننده‌ی هزارگان خوانده �
 
 test("هدرِ فارسی، با ي و ك عربی و نیم‌فاصله", async () => {
   const res = await run([
-    { "كد": "S1", "انبار": "A", "بچ": "B1", "موجودي": 90 },
-    { "كد": "S1", "انبار": "A", "بچ": "B2", "قابل‌سفارش": 80 },
-    { "كد": "S2", "انبار": "A", "بچ": "B1", "موجودی ": 70 },
+    // یک ردیفِ هدر، مثلِ هر شیتِ واقعی: «موجودي» با ي عربی، «بچ‌نامبر» با نیم‌فاصله، «كد» با ك عربی
+    { "كد": "S1", "انبار ": "A", "بچ‌نامبر": "B1", "موجودي": 90 },
+    { "كد": "S1", "انبار ": "A", "بچ‌نامبر": "B2", "موجودي": 80 },
+    { "كد": "S2", "انبار ": "A", "بچ‌نامبر": "B1", "موجودي": 70 },
   ]);
   assert.equal(res.ok, true, JSON.stringify(res.errors));
   assert.deepEqual([await onHand(L1), await onHand(L2), await onHand(L3)], [90, 80, 70]);
@@ -303,4 +304,62 @@ test("فقط آخرین ایمپورت برمی‌گردد", async () => {
   await run([row("S1", "B1", 60), row("S1", "B2", 60), row("S2", "B1", 60)]);
   assert.equal((await undo(a.batchId!)).reason, "not_latest");
   assert.equal(await onHand(L1), 60);
+});
+
+// ── یافته‌های بازبین Opus فاز ۵ ──
+
+test("دو ستون برای موجودی (موجودی و qty): کلِ فایل رد، نه ستونِ اول بی‌صدا", async () => {
+  const rows = good().map(({ onHand, ...r }) => ({ ...r, "موجودی": onHand, qty: 5 }));
+  delete rows[1]["موجودی"]; // سلولِ خالیِ ستونِ اول قبلاً ستونِ دوم را می‌خواند
+  await rejected(rows, "duplicate_column");
+});
+
+test("«قابل سفارش» موجودی نیست: بدونِ ستونِ موجودی رد می‌شود", async () => {
+  const rows = good().map(({ onHand, ...r }) => ({ ...r, "قابل سفارش": onHand }));
+  await rejected(rows, "missing_quantity");
+});
+
+test("سلولِ تاریخ در ستونِ موجودی: خطا، نه ۴۶۰۳۷ کارتن", async () => {
+  const ws = XLSX.utils.aoa_to_sheet([["sku", "warehouse", "batch", "qty"], ["S1", "A", "B1", 90], ["S1", "A", "B2", 80], ["S2", "A", "B1", 70]]);
+  ws["D3"] = { t: "n", v: 46037, z: "yyyy-mm-dd" };
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "s");
+  const { sheetRows } = await import("@/lib/importRows");
+  const rows = JSON.parse(JSON.stringify(sheetRows(XLSX, XLSX.write(wb, { type: "array", bookType: "xlsx" })))); // مثلِ مرورگر
+  await rejected(rows, "bad_quantity");
+});
+
+test("بچ با حروفِ کوچک و فاصله همان lot است", async () => {
+  const res = await run([row("S1", " b1 ", 90), row("S1", "B2", 100), row("S2", "b1", 100)]);
+  assert.equal(await onHand(L1), 90);
+  assert.equal(res.ok, true, JSON.stringify(res.errors));
+  assert.equal(res.newLots, 0);
+});
+
+test("lotِ تازه کنارِ lotِ صفرشونده‌ی همان کالا: هشدار در پیش‌نمایش", async () => {
+  const res = await run([row("S1", "B1x", 100), row("S1", "B2", 100), row("S2", "B1", 100)], { preview: true });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.warnings.map((w) => [w.row, w.reason]), [[1, "new_lot_replaces"]]);
+});
+
+test("آدرسِ عکسِ javascript: رد", async () => {
+  const rows = good(); rows[0].imageUrl = "javascript:alert(1)";
+  await rejected(rows, "bad_image_url");
+});
+
+test("همان کلید با فایلِ دیگر: خطا، نه «قبلاً اعمال شد»", async () => {
+  await run(good(), { key: "reuse" });
+  const before = await state();
+  const res = await run([row("S1", "B1", 10), row("S1", "B2", 10), row("S2", "B1", 10)], { key: "reuse" });
+  assert.deepEqual(await state(), before);
+  assert.equal(res.ok, false);
+  assert.ok(res.errors.some((e) => e.reason === "idempotency_mismatch"));
+  assert.equal((await run(good(), { key: "reuse" })).deduped, true, "همان فایل با همان کلید هنوز dedupe است");
+});
+
+test("سه ایمپورتِ هم‌زمان با بچِ تازه: یک lot، نه سه", async () => {
+  const file = [row("S1", "B1", 100), row("S1", "B2", 100), row("S2", "B1", 100), row("S1", "B9", 30)];
+  const rs = await Promise.all([run(file), run(file), run(file)]);
+  assert.ok(rs.every((r) => r.ok), JSON.stringify(rs.map((r) => r.errors)));
+  const [{ c }] = await sql`SELECT count(*)::int AS c FROM inventory_lot WHERE batch_number = 'B9'`;
+  assert.equal(c, 1);
 });

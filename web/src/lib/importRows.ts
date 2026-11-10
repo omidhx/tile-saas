@@ -6,6 +6,8 @@
  * «1,5» و عددِ اعشاری همه رد می‌شوند. در snapshot عددِ غلط یعنی موجودیِ غلط.
  */
 
+import { isSafeImageUrl } from "./url";
+
 export type ImportRow = {
   row: number;
   sku: string | null; warehouseCode: string | null;
@@ -26,7 +28,8 @@ const ALIASES: Record<Exclude<keyof ImportRow, "row">, string[]> = {
   batchNumber: ["batch", "batchnumber", "بچ", "بچنامبر"],
   shadeCode: ["shade", "shadecode", "شید"],
   caliberCode: ["caliber", "calibercode", "کالیبر"],
-  onHand: ["onhand", "موجودی", "قابلسفارش", "count", "qty"],
+  // «قابل سفارش» عمداً نیست: موجودیِ قابل‌فروش است، نه on_hand؛ ورودش موجودی را کم نشان می‌داد
+  onHand: ["onhand", "موجودی", "count", "qty"],
   imageUrl: ["image", "imageurl", "عکس", "تصویر", "img"],
   name: ["name", "نام", "محصول", "title"],
   color: ["color", "رنگ"], glaze: ["glaze", "لعاب"], punch: ["punch", "پانچ"], body: ["body", "بدنه"],
@@ -34,6 +37,7 @@ const ALIASES: Record<Exclude<keyof ImportRow, "row">, string[]> = {
 const FIELD_OF = new Map<string, keyof typeof ALIASES>();
 for (const [f, names] of Object.entries(ALIASES)) for (const n of names) FIELD_OF.set(normHeader(n), f as keyof typeof ALIASES);
 
+export const MAX_IMPORT_ROWS = 5000; // spec بخش ۸
 export const MAX_QTY = 2_147_483_647; // سقفِ INT در Postgres؛ بزرگ‌ترش 22003 می‌داد
 
 const DIGITS = /[۰-۹٠-٩]/g;
@@ -56,10 +60,25 @@ export function parseQty(v: unknown): { ok: true; value: number } | { ok: false;
 
 /** اولین شیتِ فایل، همان‌طور که مرورگر می‌فرستد. هیچ تفسیری این‌جا نیست. */
 export function sheetRows(XLSX: typeof import("xlsx"), data: ArrayBuffer | Uint8Array): Record<string, unknown>[] {
-  const wb = XLSX.read(data);
+  // cellDates: سلولِ تاریخ Date می‌شود، نه شماره‌ی روزِ اکسل (۴۶۰۳۷) که عددِ کارتن به نظر می‌رسید
+  const wb = XLSX.read(data, { cellDates: true });
   return XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]])
     // __rowNum__ ناشمردنی است و در JSON نمی‌رود؛ شماره‌ی ردیفِ اکسل برای پیامِ خطا
     .map((o) => ({ ...o, __row: (o as { __rowNum__?: number }).__rowNum__! + 1 }));
+}
+
+/**
+ * دو ستون که به یک فیلد می‌خورند (مثلاً «کد» و «sku»، یا «موجودی» و «qty») خطای کلِ فایل است.
+ * وگرنه ستونِ اول برنده می‌شد و جایی که خالی بود، ستونِ دوم بی‌صدا خوانده می‌شد.
+ */
+export function columnErrors(rows: Record<string, unknown>[]): RowError[] {
+  const byField = new Map<string, Set<string>>();
+  for (const raw of rows) for (const k of Object.keys(raw)) {
+    const f = FIELD_OF.get(normHeader(k));
+    if (f) byField.set(f, (byField.get(f) ?? new Set()).add(k.trim()));
+  }
+  return [...byField.values()].filter((h) => h.size > 1)
+    .map((h) => ({ row: null, reason: "duplicate_column", detail: [...h].join("، ") }));
 }
 
 const text = (v: unknown) => (v == null || String(v).trim() === "" ? null : String(v).trim());
@@ -85,5 +104,6 @@ export function normalizeRow(raw: Record<string, unknown>, index: number): { row
   };
   if (!row.sku) errors.push({ row: rowNo, reason: "missing_sku" });
   if (!row.warehouseCode) errors.push({ row: rowNo, reason: "missing_warehouse" });
+  if (row.imageUrl && !isSafeImageUrl(row.imageUrl)) errors.push({ row: rowNo, reason: "bad_image_url", detail: row.imageUrl });
   return { row, errors };
 }

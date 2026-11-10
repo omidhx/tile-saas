@@ -2,12 +2,14 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../Icon";
 import { getJson, loadError, postJson, actionError } from "@/lib/api";
-import { sheetRows } from "@/lib/importRows";
+import { sheetRows, MAX_IMPORT_ROWS } from "@/lib/importRows";
 import type { Ctx } from "@/lib/useContexts";
 import type { ImportResult, ImportError } from "@/db/imports";
 
 const n = (v: number) => v.toLocaleString("fa-IR");
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // فایلِ موجودی هیچ‌وقت واقعاً این‌قدر بزرگ نیست
+// فایلِ ۵۰۰۰ ردیفی چند ثانیه طول می‌کشد؛ با سقفِ ۱۵ ثانیه‌ایِ عمومی، صفحه «نشد» می‌گفت و سرور ثبت می‌کرد
+const IMPORT_TIMEOUT_MS = 120_000;
 
 type Wh = { id: string; name: string; code: string };
 type Batch = { id: string; filename: string; status: string; committedAt: string | null; rows: number };
@@ -26,6 +28,9 @@ const REASON: Record<string, string> = {
   absent_but_committed: "در فایل نیست ولی رزرو یا تخصیص دارد",
   missing_shade_caliber: "شید و کالیبر برای این کارخانه اجباری است",
   empty_file: "فایل هیچ ردیفی ندارد",
+  duplicate_column: "دو ستون برای یک چیز هست؛ یکی را حذف کنید",
+  bad_image_url: "آدرسِ عکس باید با http یا https شروع شود",
+  new_lot_replaces: "lotِ تازه ساخته می‌شود و lotِ قبلیِ همین کالا در همین انبار صفر می‌شود؛ اگر همان بچ است، بچ/شید/کالیبر را مثلِ قبل بنویسید",
 };
 const UNDO_ERROR: Record<string, string> = {
   not_latest: "فقط آخرین ایمپورت برمی‌گردد.",
@@ -83,7 +88,9 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
     try {
       const XLSX = await import("xlsx"); // ~۷۰۰KB، فقط وقتی فایلی انتخاب شد
       // هیچ تفسیری این‌جا نیست: خالی صفر نمی‌شود و ردیفی دور ریخته نمی‌شود. سرور می‌سنجد.
-      setRows(sheetRows(XLSX, await file.arrayBuffer()));
+      const all = sheetRows(XLSX, await file.arrayBuffer());
+      if (all.length > MAX_IMPORT_ROWS) { setErr(`فایل ${n(all.length)} ردیف دارد؛ حداکثر ${n(MAX_IMPORT_ROWS)}. فایل را به چند بخش تقسیم کنید.`); return; }
+      setRows(all);
       setKey(crypto.randomUUID()); // یک کلید برای این فایل → فرستادنِ دوباره امن است
     } catch {
       setErr("خواندن فایل ناموفق بود. یک .xlsx معتبر انتخاب کن.");
@@ -93,7 +100,7 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
   const scope = scopeType === "tenant" ? { type: "tenant" as const } : { type: "warehouse" as const, warehouseId: scopeWh };
   const send = (isPreview: boolean) => postJson("/api/imports", {
     tenantId: ctx.tenantId, idempotencyKey: key, filename: fileName, scope, rows, preview: isPreview,
-  });
+  }, "POST", IMPORT_TIMEOUT_MS);
 
   async function runPreview() {
     setErr(""); setResult(null); setPending(true);
@@ -118,10 +125,10 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
   }
 
   async function undo(b: Batch) {
-    if (!confirm(`ایمپورتِ «${b.filename}» برگردانده شود؟ موجودیِ هر lot به اندازه‌ی تغییرِ همین ایمپورت برمی‌گردد.`)) return;
+    if (!confirm(`ایمپورتِ «${b.filename}» برگردانده شود؟ موجودیِ هر lot به اندازه‌ی تغییرِ همین ایمپورت برمی‌گردد. کالا و عکسی که این ایمپورت ساخته پاک نمی‌شود؛ فقط موجودی‌اش صفر می‌شود.`)) return;
     setErr(""); setPending(true);
     try {
-      const res = await postJson("/api/imports", { tenantId: ctx.tenantId, batchId: b.id }, "DELETE");
+      const res = await postJson("/api/imports", { tenantId: ctx.tenantId, batchId: b.id }, "DELETE", IMPORT_TIMEOUT_MS);
       if (!res.ok) setErr(UNDO_ERROR[res.error ?? ""] ?? actionError(res.status));
       else setResult(null);
       await loadBatches();
@@ -226,6 +233,12 @@ export default function ImportSection({ ctx }: { ctx: Ctx }) {
             </div>
           )}
           {!preview.ok && <Errors errors={preview.errors} />}
+          {preview.ok && preview.warnings.length > 0 && (
+            <div className="banner banner--warn" role="status">
+              <Icon name="alert" />
+              <span>{n(preview.warnings.length)} هشدار. اعمال ممکن است، ولی قبلش این‌ها را ببینید:<Errors errors={preview.warnings} /></span>
+            </div>
+          )}
           {preview.ok && !preview.deduped && (
             <>
               <div className="row row--start" style={{ gap: "var(--sp-4)" }}>

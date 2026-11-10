@@ -82,14 +82,21 @@ test("absent_but_committed: lotِ دارای تعهد که در فایل نیس�
   assert.equal(await onHand(LC1), 10, "نباید صفر شه — تعهد زنده دارد");
 });
 
-test("idempotency: کلید تکراری → deduped، بدون اعمال دوباره", async () => {
+test("idempotency: همان فایل با کلید تکراری → deduped، بدون اعمال دوباره", async () => {
+  // پس از تغییرِ دستیِ موجودی، اعمالِ دوباره‌ی همان فایل آن را برمی‌گرداند؛ dedupe جلویش را می‌گیرد.
+  // کلیدِ تکراری با فایلِ دیگر حالا خطاست (importBroken.test.ts).
+  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = 81 WHERE lot_id = ${LA1}`;
   const res = await applySnapshot({
     tenantId: T, uploaderUserId: U, idempotencyKey: "imp-A", scope: { type: "warehouse", warehouseId: WA },
-    rows: [{ sku: "S1", warehouseCode: "A", batchNumber: "B1", onHand: 999 }],  // اگر دوباره اعمال شه فاجعه
+    rows: [
+      { sku: "S1", warehouseCode: "A", batchNumber: "B1", onHand: 80 },
+      { sku: "S1", warehouseCode: "A", batchNumber: "B3", onHand: 25 },
+    ],
   });
   assert.equal(res.deduped, true);
   assert.equal(res.applied, 0);
-  assert.equal(await onHand(LA1), 80, "نباید دوباره اعمال شه (هنوز ۸۰)");
+  assert.equal(await onHand(LA1), 81, "نباید دوباره اعمال شه (هنوز ۸۱)");
+  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = 80 WHERE lot_id = ${LA1}`;
 });
 
 // --- v2 کاتالوگ تصویری: عکس در import ---

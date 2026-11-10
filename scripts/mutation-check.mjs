@@ -91,6 +91,8 @@ const MUTATIONS = [
   { id: "p5q", expect: "سلولِ موجودیِ خالی", why: "سلولِ خالی دوباره صفر خوانده می‌شود", file: "web/src/lib/importRows.ts",
     edits: [['  if (v == null || (typeof v === "string" && v.trim() === "")) return { ok: false, reason: "missing_quantity" };', '  if (v == null || (typeof v === "string" && v.trim() === "")) return { ok: true, value: 0 };']],
     tests: ["src/db/importBroken.test.ts"] },
+  { id: "p5a", expect: "سه ایمپورتِ هم‌زمان با بچِ تازه", why: "قفلِ ایمپورتِ هر tenant حذف شد", file: "web/src/db/imports.ts",
+    edits: [['  tx`SELECT pg_advisory_xact_lock(hashtext(${"import:" + tenantId}))`;', "  tx`SELECT 1`;"]], tests: ["src/db/importBroken.test.ts"] },
 ];
 
 const repo = resolve(fileURLToPath(import.meta.url), "../..");

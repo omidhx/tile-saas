@@ -4,8 +4,8 @@ import { staffCtx } from "@/auth/httpCtx";
 import { checkRateAsync, tooMany } from "@/auth/rateLimit";
 import { id, parse } from "@/lib/validate";
 import { applySnapshot, undoImport, listImports } from "@/db/imports";
+import { MAX_IMPORT_ROWS } from "@/lib/importRows";
 
-const MAX_ROWS = 5000; // spec بخش ۸: محدودیت ردیف روی import
 
 // ردیف‌ها خامِ sheet_to_json هستند؛ تفسیرشان در lib/importRows.ts است.
 const Body = z.object({
@@ -18,7 +18,7 @@ const Body = z.object({
     z.object({ type: z.literal("warehouse"), warehouseId: id }),
     z.object({ type: z.literal("brand"), brandId: id }),
   ]),
-  rows: z.array(z.record(z.string(), z.unknown())).max(MAX_ROWS),
+  rows: z.array(z.record(z.string(), z.unknown())).max(MAX_IMPORT_ROWS),
 });
 
 /** GET /api/imports?tenantId — آخرین ایمپورت‌ها، برای برگرداندن. */
@@ -41,12 +41,13 @@ export async function POST(req: Request) {
   if ("err" in p) return p.err;
   const { scope, rows, idempotencyKey, filename, preview } = p.data;
 
-  // اعمال تراکنشِ بلند روی کل scope است؛ پیش‌نمایش چیزی نمی‌نویسد ولی همان قفل‌ها را می‌گیرد
+  // اعمال تراکنشی روی کل scope است و balanceها را قفل می‌کند؛ پیش‌نمایش نه
   const rl = await checkRateAsync(`import${preview ? "-preview" : ""}:${c.userId}`, preview ? 60 : 10, 60 * 60_000);
   if (!rl.ok) return tooMany(rl.retryAfterSec);
 
   const r = await applySnapshot({ tenantId: c.tenantId, uploaderUserId: c.userId, idempotencyKey, filename, scope, rows, preview });
   if (r.errors.some((e) => e.reason === "scope_not_found")) return NextResponse.json({ error: "scope_not_found" }, { status: 404 });
+  if (r.errors.some((e) => e.reason === "idempotency_mismatch")) return NextResponse.json({ error: "idempotency_mismatch" }, { status: 409 });
   const status = r.preview || r.deduped ? 200 : r.ok ? 201 : 422;
   return NextResponse.json(r, { status });
 }
