@@ -3,7 +3,7 @@ import { useState } from "react";
 import Image from "next/image";
 import type { PublicItem } from "@/db/sharedCatalog";
 import { hideOnError } from "@/lib/img";
-import { ImageGalleryModal } from "@/app/ImageGalleryModal";
+import { ImageGalleryModal } from "@/app/(legacy)/ImageGalleryModal";
 import { formatMoney, type CurrencyUnit } from "@/lib/money";
 
 // نمای کاتالوگِ مشتری: گرید + پاپ‌آپِ گالری/جزئیات. کلاینت چون کلیک و مودال لازم دارد.

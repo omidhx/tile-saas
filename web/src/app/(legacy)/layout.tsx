@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import "@fontsource-variable/vazirmatn";
 import "./globals.css";
 import PwaRegister from "./PwaRegister";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "پنل موجودی و رزرو",
@@ -19,12 +20,7 @@ export const metadata: Metadata = {
 // کاتالوگ است، نه یک اپِ مستقل با منطقِ خودش.
 export const viewport: Viewport = { themeColor: "#0f172a" };
 
-// no-flash: قبل از رنگ‌آمیزیِ اول، data-theme را از localStorage روی <html> می‌نشاند —
-// بدونِ این، صفحه یک لحظه با تمِ پیش‌فرض (روشن) نقاشی می‌شد و بعد به تیره می‌پرید.
-// اسکریپتِ Server Component معمولی نمی‌تواند این را انجام دهد چون قبل از هر
-// JSِ دیگر و **همزمان** با اولین paint باید اجرا شود — تنها راهِ درستِ این الگو
-// یک <script> خام است، نه useEffect (که بعدِ اولین رندر اجرا می‌شود).
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("tile.theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+// THEME_INIT_SCRIPT در lib/theme.ts است؛ UI تازه (`(app)/layout.tsx`) همان را می‌خواند.
 
 // suppressHydrationWarning: THEME_INIT_SCRIPT بالا data-theme را قبل از هیدریتِ React
 // روی <html> می‌نشاند — سرور از localStorage خبر ندارد، پس این تفاوت همیشگی و

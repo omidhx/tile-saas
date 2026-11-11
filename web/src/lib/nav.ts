@@ -1,13 +1,14 @@
 import type { Ctx } from "@/lib/useContexts";
 
 /**
- * منوی پنل پشتیبان، گروه‌بندی‌شده بر اساسِ بسامدِ استفاده. PageShell (sidebar) از همین می‌خواند.
+ * منوی پنل پشتیبان، گروه‌بندی‌شده بر اساسِ بسامدِ استفاده. هر دو پوسته (PageShell قدیم و AppShell تازه) از همین می‌خوانند.
  * لینکِ صفحه‌ای که کاربر بهش دسترسی ندارد اصلاً نشان داده نمی‌شود.
  */
 export type NavItem = { href: string; label: string; adminOnly?: boolean };
 export type NavGroup = { title: string; items: NavItem[] };
 
 export const STAFF_NAV_GROUPS: NavGroup[] = [
+  { title: "کار روزانه", items: [{ href: "/staff", label: "کارتابل" }] },
   {
     title: "محصول و موجودی",
     items: [
