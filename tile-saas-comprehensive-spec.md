@@ -529,7 +529,7 @@ Event Sourcing/CQRS کامل (لجر append-only ساده همون فایده‌
 ### ۱۴.۵ Snapshot import: scope + قواعد ✅ (schema) / قرارداد
 - `import_batch.scope_type (tenant/warehouse/brand)` + `scope_warehouse_id`/`scope_brand_id` ✅.
 - **قاعده:** ردیفِ غایب در فایل فقط **داخل همون scope** به صفر می‌ره، نه کل tenant (وگرنه فایل یک انبار، انبار دیگه رو wipe می‌کنه).
-- snapshot فقط `on_hand` رو دست می‌زنه، نه `allocated`/`held`. اگه `new_on_hand < allocated + blocked` → ردیف validation error می‌شه یا نیاز به override صریحِ staff داره؛ **هرگز** نباید موجودی زیر تعهدات رزروِ زنده بره.
+- snapshot فقط `on_hand` رو دست می‌زنه، نه `allocated`/`held`. اگه `new_on_hand < allocated + blocked + held` → ردیف validation error می‌شه یا نیاز به override صریحِ staff داره؛ **هرگز** نباید موجودی زیر تعهدات رزروِ زنده بره. (فاز ۵: held هم شمرده می‌شود و هر خطا کلِ فایل را رد می‌کند؛ override ساخته نشد.)
 - **natural key برای Lot (تصمیم مصاحبه):** برای تشخیص «همون Lot قبلی» موقع import، به یه کلید طبیعی نیاز هست (مثلاً `tenant_id, variant_id, warehouse_id, batch_number, shade_code, caliber_code` با `NULLS NOT DISTINCT`). چون nullable بودن این‌ها به مصاحبه وابسته‌ست (بخش ۷.۱)، ایندکسش عمداً الان هاردکد نشده — قبل از پیاده‌سازی import قطعی کن.
 
 ### ۱۴.۶ امنیت — عملیاتی

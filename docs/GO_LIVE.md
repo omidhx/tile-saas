@@ -7,7 +7,7 @@
 ## مسدودکننده‌ها
 
 - **پنل پیامک واقعی.** تا وصل نشود، پیامک فقط در لاگ چاپ می‌شود و بازیابی رمز کار نمی‌کند.
-- **کلید طبیعی Lot برای ایمپورت.** قبل از اولین ایمپورت واقعی با کارخانه قطعی شود، وگرنه ممکن است Lot تکراری ساخته شود (فاز ۵ و ۹).
+- **کلید طبیعی Lot برای ایمپورت.** پیش‌فرض فاز ۵: کالا + انبار + بچ + شید + کالیبر، و `track_shade_caliber` کارخانه شید و کالیبر را خاموش یا اجباری می‌کند. اگر دو Lot با یک کلید باشد، ایمپورت آن ردیف را رد می‌کند و دلبخواه انتخاب نمی‌کند. قبل از اولین ایمپورت واقعی با کارخانه تأیید شود (فاز ۹).
 
 ## ۱. ساخت فایل نصب
 
@@ -131,10 +131,9 @@ docker compose up -d
 
 - `docker compose ps`: همه باید `running` باشند و `migrate` با کد ۰ خارج شده باشد. worker خراب `Restarting` نشان داده می‌شود.
 - `docker compose logs worker-expire worker-outbox worker-housekeeping --tail=20`
-- هفتگی، پیامک‌ها و ردیف‌های ایمپورت ناموفق. worker پیامک با خطای پنل خراب نشان داده نمی‌شود، پس این دو را نگاه کنید:
+- هفتگی، پیامک‌های ناموفق. worker پیامک با خطای پنل خراب نشان داده نمی‌شود، پس این را نگاه کنید (ایمپورتِ خراب هیچ ردیفی نمی‌نویسد و خطایش همان لحظه روی صفحه است):
   ```bash
   docker compose exec postgres psql -U postgres -d tile_saas -c "SELECT count(*) FROM notification_outbox WHERE status='failed'"
-  docker compose exec postgres psql -U postgres -d tile_saas -c "SELECT count(*) FROM import_row WHERE processing_status='error'"
   ```
 - worker انقضا برای درستی موجودی حیاتی نیست، چون held همیشه از روی زمان انقضا حساب می‌شود. worker پیامک اگر بایستد، اعلان‌ها فقط عقب می‌افتند.
 

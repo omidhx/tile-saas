@@ -77,9 +77,9 @@ test("worker پیام pending را می‌فرستد و sent علامت می‌�
 test("importِ تکراری (dedupe) پیام جدید صف نمی‌کند", async () => {
   const countBefore = (await outboxRows()).length;
   const res = await applySnapshot({
-    tenantId: T, uploaderUserId: U, idempotencyKey: "alert-1", // همان کلید
+    tenantId: T, uploaderUserId: U, idempotencyKey: "alert-1", // همان کلید و همان فایل (کلید با فایلِ دیگر خطاست، فاز ۵)
     scope: { type: "warehouse", warehouseId: WH },
-    rows: [{ sku: "S1", warehouseCode: "W1", batchNumber: "B1", onHand: 99 }],
+    rows: [{ sku: "S1", warehouseCode: "W1", batchNumber: "B1", onHand: 50 }],
   });
   assert.equal(res.deduped, true);
   assert.equal((await outboxRows()).length, countBefore, "dedupe نباید پیام جدید بسازد");
