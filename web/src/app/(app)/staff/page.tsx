@@ -90,6 +90,9 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
   const [muted, setMuted] = useState(() => {
     try { return localStorage.getItem(MUTE_KEY) === "1"; } catch { return false; }
   });
+  // ref، نه وابستگی useCallback: وگرنه هر بار زدن دکمه‌ی صدا load() کامل (۷ GET) را دوباره اجرا می‌کرد.
+  const mutedRef = useRef(muted);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
 
   // نسخه‌ی درخواست فعلی هر فهرست: پاسخ جستجوی قدیمی که بعد از جستجوی تازه‌تر برسد نادیده گرفته می‌شود.
   const dispsGen = useRef(0);
@@ -117,9 +120,9 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
     if (fresh > 0) {
       setFreshResv(fResv); setFreshReq(fReq);
       setNewArrivals((c) => c + fresh);
-      if (!muted) playChime();
+      if (!mutedRef.current) playChime();
     }
-  }, [muted]);
+  }, []);
 
   const load = useCallback(async () => {
     const myD = ++dispsGen.current, myB = ++boGen.current;
@@ -158,6 +161,7 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
       getJson<{ requests: Req[] }>(`/api/sales-requests?tenantId=${tenantId}&status=approved`),
     ]);
     if (rv.ok && rq.ok) applyQueue(rv.data.reservations, rq.data.requests, true);
+    else { if (rv.ok) setResvs(rv.data.reservations); if (rq.ok) setReqs(rq.data.requests); }
   }, [tenantId, applyQueue]);
 
   useEffect(() => {
@@ -165,19 +169,24 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
     return () => clearInterval(iv);
   }, [poll]);
 
-  /** هر نوشتن از این می‌گذرد: شکست صریح نشان داده می‌شود و فهرست در هر حال تازه می‌شود. */
-  async function act(key: string, url: string, body: unknown): Promise<boolean> {
+  /**
+   * هر نوشتن از این می‌گذرد: شکست صریح نشان داده می‌شود و فهرست در هر حال تازه می‌شود.
+   * پیام خطا برگردانده می‌شود ("" یعنی موفق) تا دیالوگ باز آن را جلوی پرده نشان دهد؛ بنر صفحه پشت
+   * دیالوگ است و Radix آن را از صفحه‌خوان هم پنهان می‌کند.
+   */
+  async function act(key: string, url: string, body: unknown): Promise<string> {
     setPending(key); setActionErr(""); setNote("");
     try {
       const res = await postJson(url, { tenantId, ...(body as object) });
-      if (!res.ok) setActionErr(actionError(res.status));
-      else if (key.startsWith("dispatch:")) {
+      const err = res.ok ? "" : actionError(res.status);
+      setActionErr(err);
+      if (res.ok && key.startsWith("dispatch:")) {
         // سفارش دوانباره دو حواله می‌سازد؛ پشتیبان باید بداند، وگرنه دنبال حواله‌ی دوم می‌گردد.
         const ids = (res.data as { dispatchIds?: string[] }).dispatchIds ?? [];
         if (ids.length > 1) setNote(`این سفارش از ${num(ids.length)} انبار تأمین می‌شود، پس ${num(ids.length)} حواله‌ی جدا ساخته شد.`);
       }
       await load();
-      return res.ok;
+      return err;
     } finally { setPending(null); }
   }
 
@@ -230,6 +239,8 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
 
   const toLoad = recent.filter(isActiveDispatch);
   const queueCount = resvs.length + reqs.length + toLoad.length;
+  // «چیزی نیست» فقط وقتی راست است که بارگذاری موفق بوده؛ با خطا شمارش و پیام خالی نشان داده نمی‌شود.
+  const failed = !!loadErr;
   // pendingِ ساخت حواله با کلید «dispatch:id» ثبت می‌شود؛ جدول با id خام مقایسه می‌کند
   const rowPending = pending?.startsWith("dispatch:") ? pending.slice(9) : pending;
 
@@ -254,7 +265,7 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
             <dt className="text-xs text-muted-foreground">رو به اتمام</dt>
             <dd className="mt-1 text-sm">
               {kpis.lowStock.length === 0 ? <span className="text-muted-foreground">کالای کم‌موجودی نیست.</span>
-                : kpis.lowStock.map((v) => `${v.name} (${num(v.available)})`).join("، ")}
+                : kpis.lowStock.map((v) => `${v.name} (${v.code}): ${num(v.available)}`).join("، ")}
             </dd>
           </div>
         </dl>
@@ -271,7 +282,7 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b pb-1">
-          <TabsTrigger value="queue" className="flex-none">صف کار{loaded && <span className="tabular-nums text-muted-foreground"> ({num(queueCount)})</span>}</TabsTrigger>
+          <TabsTrigger value="queue" className="flex-none">صف کار{loaded && !failed && <span className="tabular-nums text-muted-foreground"> ({num(queueCount)})</span>}</TabsTrigger>
           <TabsTrigger value="dispatches" className="flex-none">همه‌ی حواله‌ها</TabsTrigger>
           <TabsTrigger value="backorders" className="flex-none">کالای ناموجود</TabsTrigger>
         </TabsList>
@@ -279,15 +290,15 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
         <TabsContent value="queue" className="grid grid-cols-1 gap-3 pt-2">
           {!loaded ? <LoadingState /> : (
             <>
-              <Lane title="۱. تأیید رزرو" count={resvs.length} empty="رزروی برای تأیید نیست.">
+              <Lane title="۱. تأیید رزرو" count={resvs.length} failed={failed} empty="رزروی برای تأیید نیست.">
                 <ReservationTable rows={resvs} fresh={freshResv} pending={pending} onApprove={approve} onCancel={cancelResv} />
               </Lane>
-              <Lane title="۲. ساخت حواله" count={reqs.length} empty="درخواست تأییدشده‌ای منتظر حواله نیست.">
+              <Lane title="۲. ساخت حواله" count={reqs.length} failed={failed} empty="درخواست تأییدشده‌ای منتظر حواله نیست.">
                 <RequestTable rows={reqs} fresh={freshReq} tenantId={tenantId} pending={rowPending} onMakeDispatch={makeDispatch} />
               </Lane>
-              <Lane title="۳. بارگیری" count={toLoad.length} empty="حواله‌ای منتظر بارگیری نیست."
+              <Lane title="۳. بارگیری" count={toLoad.length} failed={failed} empty="حواله‌ای منتظر بارگیری نیست."
                 hint={recentHasMore ? `از ${num(recent.length)} حواله‌ی اخیر؛ قدیمی‌ترها در «همه‌ی حواله‌ها»` : undefined}>
-                <DispatchTable rows={toLoad} pending={pending} onAdvance={advance} withCancel={false} label="حواله‌های منتظر بارگیری" testId="to-load" />
+                <DispatchTable rows={toLoad} pending={pending} onAdvance={advance} label="حواله‌های منتظر بارگیری" testId="to-load" />
               </Lane>
             </>
           )}

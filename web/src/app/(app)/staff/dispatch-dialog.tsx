@@ -6,33 +6,36 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/field";
-import { CustomerField, type CustomerOption } from "./customer-field";
+import { Notice } from "@/components/states";
+import { CustomerField, escapeClosesListFirst, type CustomerOption } from "./customer-field";
 import { num, type DispatchExtra, type Req } from "./shared";
 
 /**
  * ساخت حواله از درخواست تأییدشده (spec ۳.۷). همه‌ی فیلدها اختیاری‌اند، پس «ثبت حواله» همیشه فعال است.
- * دیالوگ فقط بعد از پاسخ موفق سرور بسته می‌شود؛ در شکست باز می‌ماند و خطا بالای صفحه است.
+ * دیالوگ فقط بعد از پاسخ موفق سرور بسته می‌شود؛ در شکست باز می‌ماند و خطا داخل خود دیالوگ است.
  */
 export function DispatchDialog({
   req, tenantId, pending, onSubmit,
-}: { req: Req; tenantId: string; pending: boolean; onSubmit: (extra: DispatchExtra) => Promise<boolean> }) {
+}: { req: Req; tenantId: string; pending: boolean; onSubmit: (extra: DispatchExtra) => Promise<string> }) {
   const [open, setOpen] = useState(false);
   const [destination, setDestination] = useState("");
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [error, setError] = useState("");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const ok = await onSubmit({ destination, customerId: customer?.id, referenceNumber });
-    if (ok) { setOpen(false); setDestination(""); setCustomer(null); setReferenceNumber(""); }
+    const err = await onSubmit({ destination, customerId: customer?.id, referenceNumber });
+    setError(err);
+    if (!err) { setOpen(false); setDestination(""); setCustomer(null); setReferenceNumber(""); }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+    <Dialog open={open} onOpenChange={(o) => { if (!pending) { setOpen(o); setError(""); } }}>
       <DialogTrigger asChild>
         <Button size="sm" pending={pending && !open}>ساخت حواله</Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onEscapeKeyDown={escapeClosesListFirst}>
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>ساخت حواله برای {req.agentName}</DialogTitle>
@@ -45,6 +48,8 @@ export function DispatchDialog({
           <Field id={`ref-${req.id}`} label="شماره مرجع (اختیاری)">
             <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="شماره‌ی دفتر یا مرجع داخلی" />
           </Field>
+          {/* بنر صفحه پشت پرده‌ی دیالوگ است؛ خطا همین‌جا دیده و خوانده می‌شود */}
+          {error && <Notice tone="error">{error}</Notice>}
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="outline" disabled={pending}>انصراف</Button></DialogClose>
             <Button type="submit" pending={pending}>ثبت حواله</Button>

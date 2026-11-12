@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DataTable } from "@/components/data-table";
 import { Field, NativeSelect } from "@/components/field";
-import { CustomerField, type CustomerOption } from "./customer-field";
+import { Notice } from "@/components/states";
+import { CustomerField, escapeClosesListFirst, type CustomerOption } from "./customer-field";
 import { BO_FA, BO_NEXT, num, statusTone, type Agent, type Backorder, type Variant } from "./shared";
 
 export type NewBackorder = {
@@ -23,7 +24,7 @@ export function NewBackorderDialog({
   tenantId, agents, variants, pending, onSubmit,
 }: {
   tenantId: string; agents: Agent[]; variants: Variant[]; pending: boolean;
-  onSubmit: (b: NewBackorder) => Promise<boolean>;
+  onSubmit: (b: NewBackorder) => Promise<string>;
 }) {
   const [open, setOpen] = useState(false);
   const [agent, setAgent] = useState("");
@@ -32,6 +33,7 @@ export function NewBackorderDialog({
   const [destination, setDestination] = useState("");
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [error, setError] = useState("");
   const [tried, setTried] = useState(false);
 
   const qtyNum = Number(qty);
@@ -46,19 +48,20 @@ export function NewBackorderDialog({
     e.preventDefault();
     setTried(true);
     if (errors.agent || errors.variant || errors.qty) return;
-    const ok = await onSubmit({ agentAccountId: agent, variantId: variant, quantityBoxes: qtyNum, destination, customerId: customer?.id, referenceNumber });
-    if (ok) {
+    const err = await onSubmit({ agentAccountId: agent, variantId: variant, quantityBoxes: qtyNum, destination, customerId: customer?.id, referenceNumber });
+    setError(err);
+    if (!err) {
       setOpen(false); setTried(false);
       setQty(""); setDestination(""); setCustomer(null); setReferenceNumber("");
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+    <Dialog open={open} onOpenChange={(o) => { if (!pending) { setOpen(o); setError(""); } }}>
       <DialogTrigger asChild>
         <Button><PlusIcon />ثبت کالای ناموجود</Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onEscapeKeyDown={escapeClosesListFirst}>
         <form onSubmit={submit} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>ثبت کالای ناموجود</DialogTitle>
@@ -86,6 +89,8 @@ export function NewBackorderDialog({
           <Field id="bo-reference" label="شماره مرجع (اختیاری)">
             <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="شماره‌ی دفتر یا مرجع داخلی" />
           </Field>
+          {/* بنر صفحه پشت پرده‌ی دیالوگ است؛ خطا همین‌جا دیده و خوانده می‌شود */}
+          {error && <Notice tone="error">{error}</Notice>}
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="outline" disabled={pending}>انصراف</Button></DialogClose>
             <Button type="submit" pending={pending}>ثبت</Button>

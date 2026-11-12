@@ -112,7 +112,7 @@ function ThemeToggle({ className }: { className?: string }) {
   }
   return (
     <Button variant="ghost" size="icon" className={className} onClick={toggle} aria-pressed={dark}
-      aria-label={dark ? "تم روشن" : "تم تیره"} title={dark ? "تم روشن" : "تم تیره"}>
+      aria-label="تم تیره" title="تم تیره">
       {dark ? <SunIcon /> : <MoonIcon />}
     </Button>
   );
@@ -120,14 +120,18 @@ function ThemeToggle({ className }: { className?: string }) {
 
 function LogoutButton({ className }: { className?: string }) {
   const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
   return (
     <Button variant="ghost" size="sm" className={className} pending={pending}
+      title={failed ? "خروج انجام نشد؛ دوباره بزنید" : undefined}
       onClick={async () => {
         setPending(true);
-        await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-        window.location.assign("/login");
+        // فقط وقتی نشست واقعاً بسته شد برو؛ روی رایانه‌ی مشترک، رفتن با خطا یعنی نشست باز می‌ماند
+        const r = await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+        if (r?.ok) window.location.assign("/login");
+        else { setPending(false); setFailed(true); }
       }}>
-      {!pending && <LogOutIcon />}خروج
+      {!pending && <LogOutIcon />}{failed ? "خروج نشد، دوباره" : "خروج"}
     </Button>
   );
 }

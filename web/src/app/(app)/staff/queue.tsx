@@ -13,17 +13,18 @@ import { DISPATCH_FA, DISPATCH_NEXT, itemLine, num, statusTone, type Disp, type 
 
 /** یک مرحله از زنجیره: عنوان با شمارش، و جدول یا «چیزی نیست». */
 export function Lane({
-  title, count, children, empty, hint,
-}: { title: string; count: number; children: React.ReactNode; empty: string; hint?: string }) {
+  title, count, children, empty, hint, failed,
+}: { title: string; count: number; children: React.ReactNode; empty: string; hint?: string; failed?: boolean }) {
   return (
     // روی موبایل خود ردیف‌ها کارت‌اند؛ قاب دور مرحله فقط یک لایه‌ی تودرتوی اضافه بود.
     <section className="grid grid-cols-1 gap-2 md:rounded-xl md:border md:bg-card md:p-4" aria-label={title}>
       <h2 className="flex items-center gap-2 text-sm font-semibold">
         {title}
-        <Badge variant={count > 0 ? "warning" : "secondary"} className="tabular-nums">{num(count)}</Badge>
+        {!failed && <Badge variant={count > 0 ? "warning" : "secondary"} className="tabular-nums">{num(count)}</Badge>}
         {hint && <span className="ms-auto text-xs font-normal text-muted-foreground">{hint}</span>}
       </h2>
-      {count === 0 ? <EmptyState>{empty}</EmptyState> : children}
+      {/* با خطای بارگذاری صفر یعنی «نگرفتیم»، نه «نیست»؛ بنر خطا بالای صفحه است */}
+      {count > 0 ? children : !failed && <EmptyState>{empty}</EmptyState>}
     </section>
   );
 }
@@ -93,7 +94,7 @@ export function RequestTable({
   rows, fresh, tenantId, pending, onMakeDispatch,
 }: {
   rows: Req[]; fresh: Set<string>; tenantId: string; pending: string | null;
-  onMakeDispatch: (id: string, extra: DispatchExtra) => Promise<boolean>;
+  onMakeDispatch: (id: string, extra: DispatchExtra) => Promise<string>;
 }) {
   return (
     <DataTable label="درخواست‌های آماده‌ی حواله" testId="approved-requests" rows={rows} rowKey={(r) => r.id}
@@ -116,11 +117,11 @@ export function RequestTable({
 
 /** دکمه‌های وضعیت بعدی یک حواله. بارگیری (موجودی کم می‌شود) و لغو تأیید می‌خواهند. */
 export function DispatchActions({
-  d, pending, onAdvance, withCancel = true,
-}: { d: Disp; pending: string | null; onAdvance: (id: string, to: string) => void; withCancel?: boolean }) {
+  d, pending, onAdvance,
+}: { d: Disp; pending: string | null; onAdvance: (id: string, to: string) => void }) {
   return (
     <div className="flex flex-wrap gap-2 md:flex-nowrap">
-      {(DISPATCH_NEXT[d.status] ?? []).filter((s) => withCancel || s !== "cancelled").map((s) => {
+      {(DISPATCH_NEXT[d.status] ?? []).map((s) => {
         const busy = pending === d.id + s;
         if (s === "loaded")
           return (
@@ -155,10 +156,10 @@ export function DispatchActions({
 }
 
 export function DispatchTable({
-  rows, pending, onAdvance, withCancel, label, testId,
+  rows, pending, onAdvance, label, testId,
 }: {
   rows: Disp[]; pending: string | null; onAdvance: (id: string, to: string) => void;
-  withCancel?: boolean; label: string; testId?: string;
+  label: string; testId?: string;
 }) {
   return (
     <DataTable label={label} testId={testId} rows={rows} rowKey={(d) => d.id}
@@ -188,7 +189,7 @@ export function DispatchTable({
         { key: "status", header: "وضعیت", cell: (d) => <Badge variant={statusTone(d.status)} data-status>{DISPATCH_FA[d.status] ?? d.status}</Badge> },
         {
           key: "actions", header: "عملیات", actions: true, className: "md:w-px whitespace-nowrap",
-          cell: (d) => <DispatchActions d={d} pending={pending} onAdvance={onAdvance} withCancel={withCancel} />,
+          cell: (d) => <DispatchActions d={d} pending={pending} onAdvance={onAdvance} />,
         },
       ]} />
   );

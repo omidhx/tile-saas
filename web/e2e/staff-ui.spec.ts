@@ -12,22 +12,32 @@ const WIDTHS = [375, 1440] as const;
 // کاربر staff جدا و یک ورود برای کل فایل: سقف ورود ۵ بار در ۱۵ دقیقه برای هر شناسه است و
 // specهای دیگر سهم STAFF را مصرف می‌کنند. هر ورود موفق نشست‌های قبلی همان کاربر را هم باطل می‌کند.
 const T = "11111111-1111-1111-1111-111111111111";
-const UI_STAFF = { phone: "09120000066", password: STAFF.password };
+// دو کاربر: سقف API برای هر کاربر staff ۶۰ درخواست در دقیقه است (یافته‌ی ممیزی، اصلاحش فاز ۷) و
+// هر بار باز شدن کارتابل ۷ GET است؛ تست‌های مسیر خطا با کاربر دوم سهم تست‌های اصلی را نمی‌خورند.
+const UI_STAFF = { phone: "09120000066", password: STAFF.password, id: "e5555555-0000-0000-0000-0000000000bb" };
+const UI_STAFF_ERR = { phone: "09120000065", password: STAFF.password, id: "e5555555-0000-0000-0000-0000000000bc" };
 let storageState: BrowserContextOptions["storageState"];
+let errStorageState: BrowserContextOptions["storageState"];
 
 test.beforeAll(async ({ browser }) => {
   const admin = postgres(process.env.E2E_ADMIN_DATABASE_URL!, { max: 1 });
-  await admin.unsafe(`
-    INSERT INTO app_user (id, phone, full_name, password_hash)
-      SELECT 'e5555555-0000-0000-0000-0000000000bb', '${UI_STAFF.phone}', 'کارمندِ تست UI', password_hash FROM app_user WHERE phone = '${STAFF.phone}'
-      ON CONFLICT DO NOTHING;
-    INSERT INTO tenant_membership (tenant_id, user_id, role, is_active) VALUES ('${T}', 'e5555555-0000-0000-0000-0000000000bb', 'staff', true)
-      ON CONFLICT DO NOTHING;`);
+  for (const u of [UI_STAFF, UI_STAFF_ERR])
+    await admin.unsafe(`
+      INSERT INTO app_user (id, phone, full_name, password_hash)
+        SELECT '${u.id}', '${u.phone}', 'کارمندِ تست UI', password_hash FROM app_user WHERE phone = '${STAFF.phone}'
+        ON CONFLICT DO NOTHING;
+      INSERT INTO tenant_membership (tenant_id, user_id, role, is_active) VALUES ('${T}', '${u.id}', 'staff', true)
+        ON CONFLICT DO NOTHING;`);
   await admin.end();
-  const ctx = await browser.newContext();
-  await login(await ctx.newPage(), UI_STAFF);
-  storageState = await ctx.storageState();
-  await ctx.close();
+  const signIn = async (u: { phone: string; password: string }) => {
+    const ctx = await browser.newContext();
+    await login(await ctx.newPage(), u);
+    const state = await ctx.storageState();
+    await ctx.close();
+    return state;
+  };
+  storageState = await signIn(UI_STAFF);
+  errStorageState = await signIn(UI_STAFF_ERR);
 });
 
 async function open(browser: Browser, width: number, theme: "light" | "dark"): Promise<Page> {
@@ -94,9 +104,57 @@ test("صفحه‌کلید: تب‌ها با کلید جهت در RTL، فرم ب
   await expect(dialog.getByText("کالا را انتخاب کنید.")).toBeVisible();
   await expect(dialog.getByLabel("تعداد کارتن")).toHaveAttribute("aria-invalid", "true");
   await expect(dialog.getByLabel("تعداد کارتن")).toHaveAccessibleDescription(/عدد صحیح/);
+
+  // فهرست مشتری باز: Escape اول فقط فهرست را می‌بندد و فرم پرشده می‌ماند (بازبین: قبلاً کل دیالوگ بسته می‌شد)
+  await dialog.getByLabel("تعداد کارتن").fill("3");
+  const customer = dialog.getByRole("combobox", { name: "مشتری (اختیاری)" });
+  await customer.fill("نیست");
+  await expect(dialog.getByRole("listbox")).toBeVisible();
+  await expect(customer).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByRole("listbox")).toHaveCount(0);
+  await expect(customer).toHaveAttribute("aria-expanded", "false");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("تعداد کارتن")).toHaveValue("3");
+
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await expect(trigger).toBeFocused();
+});
+
+test("بارگذاری ناموفق: «چیزی نیست» و شمارش صفر نشان داده نمی‌شود", async ({ browser }) => {
+  const ctx = await browser.newContext({ storageState: errStorageState, viewport: { width: 1440, height: 900 } });
+  await ctx.route("**/api/reservations?**", (r) => r.fulfill({ status: 500, body: "{}" }));
+  const page = await ctx.newPage();
+  await page.goto("/staff");
+  await expect(page.getByRole("alert").filter({ hasText: "بارگذاری ناموفق (500)" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("رزروی برای تأیید نیست.")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: /صف کار/ })).not.toContainText("(");
+  await ctx.close();
+});
+
+test("کار ناموفق در دیالوگ: دیالوگ باز می‌ماند و خطا داخل خودش خوانده می‌شود", async ({ browser }) => {
+  const ctx = await browser.newContext({ storageState: errStorageState, viewport: { width: 1440, height: 900 } });
+  await ctx.route("**/api/sales-dispatches", (r) =>
+    r.request().method() === "POST" ? r.fulfill({ status: 500, body: "{}" }) : r.fallback());
+  const page = await ctx.newPage();
+  await page.goto("/staff");
+  await page.getByTestId("approved-requests").getByRole("button", { name: "ساخت حواله" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "ثبت حواله" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("خطای 500");
+  await expect(dialog).toBeVisible();
+  await ctx.close();
+});
+
+test("آدرس ناموجود: ۴۰۴ با layout فارسی و راست‌به‌چپ", async ({ page }) => {
+  // با دو root layout، بدون catch-all این صفحه html خام انگلیسی بدون nonce بود (بازبین فاز ۶)
+  for (const path of ["/nope", "/staff/nope"]) {
+    const res = await page.goto(path);
+    expect(res?.status()).toBe(404);
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(page.locator("html")).toHaveAttribute("lang", "fa");
+  }
 });
 
 test("دیالوگ تأیید: فوکوس اول روی انصراف است و Escape کاری انجام نمی‌دهد", async ({ browser }) => {
