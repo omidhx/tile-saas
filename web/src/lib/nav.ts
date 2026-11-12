@@ -1,41 +1,39 @@
 import type { Ctx } from "@/lib/useContexts";
 
 /**
- * منوی پنل پشتیبان، گروه‌بندی‌شده بر اساسِ بسامدِ استفاده. هر دو پوسته (PageShell قدیم و AppShell تازه) از همین می‌خوانند.
- * لینکِ صفحه‌ای که کاربر بهش دسترسی ندارد اصلاً نشان داده نمی‌شود.
+ * منوی پنل پشتیبان، گروه‌بندی‌شده مثل طلاسرام (عملیات، محصولات، فروش، گزارش‌ها، تنظیمات). هر دو پوسته
+ * (PageShell قدیم و AppShell تازه) از همین می‌خوانند؛ `icon` نام آیکن lucide است و فقط پوسته‌ی تازه آن را نشان می‌دهد.
+ * لینکِ صفحه‌ای که کاربر بهش دسترسی ندارد اصلاً نشان داده نمی‌شود. صفحه‌های انبار و حواله‌ی کامل در فاز ۷ تا ۹ اضافه می‌شوند.
  */
-export type NavItem = { href: string; label: string; adminOnly?: boolean };
+export type NavItem = { href: string; label: string; icon?: string; adminOnly?: boolean };
 export type NavGroup = { title: string; items: NavItem[] };
 
 export const STAFF_NAV_GROUPS: NavGroup[] = [
-  { title: "کار روزانه", items: [{ href: "/staff", label: "کارتابل" }] },
+  { title: "عملیات", items: [{ href: "/staff", label: "کارتابل", icon: "inbox" }] },
   {
-    title: "محصول و موجودی",
+    title: "محصولات",
     items: [
-      { href: "/staff/catalog", label: "محصولات" },
-      { href: "/staff/catalog?tab=import", label: "ورود از اکسل" },
+      { href: "/staff/catalog", label: "محصولات و موجودی", icon: "package" },
+      { href: "/staff/catalog?tab=import", label: "ورود از اکسل", icon: "sheet" },
+    ],
+  },
+  { title: "فروش", items: [{ href: "/staff/customers", label: "مشتریان", icon: "users" }] },
+  {
+    title: "گزارش‌ها",
+    items: [
+      { href: "/staff/reports", label: "گزارش‌ها", icon: "chart" },
+      { href: "/staff/reports?tab=ledger", label: "لاگ", icon: "history" },
     ],
   },
   {
-    title: "گزارش و ردیابی",
+    title: "تنظیمات",
     items: [
-      { href: "/staff/reports", label: "گزارش‌ها" },
-      { href: "/staff/reports?tab=ledger", label: "لاگ" },
+      { href: "/staff/team", label: "تیم کارخانه", icon: "team", adminOnly: true },
+      { href: "/staff/team?tab=agents", label: "نمایندگی‌ها", icon: "store", adminOnly: true },
+      { href: "/staff/team?tab=warehouses", label: "انبارها", icon: "warehouse", adminOnly: true },
+      { href: "/staff/team?tab=settings", label: "تنظیمات و امکانات", icon: "settings", adminOnly: true },
+      { href: "/account/password", label: "امنیت حساب", icon: "shield" },
     ],
-  },
-  {
-    title: "راه‌اندازی و دسترسی",
-    items: [
-      { href: "/staff/customers", label: "مشتریان" },
-      { href: "/staff/team", label: "تیمِ کارخانه", adminOnly: true },
-      { href: "/staff/team?tab=agents", label: "نمایندگی‌ها", adminOnly: true },
-      { href: "/staff/team?tab=warehouses", label: "انبارها", adminOnly: true },
-      { href: "/staff/team?tab=settings", label: "تنظیمات و امکانات", adminOnly: true },
-    ],
-  },
-  {
-    title: "حساب کاربری",
-    items: [{ href: "/account/password", label: "امنیت حساب" }],
   },
 ];
 

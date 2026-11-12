@@ -67,7 +67,7 @@ for (const width of WIDTHS) {
         .slice(0, 5).map((el) => `${el.tagName}.${(el.getAttribute("class") ?? "").slice(0, 60)}`))).toEqual([]);
       if (width === 1440) {
         // سایدبار سمت راست است (شروع خط در RTL)
-        const box = (await page.locator("aside").boundingBox())!;
+        const box = (await page.locator("[data-sidebar]").boundingBox())!;
         expect(box.x).toBeGreaterThan(width / 2);
       }
       expect(await axe(page)).toEqual([]);
@@ -87,7 +87,7 @@ for (const width of WIDTHS) {
 test("صفحه‌کلید: تب‌ها با کلید جهت در RTL، فرم با پیام خطا، Escape و برگشت فوکوس", async ({ browser }) => {
   const page = await open(browser, 1440, "light");
   // در RTL «بعدی» سمت چپ است، پس ArrowLeft تب بعد را می‌گیرد. بدون DirectionProvider برعکس بود.
-  await page.getByRole("tab", { name: /صف کار/ }).focus();
+  await page.getByRole("tab", { name: /کارتابل/ }).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tab", { name: "همه‌ی حواله‌ها" })).toBeFocused();
   await page.keyboard.press("ArrowLeft");
@@ -128,8 +128,9 @@ test("بارگذاری ناموفق: «چیزی نیست» و شمارش صفر 
   const page = await ctx.newPage();
   await page.goto("/staff");
   await expect(page.getByRole("alert").filter({ hasText: "بارگذاری ناموفق (500)" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("رزروی برای تأیید نیست.")).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: /صف کار/ })).not.toContainText("(");
+  await expect(page.getByText("کار بازی نیست", { exact: false })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: /کارتابل/ })).not.toContainText("(");
+  await expect(page.getByRole("button", { name: /تأیید رزرو/ })).toContainText("—");
   await ctx.close();
 });
 

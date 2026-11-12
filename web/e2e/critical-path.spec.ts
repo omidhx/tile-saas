@@ -44,15 +44,15 @@ test("ورود → رزرو → تأیید/خودکار → حواله → با�
   await login(page, STAFF);
   await page.goto("/staff");
 
-  // کارتابل (فاز ۶): هر مرحله یک جدول است و هر ردیف tr[data-row].
+  // کارتابل (فاز ۶): هر مرحله یک گروه با testid است و هر ردیف [data-row].
   if (!autoApproved) {
-    const pendingRow = page.getByTestId("pending-reservations").locator("tr[data-row]").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
+    const pendingRow = page.getByTestId("pending-reservations").locator("[data-row]").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
     await expect(pendingRow).toBeVisible({ timeout: 15_000 });
     await pendingRow.getByRole("button", { name: "تأیید" }).click();
     await expect(pendingRow).not.toBeVisible({ timeout: 15_000 });
   }
 
-  const approvedRow = page.getByTestId("approved-requests").locator("tr[data-row]").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
+  const approvedRow = page.getByTestId("approved-requests").locator("[data-row]").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
   await expect(approvedRow).toBeVisible({ timeout: 15_000 });
   await approvedRow.getByRole("button", { name: "ساخت حواله" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "ثبت حواله" }).click();
@@ -60,11 +60,11 @@ test("ورود → رزرو → تأیید/خودکار → حواله → با�
   await expect(approvedRow).not.toBeVisible({ timeout: 15_000 });
 
   // ۳. حواله: فهرست با created_at DESC می‌آید، پس حواله‌ی تازه اولین ردیف ستون «بارگیری» است.
-  const dispatchRow = page.getByTestId("to-load").locator("tr[data-row]").first();
+  const dispatchRow = page.getByTestId("to-load").locator("[data-row]").first();
   await expect(dispatchRow).toBeVisible({ timeout: 15_000 });
   const status = dispatchRow.locator("[data-status]");
   await expect(status).toHaveText("ثبت‌شده");
-  const code = (await dispatchRow.locator("td").first().locator("[dir=ltr]").innerText()).trim();
+  const code = (await dispatchRow.locator("[dir=ltr]").first().innerText()).trim();
 
   await dispatchRow.getByRole("button", { name: "آماده بارگیری" }).click();
   await expect(status).toHaveText("آماده بارگیری", { timeout: 15_000 });

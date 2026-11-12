@@ -54,12 +54,12 @@
   /* آبی، تا حلقه‌ی فوکوس با هیچ وضعیتی اشتباه نشود (همان تصمیم UI قدیم) */
   --ring: #2563eb;
 
-  /* سایدبار در هر دو تم تیره است: روی محتوای روشن مرز می‌سازد. */
-  --sidebar: #0f172a;
-  --sidebar-foreground: #e2e8f0;
-  --sidebar-muted: #94a3b8;
-  --sidebar-accent: #1e293b;
-  --sidebar-primary: #2dd4bf;
+  /* سایدبار روشن با آیکن (طرح «ج»، تأیید صاحب پروژه)؛ مرز آن را از محتوا جدا می‌کند. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #334155;
+  --sidebar-muted: #64748b;
+  --sidebar-accent: #f0fdfa;
+  --sidebar-primary: #0f766e;
 
   color-scheme: light;
 }
@@ -86,8 +86,11 @@
   --success: #4ade80;
   --warning: #fbbf24;
   --ring: #60a5fa;
-  --sidebar: #070d18;
+  --sidebar: #0d1526;
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-muted: #94a3b8;
   --sidebar-accent: #172033;
+  --sidebar-primary: #2dd4bf;
   color-scheme: dark;
 }
 
@@ -113,8 +116,11 @@
     --success: #4ade80;
     --warning: #fbbf24;
     --ring: #60a5fa;
-    --sidebar: #070d18;
+    --sidebar: #0d1526;
+    --sidebar-foreground: #e2e8f0;
+    --sidebar-muted: #94a3b8;
     --sidebar-accent: #172033;
+    --sidebar-primary: #2dd4bf;
     color-scheme: dark;
   }
 }

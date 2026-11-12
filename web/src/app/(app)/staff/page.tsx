@@ -7,17 +7,20 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, LoadingState, Notice } from "@/components/states";
 import { actionError, getJson, loadError, postJson } from "@/lib/api";
+import { remainingTime } from "@/lib/date";
 import { useContexts, type Ctx } from "@/lib/useContexts";
+import { cn } from "@/lib/utils";
 import { BackorderTable, NewBackorderDialog, type NewBackorder } from "./backorders";
-import { DispatchTable, Lane, RequestTable, ReservationTable } from "./queue";
+import { DispatchTable, KpiCards, LowStockCard, RecentDispatchesCard, WorkList, type Stage } from "./queue";
 import {
   num, type Agent, type Backorder, type DashboardKpis, type Disp, type DispatchExtra, type Req, type Resv, type Variant,
 } from "./shared";
 
 /**
- * کارتابل پشتیبان (فاز ۶). کار روزانه سه مرحله است و هر سه با هم در تب اول دیده می‌شوند:
- * تأیید رزرو ← ساخت حواله ← بارگیری. فهرست کامل حواله‌ها و کالای ناموجود در تب‌های جدا هستند تا
- * فرم و جستجوی آن‌ها مسیر روزانه را شلوغ نکند.
+ * کارتابل پشتیبان (فاز ۶، طرح «ج» تأییدشده‌ی صاحب پروژه). بالای صفحه چهار کارت عدد برای مرحله‌های کار
+ * (تأیید رزرو ← ساخت حواله ← بارگیری، و بارگیری امروز) که هر کدام فیلتر همان مرحله‌اند؛ زیرش فهرست کارهای باز
+ * به ترتیب کار با دکمه‌ی کار بعدی در همان ردیف؛ کنارش رو به اتمام و آخرین حواله‌ها. فهرست کامل حواله‌ها و
+ * کالای ناموجود در تب‌های جدا هستند تا مسیر روزانه شلوغ نشود.
  */
 
 /** صف رزرو و درخواست را هر چند وقت دوباره بخوان، همان الگوی «رزروهای من» نماینده. */
@@ -54,7 +57,7 @@ export default function StaffPage() {
   if (state === "none")
     return <div className="p-4"><Notice tone="error">این بخش فقط برای پشتیبان است.</Notice></div>;
   if (!ctx) return <div className="p-4"><LoadingState /></div>;
-  return <AppShell ctx={ctx}><WorkQueue ctx={ctx} /></AppShell>;
+  return <WorkQueue ctx={ctx} />;
 }
 
 function WorkQueue({ ctx }: { ctx: Ctx }) {
@@ -80,6 +83,7 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
   const [actionErr, setActionErr] = useState("");
   const [note, setNote] = useState("");
   const [tab, setTab] = useState("queue");
+  const [stage, setStage] = useState<Stage>("all");
 
   // اعلان رزرو و درخواست تازه: شناسه‌های دیده‌شده بین دو بار خواندن
   const knownResv = useRef<Set<string> | null>(null);
@@ -241,106 +245,112 @@ function WorkQueue({ ctx }: { ctx: Ctx }) {
   const queueCount = resvs.length + reqs.length + toLoad.length;
   // «چیزی نیست» فقط وقتی راست است که بارگذاری موفق بوده؛ با خطا شمارش و پیام خالی نشان داده نمی‌شود.
   const failed = !!loadErr;
-  // pendingِ ساخت حواله با کلید «dispatch:id» ثبت می‌شود؛ جدول با id خام مقایسه می‌کند
+  // pendingِ ساخت حواله با کلید «dispatch:id» ثبت می‌شود؛ ردیف با id خام مقایسه می‌کند
   const rowPending = pending?.startsWith("dispatch:") ? pending.slice(9) : pending;
+  const counts = { approve: resvs.length, dispatch: reqs.length, load: toLoad.length };
+  const urgent = resvs.filter((r) => remainingTime(r.expiresAt).low).length;
+  const auto = reqs.filter((r) => r.approvalMode === "auto").length;
+  const ready = toLoad.filter((d) => d.status === "ready_for_loading").length;
+  const subs = {
+    approve: urgent ? `${num(urgent)} مورد کمتر از یک ساعت` : "زودترین انقضا اول",
+    dispatch: auto ? `${num(auto)} تأیید خودکار` : "منتظر ساخت حواله",
+    load: recentHasMore ? `از ${num(recent.length)} حواله‌ی اخیر` : ready ? `${num(ready)} آماده‌ی بارگیری` : "ثبت‌شده و آماده",
+  };
+  const shown = stage === "all" ? queueCount : counts[stage];
+  const today = new Intl.DateTimeFormat("fa-IR", { timeZone: "Asia/Tehran", weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const toggleMute = () => setMuted((m) => {
+    const next = !m;
+    try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch { /* حالت خصوصی */ }
+    return next;
+  });
 
   return (
-    <div className="grid grid-cols-1 gap-4">
-      <header className="flex flex-wrap items-center gap-3">
-        <div className="me-auto">
-          <h1 className="text-xl font-bold">کارتابل</h1>
-          <p className="text-sm text-muted-foreground">{ctx.tenantName}</p>
-        </div>
-        <Button variant="outline" size="sm" aria-pressed={!muted}
-          onClick={() => setMuted((m) => { const next = !m; try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch { /* حالت خصوصی */ } return next; })}>
-          {muted ? <BellOffIcon /> : <BellIcon />}{muted ? "صدای اعلان خاموش" : "صدای اعلان روشن"}
+    <AppShell ctx={ctx} title="کارتابل"
+      subtitle={<>{today}{loaded && !failed && <> · {num(queueCount)} کار باز</>}</>}
+      actions={<>
+        <NewBackorderDialog tenantId={tenantId} agents={agents} variants={variants} pending={pending === "bo-create"} onSubmit={createBackorder} />
+        <Button variant="outline" size="icon" className="relative" aria-pressed={!muted} onClick={toggleMute}
+          aria-label={muted ? "صدای اعلان خاموش است" : "صدای اعلان روشن است"} title={muted ? "صدای اعلان خاموش است" : "صدای اعلان روشن است"}>
+          {muted ? <BellOffIcon /> : <BellIcon />}
+          {newArrivals > 0 && <span aria-hidden="true" className="absolute -top-1.5 -end-1.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white">{num(newArrivals)}</span>}
         </Button>
-      </header>
+      </>}>
+      <div className="grid grid-cols-1 gap-4">
+        {newArrivals > 0 && (
+          <Notice tone="warning" action={<Button size="xs" variant="outline" onClick={() => setNewArrivals(0)}>دیدم</Button>}>
+            {num(newArrivals)} رزرو یا درخواست تازه رسید؛ ردیف‌های «تازه» را ببینید.
+          </Notice>
+        )}
+        {loadErr && <Notice tone="error">{loadErr} فهرست‌ها ناقص یا خالی‌اند؛ به «چیزی نیست» اعتماد نکنید.</Notice>}
+        {actionErr && <Notice tone="error">{actionErr}</Notice>}
+        {note && <Notice tone="success">{note}</Notice>}
 
-      {kpis && (
-        <dl className="grid grid-cols-2 gap-2 md:grid-cols-[1fr_1fr_2fr]">
-          <Stat label="حواله‌ی امروز" value={num(kpis.todayDispatches)} />
-          <Stat label="کارتن بارگیری‌شده‌ی امروز" value={num(kpis.todayBoxes)} />
-          <div className="col-span-2 rounded-xl border bg-card px-3 py-2.5 md:col-span-1">
-            <dt className="text-xs text-muted-foreground">رو به اتمام</dt>
-            <dd className="mt-1 text-sm">
-              {kpis.lowStock.length === 0 ? <span className="text-muted-foreground">کالای کم‌موجودی نیست.</span>
-                : kpis.lowStock.map((v) => `${v.name} (${v.code}): ${num(v.available)}`).join("، ")}
-            </dd>
-          </div>
-        </dl>
-      )}
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b pb-1">
+            <TabsTrigger value="queue" className="flex-none">کارتابل{loaded && !failed && <span className="tabular-nums text-muted-foreground"> ({num(queueCount)})</span>}</TabsTrigger>
+            <TabsTrigger value="dispatches" className="flex-none">همه‌ی حواله‌ها</TabsTrigger>
+            <TabsTrigger value="backorders" className="flex-none">کالای ناموجود</TabsTrigger>
+          </TabsList>
 
-      {newArrivals > 0 && (
-        <Notice tone="warning" action={<Button size="xs" variant="outline" onClick={() => setNewArrivals(0)}>دیدم</Button>}>
-          {num(newArrivals)} رزرو یا درخواست تازه رسید؛ ردیف‌های «تازه» را ببینید.
-        </Notice>
-      )}
-      {loadErr && <Notice tone="error">{loadErr} فهرست‌ها ناقص یا خالی‌اند؛ به «چیزی نیست» اعتماد نکنید.</Notice>}
-      {actionErr && <Notice tone="error">{actionErr}</Notice>}
-      {note && <Notice tone="success">{note}</Notice>}
-
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b pb-1">
-          <TabsTrigger value="queue" className="flex-none">صف کار{loaded && !failed && <span className="tabular-nums text-muted-foreground"> ({num(queueCount)})</span>}</TabsTrigger>
-          <TabsTrigger value="dispatches" className="flex-none">همه‌ی حواله‌ها</TabsTrigger>
-          <TabsTrigger value="backorders" className="flex-none">کالای ناموجود</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="queue" className="grid grid-cols-1 gap-3 pt-2">
-          {!loaded ? <LoadingState /> : (
-            <>
-              <Lane title="۱. تأیید رزرو" count={resvs.length} failed={failed} empty="رزروی برای تأیید نیست.">
-                <ReservationTable rows={resvs} fresh={freshResv} pending={pending} onApprove={approve} onCancel={cancelResv} />
-              </Lane>
-              <Lane title="۲. ساخت حواله" count={reqs.length} failed={failed} empty="درخواست تأییدشده‌ای منتظر حواله نیست.">
-                <RequestTable rows={reqs} fresh={freshReq} tenantId={tenantId} pending={rowPending} onMakeDispatch={makeDispatch} />
-              </Lane>
-              <Lane title="۳. بارگیری" count={toLoad.length} failed={failed} empty="حواله‌ای منتظر بارگیری نیست."
-                hint={recentHasMore ? `از ${num(recent.length)} حواله‌ی اخیر؛ قدیمی‌ترها در «همه‌ی حواله‌ها»` : undefined}>
-                <DispatchTable rows={toLoad} pending={pending} onAdvance={advance} label="حواله‌های منتظر بارگیری" testId="to-load" />
-              </Lane>
-            </>
-          )}
-        </TabsContent>
-
-        <TabsContent value="dispatches" className="grid grid-cols-1 gap-3 pt-2">
-          <SearchBox label="جستجوی حواله" placeholder="کد حواله، مشتری، نمایندگی…" value={dispsQ} onChange={searchDispatches} />
-          {!loaded ? <LoadingState /> : disps.length === 0 ? (
-            !loadErr && <EmptyState>{dispsQ ? "چیزی پیدا نشد." : "حواله‌ای نیست."}</EmptyState>
-          ) : (
-            <div className="rounded-xl border bg-card p-1 max-md:border-0 max-md:bg-transparent max-md:p-0">
-              <DispatchTable rows={disps} pending={pending} onAdvance={advance} label="حواله‌ها" testId="dispatch-list" />
+          <TabsContent value="queue" className="grid grid-cols-1 gap-5 pt-3">
+            <KpiCards stage={stage} onStage={setStage} counts={counts} subs={subs} failed={failed || !loaded}
+              todayBoxes={kpis?.todayBoxes} todayDispatches={kpis?.todayDispatches} />
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <section className="grid content-start gap-3" aria-label="کارهای باز">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-bold">کارهای باز</h2>
+                  <span className="text-[12px] text-muted-foreground">به ترتیب کار</span>
+                  <div role="group" aria-label="فیلتر مرحله" className="ms-auto flex gap-0.5 rounded-lg border bg-card p-0.5 text-[12px]">
+                    {([["all", "همه"], ["approve", "تأیید"], ["dispatch", "حواله"], ["load", "بارگیری"]] as const).map(([k, l]) => (
+                      <button key={k} type="button" aria-pressed={stage === k} onClick={() => setStage(k)}
+                        className={cn("rounded-md px-2.5 py-1 font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:py-2.5",
+                          stage === k ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
+                        {l}{loaded && !failed && <span className="tabular-nums"> {num(k === "all" ? queueCount : counts[k])}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {!loaded ? <LoadingState /> : shown === 0 ? (
+                  !failed && <EmptyState>{stage === "all" ? "کار بازی نیست؛ رزرو و درخواست تازه همین‌جا می‌آید." : "در این مرحله کاری نیست."}</EmptyState>
+                ) : (
+                  <WorkList stage={stage} resvs={resvs} reqs={reqs} toLoad={toLoad} freshResv={freshResv} freshReq={freshReq}
+                    tenantId={tenantId} pending={pending} rowPending={rowPending}
+                    onApprove={approve} onCancel={cancelResv} onMakeDispatch={makeDispatch} onAdvance={advance} />
+                )}
+              </section>
+              <aside className="grid content-start gap-4" aria-label="خلاصه‌ی موجودی و حواله‌ها">
+                <LowStockCard kpis={kpis} />
+                <RecentDispatchesCard recent={recent} onShowAll={() => setTab("dispatches")} />
+              </aside>
             </div>
-          )}
-          {dispsHasMore && <Button variant="outline" onClick={() => void moreDispatches()} pending={dispsBusy}>بیشتر</Button>}
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="backorders" className="grid grid-cols-1 gap-3 pt-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <TabsContent value="dispatches" className="grid grid-cols-1 gap-3 pt-3">
+            <SearchBox label="جستجوی حواله" placeholder="کد حواله، مشتری، نمایندگی…" value={dispsQ} onChange={searchDispatches} />
+            {!loaded ? <LoadingState /> : disps.length === 0 ? (
+              !loadErr && <EmptyState>{dispsQ ? "چیزی پیدا نشد." : "حواله‌ای نیست."}</EmptyState>
+            ) : (
+              <div className="rounded-xl border bg-card p-1 max-md:border-0 max-md:bg-transparent max-md:p-0">
+                <DispatchTable rows={disps} pending={pending} onAdvance={advance} label="حواله‌ها" testId="dispatch-list" />
+              </div>
+            )}
+            {dispsHasMore && <Button variant="outline" onClick={() => void moreDispatches()} pending={dispsBusy}>بیشتر</Button>}
+          </TabsContent>
+
+          <TabsContent value="backorders" className="grid grid-cols-1 gap-3 pt-3">
             <SearchBox label="جستجوی کالای ناموجود" placeholder="کالا، کد، نمایندگی، کد حواله…" value={boQ} onChange={searchBackorders} />
-            <NewBackorderDialog tenantId={tenantId} agents={agents} variants={variants} pending={pending === "bo-create"} onSubmit={createBackorder} />
-          </div>
-          {!loaded ? <LoadingState /> : backorders.length === 0 ? (
-            !loadErr && <EmptyState>{boQ ? "چیزی پیدا نشد." : "کالای ناموجودی ثبت نشده."}</EmptyState>
-          ) : (
-            <div className="rounded-xl border bg-card p-1 max-md:border-0 max-md:bg-transparent max-md:p-0">
-              <BackorderTable rows={backorders} pending={pending} onAdvance={advanceBo} />
-            </div>
-          )}
-          {boHasMore && <Button variant="outline" onClick={() => void moreBackorders()} pending={boBusy}>بیشتر</Button>}
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border bg-card px-3 py-2.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-xl font-bold tabular-nums">{value}</dd>
-    </div>
+            {!loaded ? <LoadingState /> : backorders.length === 0 ? (
+              !loadErr && <EmptyState>{boQ ? "چیزی پیدا نشد." : "کالای ناموجودی ثبت نشده."}</EmptyState>
+            ) : (
+              <div className="rounded-xl border bg-card p-1 max-md:border-0 max-md:bg-transparent max-md:p-0">
+                <BackorderTable rows={backorders} pending={pending} onAdvance={advanceBo} />
+              </div>
+            )}
+            {boHasMore && <Button variant="outline" onClick={() => void moreBackorders()} pending={boBusy}>بیشتر</Button>}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </AppShell>
   );
 }
 

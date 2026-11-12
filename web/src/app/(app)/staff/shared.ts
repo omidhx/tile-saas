@@ -1,4 +1,4 @@
-/** نوع‌ها و برچسب‌های کارتابل؛ شکل پاسخ همان API های قبلی است، چیزی در سرور عوض نشده. */
+/** نوع‌ها و برچسب‌های کارتابل؛ شکل پاسخ همان API های قبلی است، به‌علاوه‌ی `imageUrl` اقلام (فاز ۶). */
 
 /** ارقام فارسی، همه‌جا یکسان. */
 export const num = (v: number) => v.toLocaleString("fa-IR");
@@ -6,21 +6,21 @@ export const numUnit = (v: number) => v.toLocaleString("fa-IR", { maximumFractio
 
 export type ResvItem = {
   name: string; code: string; quantityBoxes: number;
-  boxesPerPallet: number | null; sqcmPerBox: number | null;
+  boxesPerPallet: number | null; sqcmPerBox: number | null; imageUrl: string | null;
 };
 export type Resv = {
   id: string; status: string; expiresAt: string; agentName: string;
   assignedStaffName: string | null; assignedStaffPhone: string | null; items: ResvItem[];
 };
 export type Req = {
-  id: string; status: string; agentName: string; approvalMode: "manual" | "auto";
+  id: string; status: string; agentName: string; approvalMode: "manual" | "auto"; createdAt?: string;
   assignedStaffName: string | null; assignedStaffPhone: string | null;
-  items: { name: string; code: string; qty: number }[];
+  items: { name: string; code: string; qty: number; imageUrl: string | null }[];
 };
 export type Disp = {
   id: string; dispatchCode: string; status: string;
   customerName: string | null; destination: string | null; referenceNumber: string | null;
-  items: number; warehouseName: string | null;
+  items: number; warehouseName: string | null; agentName?: string;
 };
 export type Agent = { id: string; legalName: string };
 export type Variant = { id: string; name: string; code: string; sku: string };

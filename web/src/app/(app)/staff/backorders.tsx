@@ -59,7 +59,7 @@ export function NewBackorderDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!pending) { setOpen(o); setError(""); } }}>
       <DialogTrigger asChild>
-        <Button><PlusIcon />ثبت کالای ناموجود</Button>
+        <Button variant="outline" aria-label="ثبت کالای ناموجود"><PlusIcon /><span className="max-sm:hidden">کالای ناموجود</span></Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md" onEscapeKeyDown={escapeClosesListFirst}>
         <form onSubmit={submit} noValidate className="grid gap-4">
