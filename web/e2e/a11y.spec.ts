@@ -29,6 +29,12 @@ function regressions(paths: string[]) {
       .map(([rule, count]) => `${path} ${rule}: ${count} (baseline ${baseline[path]?.[rule] ?? 0})`));
 }
 
+// عکس‌های seed:dev از picsum.photos می‌آیند؛ اگر آن سرور جواب ندهد، networkidle تا timeout می‌ماند (CI در PR #10).
+// درخواست بیرون از سرور تست قطع می‌شود تا نتیجه به اینترنت بسته نباشد. axe به بار شدن عکس نیازی ندارد.
+test.beforeEach(async ({ context }) => {
+  await context.route((url) => url.hostname !== "localhost" && url.hostname !== "127.0.0.1", (r) => r.abort());
+});
+
 test.afterAll(() => {
   if (process.env.A11Y_UPDATE) writeFileSync(BASELINE_PATH, JSON.stringify({ ...baseline, ...measured }, null, 2) + "\n");
 });
