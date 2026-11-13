@@ -5,7 +5,7 @@ import { resolvePricesIn, CURRENCY } from "./pricing";
 export type SalesRequestListItem = {
   id: string; status: string; createdAt: string; agentName: string; approvalMode: ApprovalMode;
   assignedStaffName: string | null; assignedStaffPhone: string | null;
-  items: { name: string; code: string; qty: number }[];
+  items: { name: string; code: string; qty: number; imageUrl: string | null }[];
 };
 
 /** فهرستِ درخواست‌ها برای پنل staff (حواله‌سازی) — پیش‌فرض status=approved. */
@@ -21,7 +21,7 @@ export async function listSalesRequests(params: {
         -- تا هر staffی که صف را می‌بیند بداند این سفارش پورسانتِ کیست.
         su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone",
         COALESCE(json_agg(json_build_object(
-          'name', p.name, 'code', p.code, 'qty', sri.requested_qty_boxes
+          'name', p.name, 'code', p.code, 'qty', sri.requested_qty_boxes, 'imageUrl', p.image_url
         )) FILTER (WHERE sri.id IS NOT NULL), '[]') AS items
       FROM sales_request sr
       JOIN agent_account aa ON aa.id = sr.agent_account_id

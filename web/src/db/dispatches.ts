@@ -17,7 +17,7 @@ const norm = (s?: string | null) => s?.trim() || null;
 export type DispatchListItem = {
   id: string; dispatchCode: string; status: DispatchStatus;
   customerName: string | null; destination: string | null; referenceNumber: string | null;
-  items: number; warehouseName: string | null;
+  items: number; warehouseName: string | null; agentName: string;
 };
 
 /**
@@ -37,14 +37,14 @@ export async function listDispatches(p: {
     tx<DispatchListItem[]>`
       SELECT sd.id, sd.dispatch_code AS "dispatchCode", sd.status,
              sd.customer_name AS "customerName", sd.destination, sd.reference_number AS "referenceNumber",
-             count(sdi.id)::int AS items, w.name AS "warehouseName"
+             count(sdi.id)::int AS items, w.name AS "warehouseName", aa.legal_name AS "agentName"
       FROM sales_dispatch sd
       LEFT JOIN sales_dispatch_item sdi ON sdi.dispatch_id = sd.id
       LEFT JOIN warehouse w ON w.id = sd.warehouse_id
       LEFT JOIN agent_account aa ON aa.id = sd.agent_account_id
       WHERE sd.tenant_id = ${p.tenantId}
         AND ${q ? tx`(sd.dispatch_code ILIKE ${"%" + q + "%"} OR sd.customer_name ILIKE ${"%" + q + "%"} OR aa.legal_name ILIKE ${"%" + q + "%"})` : tx`TRUE`}
-      GROUP BY sd.id, w.name
+      GROUP BY sd.id, w.name, aa.legal_name
       ORDER BY sd.created_at DESC
       LIMIT ${limit + 1} OFFSET ${offset}`,
   );

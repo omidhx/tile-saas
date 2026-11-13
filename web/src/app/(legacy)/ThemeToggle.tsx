@@ -8,7 +8,7 @@ import Icon from "./Icon";
  * localStorage می‌نشیند؛ اسکریپتِ no-flash در layout.tsx همین کلید را قبل از
  * paintِ اول می‌خواند تا رفرش، فلشِ تمِ غلط نسازد.
  */
-const KEY = "tile.theme";
+import { THEME_KEY as KEY } from "@/lib/theme";
 
 function apply(theme: "light" | "dark") {
   document.documentElement.setAttribute("data-theme", theme);

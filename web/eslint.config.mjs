@@ -30,9 +30,9 @@ export default tseslint.config(
     },
   },
   {
-    // UI فعلی در فاز ۶ تا ۸ بازنویسی می‌شود؛ ۳۷ load() بدون await در effectها آن‌جا تکلیفشان روشن می‌شود.
-    // بک‌اند، routeها و تست‌ها همین حالا پوشش داده می‌شوند. فاز ۶ این بلوک را حذف می‌کند.
-    files: ["src/app/**/*.tsx", "src/lib/use*.ts"],
+    // UI قدیمی (`(legacy)`) در فاز ۷ و ۸ بازنویسی می‌شود؛ ۳۷ load() بدون await در effectها آن‌جا تکلیفشان روشن می‌شود.
+    // UI تازه (`(app)`)، بک‌اند، routeها و تست‌ها پوشش داده می‌شوند. با خالی شدن `(legacy)` این بلوک حذف می‌شود.
+    files: ["src/app/(legacy)/**/*.tsx", "src/lib/use*.ts"],
     rules: { "@typescript-eslint/no-floating-promises": "off", "@typescript-eslint/no-misused-promises": "off" },
   },
 );

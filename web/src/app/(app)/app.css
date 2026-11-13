@@ -1,0 +1,165 @@
+/* زبان طراحی UI تازه (فاز ۶). فقط صفحه‌های `(app)` این فایل را بار می‌کنند؛ صفحه‌های قدیمی
+   globals.css خودشان را دارند و این دو هرگز روی یک صفحه با هم نیستند.
+   قاعده‌ها: هر رنگ یک معنی دارد؛ کنتراست متن ≥ ۴.۵:۱ در هر دو تم؛ عدد tabular؛
+   «خالی» با «نشد» یکی نیست. */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* تم تیره: انتخاب دستی (data-theme روی <html>، همان کلید localStorage صفحه‌های قدیمی)،
+   و تا وقتی کاربر انتخاب نکرده، تم سیستم‌عامل. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) { @slot; }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]), :root:not([data-theme]) *) { @slot; }
+  }
+}
+
+/* variantهایی که کامپوننت‌های shadcn (سبک nova) لازم دارند؛ از `shadcn/dist/tailwind.css` نسخه‌ی 4.23.0.
+   خود پکیج shadcn (CLI با Babel) وابستگی نمی‌شود. بدون این‌ها Tabs افقی نمی‌چیند و Dialog انیمیشن ندارد. */
+@custom-variant data-open { &:where([data-state="open"]), &:where([data-open]:not([data-open="false"])) { @slot; } }
+@custom-variant data-closed { &:where([data-state="closed"]), &:where([data-closed]:not([data-closed="false"])) { @slot; } }
+@custom-variant data-checked { &:where([data-state="checked"]), &:where([data-checked]:not([data-checked="false"])) { @slot; } }
+@custom-variant data-unchecked { &:where([data-state="unchecked"]), &:where([data-unchecked]:not([data-unchecked="false"])) { @slot; } }
+@custom-variant data-selected { &:where([data-selected="true"]) { @slot; } }
+@custom-variant data-disabled { &:where([data-disabled="true"]), &:where([data-disabled]:not([data-disabled="false"])) { @slot; } }
+@custom-variant data-active { &:where([data-state="active"]), &:where([data-active]:not([data-active="false"])) { @slot; } }
+@custom-variant data-horizontal { &:where([data-orientation="horizontal"]) { @slot; } }
+@custom-variant data-vertical { &:where([data-orientation="vertical"]) { @slot; } }
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #f5f6f8;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+
+  /* عمل اصلی: سبزآبی. سبزِ «موجود/تأییدشده» و قرمز و کهربایی فقط برای وضعیت‌اند. */
+  --primary: #0f766e;
+  --primary-foreground: #ffffff;
+  --secondary: #e2e8f0;
+  --secondary-foreground: #0f172a;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  /* یک پله تیره‌تر از green-700/amber-700: متن روی زمینه‌ی ۱۲٪ همین رنگ هم باید ۴.۵:۱ بدهد (axe). */
+  --success: #166534;
+  --warning: #92400e;
+  /* آبی، تا حلقه‌ی فوکوس با هیچ وضعیتی اشتباه نشود (همان تصمیم UI قدیم) */
+  --ring: #2563eb;
+
+  /* سایدبار روشن با آیکن (طرح «ج»، تأیید صاحب پروژه)؛ مرز آن را از محتوا جدا می‌کند. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #334155;
+  --sidebar-muted: #64748b;
+  --sidebar-accent: #f0fdfa;
+  --sidebar-primary: #0f766e;
+
+  color-scheme: light;
+}
+
+/* تم تیره دو بار نوشته شده (انتخاب دستی و تم سیستم)؛ CSS راه اشتراک یک بلوک بین selector و media ندارد. */
+:root[data-theme="dark"] {
+  --background: #0b1220;
+  --foreground: #e2e8f0;
+  --card: #111a2b;
+  --card-foreground: #e2e8f0;
+  --popover: #111a2b;
+  --popover-foreground: #e2e8f0;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --border: #243045;
+  --input: #334155;
+  --primary: #2dd4bf;
+  --primary-foreground: #042f2e;
+  --secondary: #1e293b;
+  --secondary-foreground: #e2e8f0;
+  --accent: #1e293b;
+  --accent-foreground: #e2e8f0;
+  --destructive: #f87171;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --ring: #60a5fa;
+  --sidebar: #0d1526;
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-muted: #94a3b8;
+  --sidebar-accent: #172033;
+  --sidebar-primary: #2dd4bf;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: #0b1220;
+    --foreground: #e2e8f0;
+    --card: #111a2b;
+    --card-foreground: #e2e8f0;
+    --popover: #111a2b;
+    --popover-foreground: #e2e8f0;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+    --border: #243045;
+    --input: #334155;
+    --primary: #2dd4bf;
+    --primary-foreground: #042f2e;
+    --secondary: #1e293b;
+    --secondary-foreground: #e2e8f0;
+    --accent: #1e293b;
+    --accent-foreground: #e2e8f0;
+    --destructive: #f87171;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --ring: #60a5fa;
+    --sidebar: #0d1526;
+    --sidebar-foreground: #e2e8f0;
+    --sidebar-muted: #94a3b8;
+    --sidebar-accent: #172033;
+    --sidebar-primary: #2dd4bf;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: "Vazirmatn Variable", system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary: var(--sidebar-primary);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  @media print { .no-print { display: none !important; } }
+}

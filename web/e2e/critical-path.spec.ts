@@ -44,33 +44,38 @@ test("ورود → رزرو → تأیید/خودکار → حواله → با�
   await login(page, STAFF);
   await page.goto("/staff");
 
+  // کارتابل (فاز ۶): هر مرحله یک گروه با testid است و هر ردیف [data-row].
   if (!autoApproved) {
-    const pendingCard = page.getByTestId("pending-reservations").locator(".card").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
-    await expect(pendingCard).toBeVisible({ timeout: 15_000 });
-    await pendingCard.getByRole("button", { name: "تأیید" }).click();
-    await expect(pendingCard).not.toBeVisible({ timeout: 15_000 });
+    const pendingRow = page.getByTestId("pending-reservations").locator("[data-row]").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
+    await expect(pendingRow).toBeVisible({ timeout: 15_000 });
+    await pendingRow.getByRole("button", { name: "تأیید" }).click();
+    await expect(pendingRow).not.toBeVisible({ timeout: 15_000 });
   }
 
-  const approvedCard = page.getByTestId("approved-requests").locator(".card").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
-  await expect(approvedCard).toBeVisible({ timeout: 15_000 });
-  await approvedCard.getByRole("button", { name: "ساخت حواله" }).click();
-  await approvedCard.getByRole("button", { name: "تأیید و ساختِ حواله" }).click();
-  await expect(approvedCard).not.toBeVisible({ timeout: 15_000 });
+  const approvedRow = page.getByTestId("approved-requests").locator("[data-row]").filter({ hasText: productName }).filter({ hasText: qtyMarker }).first();
+  await expect(approvedRow).toBeVisible({ timeout: 15_000 });
+  await approvedRow.getByRole("button", { name: "ساخت حواله" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "ثبت حواله" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 15_000 });
+  await expect(approvedRow).not.toBeVisible({ timeout: 15_000 });
 
-  // ۳. حواله: تا «بارگیری‌شده» پیش می‌رود — لیست با created_at DESC می‌آید،
-  // پس حواله‌ی تازه‌ساخته‌شده همیشه اولین کارت است.
-  const dispatchList = page.getByTestId("dispatch-list");
-  const dispatchCard = dispatchList.locator(".card").first();
-  await expect(dispatchCard).toBeVisible({ timeout: 15_000 });
-  await expect(dispatchCard.locator(".badge").filter({ hasText: "ثبت‌شده" })).toBeVisible();
+  // ۳. حواله: فهرست با created_at DESC می‌آید، پس حواله‌ی تازه اولین ردیف ستون «بارگیری» است.
+  const dispatchRow = page.getByTestId("to-load").locator("[data-row]").first();
+  await expect(dispatchRow).toBeVisible({ timeout: 15_000 });
+  const status = dispatchRow.locator("[data-status]");
+  await expect(status).toHaveText("ثبت‌شده");
+  const code = (await dispatchRow.locator("[dir=ltr]").first().innerText()).trim();
 
-  // متن وضعیت روی دکمه هم هست، پس badge را چک می‌کنیم؛ getByText با خود دکمه هم پاس می‌شد.
-  const status = dispatchCard.locator(".badge");
-  await dispatchCard.getByRole("button", { name: "آماده بارگیری" }).click();
-  await expect(status.filter({ hasText: "آماده بارگیری" })).toBeVisible({ timeout: 15_000 });
+  await dispatchRow.getByRole("button", { name: "آماده بارگیری" }).click();
+  await expect(status).toHaveText("آماده بارگیری", { timeout: 15_000 });
 
-  await dispatchCard.getByRole("button", { name: "بارگیری‌شده" }).click();
-  await expect(status.filter({ hasText: "بارگیری‌شده" })).toBeVisible({ timeout: 15_000 });
+  // بارگیری برگشت‌ناپذیر است و تأیید می‌خواهد؛ بعدش حواله از ستون «بارگیری» بیرون می‌رود.
+  await dispatchRow.getByRole("button", { name: "ثبت بارگیری" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "بله، بارگیری شد" }).click();
+  await expect(page.getByTestId("to-load").getByText(code, { exact: true })).toHaveCount(0, { timeout: 15_000 });
+  await page.getByRole("tab", { name: "همه‌ی حواله‌ها" }).click();
+  const loadedRow = page.getByTestId("dispatch-list").locator("tr[data-row]").filter({ hasText: code });
+  await expect(loadedRow.locator("[data-status]")).toHaveText("بارگیری‌شده");
 
   expect(await totalOnHand()).toBe(onHandBefore - 7);
   await admin.end();

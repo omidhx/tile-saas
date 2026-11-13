@@ -56,7 +56,7 @@ export type ReservationListItem = {
   assignedStaffName: string | null; assignedStaffPhone: string | null;
   items: {
     variantId: string; name: string; code: string; quantityBoxes: number;
-    boxesPerPallet: number | null; sqcmPerBox: number;
+    boxesPerPallet: number | null; sqcmPerBox: number; imageUrl: string | null;
   }[];
   /** مبلغِ قطعیِ خرید — فقط برای status='converted'، از snapshotِ لحظه‌ی تأیید (sales_request_item). */
   purchaseValue: number | null;
@@ -85,6 +85,7 @@ export async function listReservations(params: {
         su.full_name AS "assignedStaffName", su.phone AS "assignedStaffPhone",
         COALESCE(json_agg(json_build_object(
           'variantId', pv.id, 'name', p.name, 'code', p.code, 'quantityBoxes', ri.quantity_boxes,
+          'imageUrl', p.image_url, -- تامنیل کاشی در کارتابل (فاز ۶)
           -- برای پنلِ پشتیبان: معادلِ پالت/مترمربع کنارِ عددِ کارتن (spec تبدیلِ واحد).
           -- override رویِ خودِ Lot اگر باشد ارجح است، هم‌راستا با کوئریِ /api/lots.
           'boxesPerPallet', COALESCE(l.boxes_per_pallet_override, pv.boxes_per_pallet),

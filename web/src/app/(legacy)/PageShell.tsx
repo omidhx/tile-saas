@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Icon from "./Icon";
 import ThemeToggle from "./ThemeToggle";
-import { STAFF_NAV_GROUPS, visibleNavGroups, type NavGroup } from "./NavMenu";
+import { STAFF_NAV_GROUPS, visibleNavGroups, type NavGroup } from "@/lib/nav";
 import type { Ctx } from "@/lib/useContexts";
 import { useEscapeClose } from "@/lib/useEscapeClose";
 
 /**
  * پوسته‌ی مشترکِ صفحاتِ داخلی — سایدبارِ چسبان (تیره، سمتِ راست چون RTL) + محتوا.
- * منطقِ فیلترِ نقش/دسترسی از NavMenu.tsx می‌آید (`visibleNavGroups`)، نه کپی —
+ * منطقِ فیلترِ نقش/دسترسی از lib/nav.ts می‌آید (`visibleNavGroups`)، نه کپی —
  *
  * صفحاتِ چاپ/ورود عمداً از این کامپوننت استفاده نمی‌کنند — سایدبار برایشان
  * معنا ندارد (چاپ: کاغذ؛ ورود: هنوز ctx نیست).
