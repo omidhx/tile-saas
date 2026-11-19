@@ -188,4 +188,15 @@ INSERT INTO inventory_transaction(tenant_id, lot_id, transaction_type, on_hand_d
   ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444447', 'import_snapshot', 240, 'موجودی اولیه‌ی دمو'),
   ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444448', 'import_snapshot', 130, 'موجودی اولیه‌ی دمو');
 
+
+-- پالتِ هم‌جمع با موجودی (check_pallet_sum): هر Lot یک پالتِ بی‌جا.
+WITH bad AS MATERIALIZED (
+  SELECT gen_random_uuid() AS pid, b.tenant_id, b.lot_id, l.warehouse_id, b.on_hand_qty_boxes AS q
+  FROM inventory_balance b JOIN inventory_lot l ON l.id = b.lot_id
+  WHERE b.on_hand_qty_boxes <> COALESCE((SELECT SUM(qty_boxes) FROM pallet_item pi WHERE pi.lot_id = b.lot_id), 0)
+), del AS (DELETE FROM pallet_item pi USING bad WHERE pi.lot_id = bad.lot_id),
+p AS (INSERT INTO pallet (id, tenant_id, warehouse_id) SELECT pid, tenant_id, warehouse_id FROM bad WHERE q > 0)
+INSERT INTO pallet_item (tenant_id, pallet_id, lot_id, warehouse_id, qty_boxes)
+SELECT tenant_id, pid, lot_id, warehouse_id, q FROM bad WHERE q > 0;
+
 COMMIT;

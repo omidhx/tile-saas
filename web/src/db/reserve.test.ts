@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { T, seedTenant } from "./_fixtures";
@@ -24,7 +24,7 @@ before(async () => {
       ('${LOT1}','${T}','a2222222-2222-2222-2222-222222222222','a3333333-3333-3333-3333-333333333333'),
       ('${LOT2}','${T}','a2222222-2222-2222-2222-222222222222','a3333333-3333-3333-3333-333333333333');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT1}',100), ('${T}','${LOT2}',3);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 

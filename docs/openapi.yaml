@@ -1130,3 +1130,36 @@ paths:
       responses:
         "200": { description: Shared catalog deleted }
 
+
+  /api/pallets:
+    get:
+      tags: [Warehouse]
+      summary: List pallets with location and lines (staff); view=exits lists non-sale exits
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Pallet list }
+    post:
+      tags: [Warehouse]
+      summary: Goods-in — several pallets, mixed lines, repeat ×n (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Pallets created, on_hand increased }
+        "404": { description: Warehouse or variant not found in this tenant }
+        "422": { description: missing_shade_caliber / ambiguous_lot / duplicate_line }
+    patch:
+      tags: [Warehouse]
+      summary: Edit, transfer or non-sale exit of a pallet (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Done }
+        "404": { description: Pallet not found }
+        "409": { description: below_committed — would take on_hand under allocated + blocked + held }
+        "422": { description: unknown_line / exceeds_pallet / reason_required / empty_pallet }
+
+  /api/stock:
+    get:
+      tags: [Warehouse]
+      summary: Stock summary per product and warehouse (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Stock rows }

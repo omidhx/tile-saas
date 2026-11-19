@@ -142,6 +142,8 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/product-images` | staff | گالریِ محصول: `POST` افزودن، `PATCH` اصلی‌کردن، `DELETE` حذف |
 | `/api/shared-catalog` | agent | کاتالوگِ سفارشیِ نماینده: فهرست/ساخت/باطل‌کردن/حذف. صفحه‌ی عمومیِ مشتری در `/c/<slug>/<token>` (بدونِ لاگین، فقط عکس/مشخصات/موجود، بدونِ قیمت) |
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
+| `/api/pallets` | staff | انبار و پالت (فاز ۷): `GET` فهرست پالت‌ها (`warehouseId`، `q`، `status=in_stock|exited|all`؛ `view=exits` سابقه‌ی خروج)، `POST` ورود کالا (چند پالت، ردیف‌های ترکیبی، `repeat`)، `PATCH action=edit|transfer|exit`. ۴۰۹ `below_committed` یعنی on_hand زیر allocated + blocked + held می‌رفت |
+| `/api/stock` | staff | جمع موجودی هر کالا در هر انبار، با held محاسبه‌ای و تعداد پالت |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
 | `/api/reports` | staff | گزارش‌های مدیریتی (عملکردِ نماینده، پرفروش، راکد) |
 | `/api/ledger` | staff | دفتر حرکات (صفحه‌بندی‌شده، `&offset`/`&q`، `hasMore`؛ `&limit` هم می‌گیرد — خروجیِ اکسل با آن کلِ نتیجه‌ی فیلترشده را می‌گیرد، سقفِ ۲۰٬۰۰۰) + تطبیق (drift) |

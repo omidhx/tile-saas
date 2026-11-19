@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
@@ -39,7 +39,7 @@ before(async () => {
       ('${LOT_A}','${T}','${V}','${WH_A}'), ('${LOT_B}','${T}','${V}','${WH_B}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES
       ('${T}','${LOT_A}',60), ('${T}','${LOT_B}',40);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 /** رزرو → تأیید → حواله. آرایه‌ی حواله‌ها را برمی‌گرداند. */

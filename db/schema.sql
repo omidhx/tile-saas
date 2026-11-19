@@ -261,6 +261,7 @@ CREATE TABLE inventory_lot (
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
     UNIQUE (tenant_id, id, variant_id),   -- هدفِ composite FK از dispatch_item: سازگاریِ lot↔variant
+    UNIQUE (tenant_id, id, warehouse_id), -- هدفِ composite FK از pallet_item: پالت و lot در یک انبار
     FOREIGN KEY (tenant_id, variant_id)   REFERENCES product_variant(tenant_id, id),
     FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id)
 );
@@ -306,6 +307,78 @@ CREATE TABLE inventory_transaction (
     idempotency_key       TEXT UNIQUE,   -- NULL مجاز؛ Postgres چند NULL را یکتا نمی‌شمارد
     FOREIGN KEY (tenant_id, lot_id) REFERENCES inventory_lot(tenant_id, id)
 );
+
+-- ---------------------------------------------------------------------------
+-- ۵.۴ب پالت — فقط «کارتن‌های lot کجا هستند»، نه منبعِ دوم عدد موجودی (فاز ۷)
+-- ---------------------------------------------------------------------------
+-- عدد موجودی همچنان on_hand در inventory_balance است. پالت ترکیبی = چند ردیف pallet_item
+-- با lotهای مختلف روی یک پالت. ناوردا: برای هر lot، SUM(pallet_item.qty_boxes) = on_hand.
+-- پالتِ بی‌ردیف یعنی «خارج‌شده»؛ برای سابقه می‌ماند. column_code/position_no خالی یعنی «بدون محل».
+CREATE TABLE pallet (
+    id           UUID NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id    UUID NOT NULL REFERENCES tenant(id),
+    pallet_no    BIGINT GENERATED ALWAYS AS IDENTITY,   -- شماره‌ی خوانا برای برچسب؛ فقط نمایشی
+    warehouse_id UUID NOT NULL,
+    column_code  TEXT CHECK (column_code IS NULL OR length(btrim(column_code)) BETWEEN 1 AND 40),
+    position_no  INT CHECK (position_no > 0),
+    note         TEXT,
+    created_by   UUID REFERENCES app_user(id),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    UNIQUE (tenant_id, id),
+    UNIQUE (tenant_id, id, warehouse_id),
+    FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id)
+);
+-- عمداً ایندکسِ (tenant_id, warehouse_id, ...) نیست: روی جدولِ تازه و تحلیل‌نشده، برنامه‌ریز آن را به‌جای ایندکسِ یکتا
+-- برای چکِ FKِ pallet_item برمی‌داشت و ایمپورتِ ۵۰۰۰ ردیفی ۱۰ ثانیه کندتر می‌شد. فهرست پالت با این مقیاس seq scan است.
+
+CREATE TABLE pallet_item (
+    id           UUID NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id    UUID NOT NULL REFERENCES tenant(id),
+    pallet_id    UUID NOT NULL,
+    lot_id       UUID NOT NULL,
+    warehouse_id UUID NOT NULL,   -- تکرارِ عمدی: دو FK زیر با هم پالت و lot را در یک انبار نگه می‌دارند
+    qty_boxes    INT NOT NULL CHECK (qty_boxes > 0),   -- صفر = حذفِ ردیف، تا SUM و «خالی» یک معنا داشته باشند
+    PRIMARY KEY (id),
+    UNIQUE (pallet_id, lot_id),
+    FOREIGN KEY (tenant_id, pallet_id, warehouse_id) REFERENCES pallet(tenant_id, id, warehouse_id),
+    FOREIGN KEY (tenant_id, lot_id, warehouse_id)    REFERENCES inventory_lot(tenant_id, id, warehouse_id)
+);
+CREATE INDEX idx_pallet_item_lot ON pallet_item (lot_id) INCLUDE (qty_boxes);
+
+-- ناوردای پالت، در خودِ دیتابیس. deferred: مسیرها balance و پالت را در چند دستور عوض می‌کنند و
+-- فقط حالتِ آخرِ تراکنش مهم است. اول همان ردیف balance را FOR UPDATE قفل می‌کند (قانون ۴؛ اگر مسیر
+-- قبلاً قفل کرده، بی‌اثر است) و بعد در دستورِ جدا جمع می‌زند، تا snapshotِ جمع بعد از گرفتنِ قفل باشد.
+-- SECURITY DEFINER نیست: زیر RLS و با نقشِ خودِ اپ اجرا می‌شود.
+CREATE FUNCTION check_pallet_sum() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_lot UUID;
+    v_on  INT;
+    v_sum INT;
+    v_tenant UUID := CASE WHEN TG_OP = 'DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END;  -- ایندکسِ balance روی (tenant_id, lot_id) است
+BEGIN
+    FOR v_lot IN
+        SELECT DISTINCT x FROM unnest(ARRAY[
+            CASE WHEN TG_OP <> 'INSERT' THEN OLD.lot_id END,
+            CASE WHEN TG_OP <> 'DELETE' THEN NEW.lot_id END]) AS x
+        WHERE x IS NOT NULL
+    LOOP
+        SELECT on_hand_qty_boxes INTO v_on FROM inventory_balance WHERE tenant_id = v_tenant AND lot_id = v_lot FOR UPDATE;
+        SELECT COALESCE(SUM(qty_boxes), 0) INTO v_sum FROM pallet_item WHERE tenant_id = v_tenant AND lot_id = v_lot;
+        IF COALESCE(v_on, 0) <> v_sum THEN
+            RAISE EXCEPTION 'pallet_sum_mismatch: lot % on_hand=% pallets=%', v_lot, COALESCE(v_on, 0), v_sum
+                USING ERRCODE = '23514';
+        END IF;
+    END LOOP;
+    RETURN NULL;
+END $$;
+
+CREATE CONSTRAINT TRIGGER balance_pallet_sum
+    AFTER INSERT OR UPDATE OF on_hand_qty_boxes ON inventory_balance
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_pallet_sum();
+CREATE CONSTRAINT TRIGGER pallet_item_sum
+    AFTER INSERT OR UPDATE OR DELETE ON pallet_item
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_pallet_sum();
 
 -- ---------------------------------------------------------------------------
 -- ۵.۵ رزرو — available >= requested همیشه، بدون استثنا (قانون #۲)

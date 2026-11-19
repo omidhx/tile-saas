@@ -35,6 +35,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
     audit_log, brand, customer,
     import_batch, import_row, import_template,
     incoming_stock, inventory_balance, inventory_lot, inventory_transaction,
+    pallet, pallet_item,
     notification_outbox, price_list, price_list_item,
     product, product_image, product_substitute, product_variant,
     reservation, reservation_item,

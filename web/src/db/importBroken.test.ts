@@ -1,7 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import * as XLSX from "xlsx";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, ALIGN_PALLETS, withAlignedPallets } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import * as imports from "./imports";
 import { reserve } from "./reservations";
@@ -36,7 +36,7 @@ beforeEach(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES
       ('${T}','${L1}',100), ('${T}','${L2}',100), ('${T}','${L3}',100), ('${T}','${L4}',100);
     INSERT INTO agent_account (id,tenant_id,legal_name,code) VALUES ('${AG}','${T}','Ag','AG1');
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 /** همه چیزی که یک ایمپورتِ ردشده نباید عوض کند. */
@@ -147,7 +147,7 @@ test("E3-F3: on_hand زیرِ heldِ رزروِ زنده نمی‌رود", async
 test("E3-F3 هم‌زمان: ایمپورت و رزروِ موازی، on_hand هرگز زیرِ held نمی‌رود", async () => {
   for (let i = 0; i < 8; i++) {
     await sql`DELETE FROM reservation_item`; await sql`DELETE FROM reservation`;
-    await sql`UPDATE inventory_balance SET on_hand_qty_boxes = 100 WHERE lot_id = ${L1}`;
+    await withAlignedPallets((tx) => tx`UPDATE inventory_balance SET on_hand_qty_boxes = 100 WHERE lot_id = ${L1}`);
     const rows = good(); rows[0].onHand = 40;
     await Promise.all([
       run(rows),
@@ -182,7 +182,7 @@ test("انبارِ tenantِ دیگر به‌عنوانِ scope: خطا، نه ۵
 test("دو lot با یک کلید: رد، نه انتخابِ دلبخواه", async () => {
   await sql.unsafe(`
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id,batch_number) VALUES ('bbbbbbb9-0000-0000-0000-000000000009','${T}','${S1}','${WA}','B1');
-    INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','bbbbbbb9-0000-0000-0000-000000000009',100);`);
+    INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','bbbbbbb9-0000-0000-0000-000000000009',100);${ALIGN_PALLETS}`);
   await rejected(good(), "ambiguous_lot");
 });
 
@@ -282,7 +282,7 @@ test("برگرداندن: موجودیِ قبل از ایمپورت برمی‌�
 
 test("برگرداندن تغییرهای بعد از ایمپورت را نگه می‌دارد", async () => {
   const res = await run(good());
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes - 5 WHERE lot_id = ${L1}`; // مثلاً بارگیری
+  await withAlignedPallets((tx) => tx`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes - 5 WHERE lot_id = ${L1}`); // مثلاً بارگیری
   assert.equal((await undo(res.batchId!)).ok, true);
   assert.equal(await onHand(L1), 95);
 });

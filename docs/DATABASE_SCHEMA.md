@@ -11,7 +11,8 @@ tenant ──< agent_account (assigned_staff_user_id → app_user) ──< agent
    ├─ brand ──< product ──< product_variant ──< inventory_lot ──1:1─ inventory_balance
    │              └──< product_image (گالری؛ اصلی = کمترین sort_order، کَش در product.image_url) (v2)
    │                                              │                     (on_hand/allocated/blocked)
-   │                                              └──< inventory_transaction (لجر append-only)
+   │                                              ├──< inventory_transaction (لجر append-only)
+   │                                              └──< pallet_item >── pallet (انبار، ستون، شماره)   (فاز ۷)
    │
    ├─ reservation ──< reservation_item ─→ lot        (held = SUM active)
    ├─ sales_request ──< sales_request_item ──< sales_request_allocation ─→ lot
@@ -57,6 +58,7 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
 | نشستِ باطل‌شده | `app_user.session_epoch` (شمارنده، نه timestamp — مرزِ ثانیه ندارد) |
 | دسترسیِ staff | فقط نقشِ `tenant_membership.role`. ستون‌های `allowed_pages` و `can_manage_access` از فاز ۲ بی‌استفاده‌اند و چون migration 0004 به آن‌ها وابسته است حذف نشده‌اند |
 | پشتیبانِ ثابتِ نمایندگی (بدونِ composite FK چون app_user سراسری است) | `agent_account.assigned_staff_user_id UUID REFERENCES app_user(id)`؛ عضویتِ tenant در لایه‌ی app چک می‌شود (`isActiveStaffMember`) |
+| **جمعِ کارتنِ پالت‌های هر lot = on_hand** (فاز ۷) | تریگرِ deferredِ `check_pallet_sum` روی `inventory_balance` و `pallet_item`؛ اول ردیفِ balance را `FOR UPDATE` قفل می‌کند. پالت ترکیبی = چند `pallet_item` با lotهای مختلف. پالت و lot در یک انبار: FK ترکیبیِ `(tenant_id, lot_id, warehouse_id)` و `(tenant_id, pallet_id, warehouse_id)` |
 | موجودیِ اولیه از مسیرِ لجر می‌آید، نه UPDATE مستقیم | `inventory_transaction.transaction_type='initial_stock'` هنگامِ ساختِ محصول با انبار+تعداد |
 | روزِ صفرِ tenantِ تازه بدونِ SQL دستی | `app_user.is_platform_admin` (بالاتر از سطحِ tenant) + `db/platform.ts::createTenant` (یک تراکنش: tenant + اولین admin) |
 | **SECURITY DEFINER از search_path injection محافظت** (Phase 10-post) | هر چهار تابع با `SET search_path = public, pg_temp` |

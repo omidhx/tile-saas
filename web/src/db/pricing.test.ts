@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import {
   resolvePrices, applyVolumeDiscount, createPriceList, applyPriceImport,
@@ -93,7 +93,7 @@ test("snapshot: قیمتِ لحظه‌ی تأیید ثبت می‌شود و تغ
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('a4444444-4444-4444-4444-444444444444','${T}','${V1}','a3333333-3333-3333-3333-333333333333');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','a4444444-4444-4444-4444-444444444444',100);
     INSERT INTO app_user (id,phone,password_hash) VALUES ('a8888888-8888-8888-8888-888888888888','0910','x');
-  `);
+  ${ALIGN_PALLETS}`);
   const r = await reserve({
     tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "snap-1",
     items: [{ lotId: "a4444444-4444-4444-4444-444444444444", quantityBoxes: 4 }],

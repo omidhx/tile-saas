@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, ALIGN_PALLETS, withAlignedPallets } from "./_testdb";
 import { reserve } from "./reservations";
 import { T, seedTenant } from "./_fixtures";
 
@@ -29,8 +29,10 @@ const held = async (lotId: string) => {
 const setStock = async (a: number, b: number) => {
   await sql`DELETE FROM reservation_item`;
   await sql`DELETE FROM reservation`;
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = ${a} WHERE lot_id = ${LOT_A}`;
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = ${b} WHERE lot_id = ${LOT_B}`;
+  await withAlignedPallets(async (tx) => {
+    await tx`UPDATE inventory_balance SET on_hand_qty_boxes = ${a} WHERE lot_id = ${LOT_A}`;
+    await tx`UPDATE inventory_balance SET on_hand_qty_boxes = ${b} WHERE lot_id = ${LOT_B}`;
+  });
 };
 
 before(async () => {
@@ -49,7 +51,7 @@ before(async () => {
       BEGIN PERFORM pg_sleep(0.05); RETURN NEW; END $$;
     CREATE TRIGGER test_widen_race BEFORE INSERT ON reservation
       FOR EACH ROW EXECUTE FUNCTION test_widen_race();
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 const base = { tenantId: T, agentAccountId: AG, ttlHours: 24 };

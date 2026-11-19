@@ -61,7 +61,8 @@ export async function deleteWarehouse(params: { tenantId: string; warehouseId: s
         (SELECT count(*) FROM sales_dispatch WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}) +
         (SELECT count(*) FROM sales_dispatch_item WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}) +
         (SELECT count(*) FROM import_batch WHERE tenant_id = ${tenantId} AND scope_warehouse_id = ${warehouseId}) +
-        (SELECT count(*) FROM incoming_stock WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId})
+        (SELECT count(*) FROM incoming_stock WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}) +
+        (SELECT count(*) FROM pallet WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId})
       )::int AS n`;
     if (n > 0) return { ok: false, reason: "has_history" };
 

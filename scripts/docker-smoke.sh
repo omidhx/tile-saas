@@ -144,6 +144,7 @@ q "
   INSERT INTO agent_account (id, tenant_id, legal_name, code) VALUES ('$T', '$T', 'نماینده', 'A1');
   INSERT INTO reservation (id, tenant_id, agent_account_id, status, created_at, expires_at) VALUES ('$T', '$T', '$T', 'active', now() - interval '2 hours', now() - interval '1 hour');
   INSERT INTO reservation_item (tenant_id, reservation_id, lot_id, quantity_boxes) VALUES ('$T', '$T', '$T', 5);
+  WITH bad AS MATERIALIZED ( SELECT gen_random_uuid() AS pid, b.tenant_id, b.lot_id, l.warehouse_id, b.on_hand_qty_boxes AS q FROM inventory_balance b JOIN inventory_lot l ON l.id = b.lot_id WHERE b.on_hand_qty_boxes <> COALESCE((SELECT SUM(qty_boxes) FROM pallet_item pi WHERE pi.lot_id = b.lot_id), 0) ), del AS (DELETE FROM pallet_item pi USING bad WHERE pi.lot_id = bad.lot_id), p AS (INSERT INTO pallet (id, tenant_id, warehouse_id) SELECT pid, tenant_id, warehouse_id FROM bad WHERE q > 0) INSERT INTO pallet_item (tenant_id, pallet_id, lot_id, warehouse_id, qty_boxes) SELECT tenant_id, pid, lot_id, warehouse_id, q FROM bad WHERE q > 0;
   INSERT INTO notification_outbox (id, tenant_id, recipient, payload) VALUES ('$T', '$T', '09120000097', '{\"text\":\"smoke\"}');
   INSERT INTO _rate_limit_hits (key, hit_at) VALUES ('smoke-old', now() - interval '2 days'), ('smoke-new', now());
 " >/dev/null

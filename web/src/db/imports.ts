@@ -3,6 +3,7 @@ import type { TransactionSql } from "postgres";
 import { withTenant } from "./client";
 import { addProductImageTx } from "./products";
 import { enqueueRestockNotifications } from "./alerts";
+import { applyPalletDeltas, heldOf } from "./pallets";
 import { normalizeRow, columnErrors, type ImportRow, type RowError } from "@/lib/importRows";
 
 export type ImportScope =
@@ -36,21 +37,6 @@ type ScopeLot = {
 /** import و undo در هر tenant پشت هم اجرا می‌شوند؛ دو import هم‌زمان lot تکراری نمی‌سازند. */
 const importLock = (tx: TransactionSql, tenantId: string) =>
   tx`SELECT pg_advisory_xact_lock(hashtext(${"import:" + tenantId}))`;
-
-/**
- * held زنده‌ی هر lot، بعد از قفلِ ردیف‌های balance (همان SUMِ reservations.ts).
- * تعهدِ کامل = allocated + blocked + held؛ on_hand هرگز زیرش نمی‌رود (فاز ۵، E3-F3).
- */
-async function heldOf(tx: TransactionSql, tenantId: string, lotIds: string[]) {
-  if (lotIds.length === 0) return new Map<string, number>();
-  const rows = await tx<{ lot_id: string; held: number }[]>`
-    SELECT ri.lot_id, SUM(ri.quantity_boxes)::int AS held
-    FROM reservation_item ri JOIN reservation r ON r.id = ri.reservation_id
-    WHERE ri.tenant_id = ${tenantId} AND ri.lot_id = ANY(${lotIds}::uuid[])
-      AND r.status = 'active' AND r.expires_at > now()
-    GROUP BY ri.lot_id`;
-  return new Map(rows.map((r) => [r.lot_id, r.held]));
-}
 
 // بچ، شید و کالیبر بدونِ حساسیت به حروفِ کوچک و بزرگ و فاصله‌ی دو سر: «b1» و «B1» یک lot است
 const nk = (v: string | null) => (v == null ? null : v.trim().toUpperCase());
@@ -293,6 +279,8 @@ export async function applySnapshot(params: {
       SELECT ${tenantId}::uuid, l, t, d, 'import_batch', ${batch.id}::uuid, ${uploaderUserId}::uuid
       FROM unnest(${led.map((x) => x[0])}::uuid[], ${led.map((x) => x[1])}::text[], ${led.map((x) => x[2])}::int[]) AS x(l, t, d)`;
 
+    await applyPalletDeltas(tx, tenantId, led.map((x) => ({ lotId: x[0], qty: x[2] })), "ایمپورت", uploaderUserId);
+
     await tx`
       INSERT INTO import_row (tenant_id, batch_id, row_number, raw_data, normalized_data, processing_status, matched_variant_id, matched_lot_id)
       SELECT ${tenantId}::uuid, ${batch.id}::uuid, n, r, nd, 'applied', v, l
@@ -365,6 +353,7 @@ export async function undoImport(params: { tenantId: string; userId: string; bat
         INSERT INTO inventory_transaction (tenant_id, lot_id, transaction_type, on_hand_delta_boxes, reference_type, reference_id, actor_user_id)
         SELECT ${tenantId}::uuid, l, 'import_undo', -d, 'import_batch', ${batchId}::uuid, ${userId}::uuid
         FROM unnest(${ids}::uuid[], ${ds}::int[]) AS v(l, d)`;
+      await applyPalletDeltas(tx, tenantId, bal.map((x) => ({ lotId: x.lot_id, qty: -dOf.get(x.lot_id)! })), "برگرداندنِ ایمپورت", userId);
     }
     await enqueueRestockNotifications(tx, tenantId, deltas.filter((d) => d.d < 0).map((d) => d.lot_id));
     await tx`UPDATE import_batch SET status = 'reverted' WHERE id = ${batchId}`;

@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser, enableAllFeatures } from "./_fixtures";
 import { reserve } from "./reservations";
@@ -47,7 +47,7 @@ before(async () => {
     INSERT INTO price_list_item (tenant_id,price_list_id,variant_id,price) VALUES ('${T}','${PL}','${V}',1000000);
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT}','${T}','${V}','${WH}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',1000);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 /** رزرو → تأیید → حواله (با مشتری) → بارگیری. */

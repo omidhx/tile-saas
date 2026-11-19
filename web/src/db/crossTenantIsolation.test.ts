@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, ALIGN_PALLETS, withAlignedPallets } from "./_testdb";
 import { listCustomers } from "./customers";
 
 // UUID‌های ثابت برای تست
@@ -46,14 +46,14 @@ test("cross-tenant: رزرو tenant A تأثیری روی موجودی tenant B 
   await sql`INSERT INTO product_variant (id, tenant_id, product_id, sku) VALUES (${V1}, ${T1}, ${P1}, 'SKU1')`;
   await sql`INSERT INTO warehouse (id, tenant_id, name, code, type) VALUES (${W1}, ${T1}, 'Main', 'W1', 'main')`;
   await sql`INSERT INTO inventory_lot (id, tenant_id, variant_id, warehouse_id) VALUES (${L1}, ${T1}, ${V1}, ${W1})`;
-  await sql`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${T1}, ${L1}, 100)`;
+  await withAlignedPallets((tx) => tx`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${T1}, ${L1}, 100)`);
 
   // tenant B
   await sql`INSERT INTO product (id, tenant_id, code, name) VALUES (${P2}, ${T2}, 'P2', 'T2 Product')`;
   await sql`INSERT INTO product_variant (id, tenant_id, product_id, sku) VALUES (${V2}, ${T2}, ${P2}, 'SKU2')`;
   await sql`INSERT INTO warehouse (id, tenant_id, name, code, type) VALUES (${W2}, ${T2}, 'Main', 'W1', 'main')`;
   await sql`INSERT INTO inventory_lot (id, tenant_id, variant_id, warehouse_id) VALUES (${L2}, ${T2}, ${V2}, ${W2})`;
-  await sql`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${T2}, ${L2}, 50)`;
+  await withAlignedPallets((tx) => tx`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${T2}, ${L2}, 50)`);
 
   const { reserve } = await import("./reservations");
   const result = await reserve({
@@ -89,7 +89,7 @@ test("فاز ۴: listMovements و findDrift با RLS خاموش هم فقط هم
       INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES ('${t}', 'c${n}111111-1111-1111-1111-111111111111', 5);
       INSERT INTO inventory_transaction (tenant_id, lot_id, transaction_type, on_hand_delta_boxes)
         VALUES ('${t}', 'c${n}111111-1111-1111-1111-111111111111', 'adjustment', 0);
-    `);
+    ${ALIGN_PALLETS}`);
   }
   for (const table of ["inventory_transaction", "inventory_lot", "inventory_balance", "product_variant", "product"])
     await sql.unsafe(`ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`);

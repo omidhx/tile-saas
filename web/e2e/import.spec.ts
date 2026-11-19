@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import postgres from "postgres";
 import * as XLSX from "xlsx";
-import { STAFF, login } from "./helpers";
+import { STAFF, login, ALIGN_PALLETS } from "./helpers";
 
 /**
  * فاز ۵: فایلِ اکسلِ واقعی از راهِ UI. در کدِ قبلی مرورگر سلولِ خالی را ۰ می‌فرستاد و
@@ -71,7 +71,8 @@ test("ایمپورت: فایلِ خراب موجودی را عوض نمی‌کن
       ON CONFLICT DO NOTHING;
     INSERT INTO inventory_lot (id, tenant_id, variant_id, warehouse_id, batch_number)
       VALUES ('${LOT}', '${T}', 'a2222222-2222-2222-2222-222222222226', '${W2}', 'E2E-IMP') ON CONFLICT DO NOTHING;
-    INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES ('${T}', '${LOT}', 50) ON CONFLICT DO NOTHING;`);
+    INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES ('${T}', '${LOT}', 50) ON CONFLICT DO NOTHING;
+    ${ALIGN_PALLETS}`);
   await login(page, IMPORTER);
   const before = await w2Total();
 

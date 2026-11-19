@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
@@ -38,7 +38,7 @@ before(async () => {
       ('${LOT_HOT}','${T}','${V_HOT}','${WH}'), ('${LOT_DEAD}','${T}','${V_DEAD}','${WH}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES
       ('${T}','${LOT_HOT}',100), ('${T}','${LOT_DEAD}',75);
-  `);
+  ${ALIGN_PALLETS}`);
 
   // یک چرخه‌ی کامل: رزرو ۲۰ → تأیید (قیمت ۱٬۰۰۰٬۰۰۰) → حواله → بارگیری
   const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "rep-1", items: [{ lotId: LOT_HOT, quantityBoxes: 20 }] });

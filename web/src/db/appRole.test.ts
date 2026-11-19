@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql, appSql, resetSchema } from "./_testdb";
+import { sql, appSql, resetSchema, ALIGN_PALLETS } from "./_testdb";
 import { withTenant } from "./client";
 
 // پایه‌ی بقیه‌ی تست‌ها: اگر این‌ها قرمز شوند، سبزی هیچ تست ایزوله‌ای معنا ندارد.
@@ -55,7 +55,7 @@ test("v_lot_availability زیر RLS خواننده است، نه مالک superu
       SELECT tenant_id, tenant_id, id, 'S1', 96 FROM product;
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${A}','${A}','${A}','${A}'), ('${B}','${B}','${B}','${B}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${A}','${A}',10), ('${B}','${B}',20);
-  `);
+  ${ALIGN_PALLETS}`);
   // بدون فیلتر صریح tenant: اگر view با نقش مالک اجرا شود، موجودی B هم برمی‌گردد.
   const rows = await withTenant(A, (tx) => tx<{ on_hand_qty_boxes: number }[]>`SELECT on_hand_qty_boxes FROM v_lot_availability`);
   assert.deepEqual(rows.map((r) => r.on_hand_qty_boxes), [10]);

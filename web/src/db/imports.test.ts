@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS, withAlignedPallets } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { applySnapshot } from "./imports";
@@ -32,7 +32,7 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes,allocated_qty_boxes) VALUES
       ('${T}','${LA1}',100,0), ('${T}','${LA2}',30,0),
       ('${T}','${LB1}',10,5), ('${T}','${LC1}',10,5), ('${T}','${LD1}',40,0);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 const onHand = async (lot: string) =>
@@ -85,7 +85,7 @@ test("absent_but_committed: lotِ دارای تعهد که در فایل نیس�
 test("idempotency: همان فایل با کلید تکراری → deduped، بدون اعمال دوباره", async () => {
   // پس از تغییرِ دستیِ موجودی، اعمالِ دوباره‌ی همان فایل آن را برمی‌گرداند؛ dedupe جلویش را می‌گیرد.
   // کلیدِ تکراری با فایلِ دیگر حالا خطاست (importBroken.test.ts).
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = 81 WHERE lot_id = ${LA1}`;
+  await withAlignedPallets((tx) => tx`UPDATE inventory_balance SET on_hand_qty_boxes = 81 WHERE lot_id = ${LA1}`);
   const res = await applySnapshot({
     tenantId: T, uploaderUserId: U, idempotencyKey: "imp-A", scope: { type: "warehouse", warehouseId: WA },
     rows: [
@@ -96,7 +96,7 @@ test("idempotency: همان فایل با کلید تکراری → deduped، ب
   assert.equal(res.deduped, true);
   assert.equal(res.applied, 0);
   assert.equal(await onHand(LA1), 81, "نباید دوباره اعمال شه (هنوز ۸۱)");
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = 80 WHERE lot_id = ${LA1}`;
+  await withAlignedPallets((tx) => tx`UPDATE inventory_balance SET on_hand_qty_boxes = 80 WHERE lot_id = ${LA1}`);
 });
 
 // --- v2 کاتالوگ تصویری: عکس در import ---
