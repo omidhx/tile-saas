@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Field, NativeSelect } from "@/components/field";
 import { LoadingState, Notice } from "@/components/states";
 import { getJson, postJson } from "@/lib/api";
+import { normalize } from "@/lib/search";
 import { useContexts, type Ctx } from "@/lib/useContexts";
 import { num, palletError, useDebounced, useWarehouses } from "../shared";
 
@@ -31,7 +32,7 @@ let seq = 0;
 const newLine = (): Line => ({ key: ++seq, variant: null, text: "", batch: "", shade: "", caliber: "", qty: "" });
 const newPallet = (): PalletForm => ({ key: ++seq, col: "", pos: "", repeat: "1", note: "", lines: [newLine()] });
 const label = (v: Variant) => `${v.code} — ${v.name}${v.grade ? ` — درجه ${v.grade}` : ""}`;
-const toInt = (s: string) => (s.trim() === "" ? null : Number(s));
+const toInt = (s: string) => (s.trim() === "" ? null : Number(normalize(s)));
 const posInt = (s: string, max: number) => { const v = toInt(s); return v !== null && Number.isInteger(v) && v >= 1 && v <= max ? v : null; };
 
 function GoodsIn({ ctx }: { ctx: Ctx }) {

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Field, NativeSelect } from "@/components/field";
 import { Notice } from "@/components/states";
 import { postJson } from "@/lib/api";
+import { normalize } from "@/lib/search";
 import { lineName, lotLabel, num, palletError, type Pallet } from "./shared";
 
 export type PalletMode = "edit" | "transfer" | "exit";
@@ -17,7 +18,8 @@ const EXIT_REASONS = [["waste", "ضایعات"], ["breakage", "شکستگی"], [
 const ADJUST_REASONS = [["count_correction", "اصلاح شمارش"], ["damage", "آسیب"], ["other", "سایر"]] as const;
 export const REASON_FA: Record<string, string> = Object.fromEntries([...EXIT_REASONS, ...ADJUST_REASONS]);
 
-const intOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
+/** رقم فارسی و عربی هم پذیرفته می‌شود (صفحه‌کلید فارسی). */
+const intOrNull = (s: string) => (s.trim() === "" ? null : Number(normalize(s)));
 const isCount = (v: number | null, min = 0) => v !== null && Number.isInteger(v) && v >= min;
 
 /**
@@ -52,7 +54,7 @@ export function PalletDialog({
   const errors = {
     pos: pos.trim() && !isCount(posNum, 1) ? "شماره باید عدد صحیح مثبت باشد." : undefined,
     lines: pallet.lines.some((l) => lineErr(l)) ? "x" : undefined,
-    none: mode === "exit" && !pallet.lines.some((l) => (q(l.lotId) ?? 0) > 0) ? "دست‌کم یک ردیف را با تعداد بیشتر از صفر پر کنید." : undefined,
+    none: mode !== "edit" && !pallet.lines.some((l) => (q(l.lotId) ?? 0) > 0) ? "دست‌کم یک ردیف را با تعداد بیشتر از صفر پر کنید." : undefined,
     reason: (mode === "exit" || changed) && !reason ? "دلیل را انتخاب کنید." : undefined,
     reasonNote: (mode === "exit" || changed) && reason === "other" && !reasonNote.trim() ? "برای «سایر» توضیح بنویسید." : undefined,
   };
@@ -63,8 +65,11 @@ export function PalletDialog({
     setTried(true);
     if (Object.values(errors).some(Boolean)) return;
     const lines = pallet.lines.map((l) => ({ lotId: l.lotId, qty: q(l.lotId) ?? 0 }));
+    // ویرایش مطلق است: فقط ردیف‌های عوض‌شده، با همان تعدادی که فرم دید (expected)؛ اگر در این فاصله
+    // خروج یا بارگیری آن را عوض کرده باشد، سرور ۴۰۹ می‌دهد به‌جای برگرداندنِ کارتنِ خارج‌شده.
+    const edits = pallet.lines.filter((l) => q(l.lotId) !== l.qty).map((l) => ({ lotId: l.lotId, qty: q(l.lotId)!, expected: l.qty }));
     const body =
-      mode === "edit" ? { action: "edit", palletId: pallet.id, columnCode: col, positionNo: posNum, note, lines,
+      mode === "edit" ? { action: "edit", palletId: pallet.id, columnCode: col, positionNo: posNum, note, lines: edits,
           reason: changed ? reason : null, reasonNote: changed ? reasonNote : null }
       : mode === "transfer" ? { action: "transfer", palletId: pallet.id, columnCode: col, positionNo: posNum, lines }
       : { action: "exit", palletId: pallet.id, lines: lines.filter((l) => l.qty > 0), reason, note: reasonNote };

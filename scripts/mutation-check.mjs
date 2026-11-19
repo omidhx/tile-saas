@@ -102,6 +102,8 @@ const MUTATIONS = [
     edits: [["    ORDER BY lot_id FOR UPDATE`;\n  const held = await heldOf(", "    ORDER BY lot_id`;\n  await tx`SELECT pg_sleep(0.05)`;\n  const held = await heldOf("]], tests: [PALLET] },
   { id: "p7x", expect: "ویرایش و خروج on_hand را زیرِ heldِ رزروِ زنده نمی‌برند", why: "چکِ تعهد در خروجِ غیرفروش حذف شد", file: PALLETS,
     edits: [["      if (b.on_hand - l.qty < b.committed)", "      if (false && b.on_hand - l.qty < b.committed)"]], tests: [PALLET] },
+  { id: "p7g", expect: "ورودِ کالای هم‌زمان با کلیدِ تازه", why: "قفلِ ساختِ lot در ورود کالا حذف و پنجره با pg_sleep باز شد", file: PALLETS,
+    edits: [['    await tx`SELECT pg_advisory_xact_lock(hashtext(${"import:" + tenantId}))`;', "    await tx`SELECT pg_sleep(0.05)`;"]], tests: [PALLET] },
   { id: "p7d", expect: "بارگیری کارتن را از قدیمی‌ترین پالت", why: "بارگیری کارتن را از پالت کم نمی‌کند", file: "web/src/db/dispatches.ts",
     edits: [["        await takeFromPallets(tx, tenantId, items.map((i) => ({ lotId: i.lot_id, qty: i.quantity_boxes })));", "        void takeFromPallets;"]], tests: [PALLET] },
 ];

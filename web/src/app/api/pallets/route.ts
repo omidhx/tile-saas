@@ -10,7 +10,10 @@ const INT = 2_147_483_647;
 const text = z.string().max(200).nullish();
 const column = z.string().trim().max(40).nullish();
 const position = positive.max(100_000).nullish();
-const lines = z.array(z.object({ lotId: id, qty: count.max(INT) })).max(20);
+// یک lot دو بار در یک درخواست: خروج لجر را دو بار می‌نوشت (یافته‌ی بازبین فاز ۷)
+const uniqueLots = (ls: { lotId: string }[]) => new Set(ls.map((l) => l.lotId)).size === ls.length;
+const lines = z.array(z.object({ lotId: id, qty: count.max(INT) })).max(20).refine(uniqueLots);
+const editLines = z.array(z.object({ lotId: id, qty: count.max(INT), expected: count.max(INT) })).max(20).refine(uniqueLots);
 
 const GoodsIn = z.object({
   warehouseId: id,
@@ -24,7 +27,7 @@ const GoodsIn = z.object({
 });
 
 const Patch = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("edit"), palletId: id, columnCode: column, positionNo: position, note: text, lines,
+  z.object({ action: z.literal("edit"), palletId: id, columnCode: column, positionNo: position, note: text, lines: editLines,
     reason: z.enum(ADJUST_REASONS).nullish(), reasonNote: text }),
   z.object({ action: z.literal("transfer"), palletId: id, columnCode: column, positionNo: position, lines: lines.nullish() }),
   z.object({ action: z.literal("exit"), palletId: id, lines: lines.min(1), reason: z.enum(EXIT_REASONS), note: text }),
@@ -40,7 +43,7 @@ export async function GET(req: Request) {
   if (wh && !isId(wh)) return NextResponse.json({ error: "invalid", fields: ["warehouseId"] }, { status: 400 });
   const s = u.get("status");
   const status = s === "exited" || s === "all" ? s : "in_stock";
-  return NextResponse.json({ pallets: await listPallets({ tenantId: c.tenantId, warehouseId: wh, q: u.get("q"), status }) });
+  return NextResponse.json(await listPallets({ tenantId: c.tenantId, warehouseId: wh, q: u.get("q"), status }));
 }
 
 /** POST /api/pallets — ورود کالا: چند پالت، هر کدام یک یا چند ردیف و «تکرار ×n». */
@@ -74,6 +77,6 @@ export async function PATCH(req: Request) {
       ? await transferPallet({ ...base, palletId: d.palletId, columnCode: d.columnCode ?? null, positionNo: d.positionNo ?? null, lines: d.lines })
       : await exitStock({ ...base, palletId: d.palletId, lines: d.lines, reason: d.reason, note: d.note });
   if (!r.ok) return NextResponse.json({ error: r.reason, detail: r.detail },
-    { status: r.reason === "not_found" ? 404 : r.reason === "below_committed" ? 409 : 422 });
+    { status: r.reason === "not_found" ? 404 : r.reason === "below_committed" || r.reason === "stale" ? 409 : 422 });
   return NextResponse.json(r);
 }

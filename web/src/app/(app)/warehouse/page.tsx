@@ -41,6 +41,7 @@ function PalletList({ ctx }: { ctx: Ctx }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q);
   const [pallets, setPallets] = useState<Pallet[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [exits, setExits] = useState<Exit[] | null>(null);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
@@ -56,11 +57,12 @@ function PalletList({ ctx }: { ctx: Ctx }) {
       setExits(r.ok ? r.data.exits : null);
       return;
     }
-    const r = await getJson<{ pallets: Pallet[] }>(
+    const r = await getJson<{ pallets: Pallet[]; truncated: boolean }>(
       `/api/pallets?tenantId=${tenantId}&status=${tab}${wh ? `&warehouseId=${wh}` : ""}${dq.trim() ? `&q=${encodeURIComponent(dq.trim())}` : ""}`);
     if (my !== gen.current) return;
     setErr(r.ok ? "" : loadError(r.status));
     setPallets(r.ok ? r.data.pallets : null);
+    setTruncated(r.ok && r.data.truncated);
   }, [tenantId, tab, wh, dq]);
 
   useEffect(() => { void load(); }, [load]);
@@ -139,6 +141,9 @@ function PalletList({ ctx }: { ctx: Ctx }) {
       <div className="grid grid-cols-1 gap-3">
         {err && <Notice tone="error">{err}</Notice>}
         {note && <Notice tone="success">{note}</Notice>}
+        {truncated && tab !== "exits" && (
+          <Notice tone="warning">فقط ۵۰۰ پالت اول نشان داده شده و جمع بالای صفحه و Excel هم فقط همین‌هاست؛ با جستجو یا انتخاب انبار فهرست را کوچک کنید.</Notice>
+        )}
         <Tabs value={tab} onValueChange={(t) => { setTab(t); setNote(""); }}>
           <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b pb-1">
             <TabsTrigger value="in_stock" className="flex-none">در انبار</TabsTrigger>

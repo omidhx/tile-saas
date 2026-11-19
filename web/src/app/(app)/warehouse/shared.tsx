@@ -31,6 +31,8 @@ export const palletSqcm = (p: Pallet) => p.lines.reduce((s, l) => s + (l.sqcmPer
 /** پیام فارسی برای کد خطای `/api/pallets`. */
 export function palletError(code: string | undefined, status: number): string {
   const m: Record<string, string> = {
+    stale: "از وقتی این پنجره باز شد، تعداد این پالت عوض شده (خروج یا بارگیری). پنجره را ببندید و دوباره باز کنید.",
+    no_quantity: "دست‌کم یک ردیف را با تعداد بیشتر از صفر پر کنید.",
     below_committed: "این کارتن‌ها رزرو، تخصیص یا بلوکه دارند؛ موجودی آزاد این lot کافی نیست.",
     exceeds_pallet: "تعداد بیشتر از کارتن‌های روی این پالت است.",
     reason_required: "دلیل را انتخاب کنید (برای «سایر» توضیح هم لازم است).",

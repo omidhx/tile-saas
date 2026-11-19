@@ -53,7 +53,7 @@ const onHand = async (lotId: string) =>
   (await sql<{ q: number }[]>`SELECT on_hand_qty_boxes AS q FROM inventory_balance WHERE lot_id = ${lotId}`)[0].q;
 const lotOf = async (variant: string, batch: string, wh = W1) =>
   (await sql<{ id: string }[]>`SELECT id FROM inventory_lot WHERE variant_id = ${variant} AND warehouse_id = ${wh} AND upper(batch_number) = upper(${batch})`)[0]?.id;
-const palletByNo = async (no: number) => (await listPallets({ tenantId: T, status: "all", q: String(no) })).find((p) => p.palletNo === no)!;
+const palletByNo = async (no: number) => (await listPallets({ tenantId: T, status: "all", q: String(no) })).pallets.find((p) => p.palletNo === no)!;
 
 /** n پالتِ یک‌ردیفی در W1، با بچِ داده‌شده. */
 async function stock(batch: string, qty: number, repeat: number, col = "A") {
@@ -111,9 +111,9 @@ test("ویرایش پالت: محل عوض می‌شود؛ تغییرِ تعدا
   const { lot, palletNos } = await stock("e1", 50, 1);
   const p = await palletByNo(palletNos[0]);
   const base = { tenantId: T, actorUserId: U, palletId: p.id, columnCode: "Z", positionNo: 9 };
-  assert.deepEqual(await editPallet({ ...base, lines: [{ lotId: lot, qty: 45 }] }), { ok: false, reason: "reason_required" });
-  assert.deepEqual(await editPallet({ ...base, lines: [{ lotId: lot, qty: 45 }], reason: "other" }), { ok: false, reason: "reason_required" });
-  assert.deepEqual(await editPallet({ ...base, lines: [{ lotId: lot, qty: 45 }], reason: "count_correction" }), { ok: true });
+  assert.deepEqual(await editPallet({ ...base, lines: [{ lotId: lot, qty: 45, expected: 50 }] }), { ok: false, reason: "reason_required" });
+  assert.deepEqual(await editPallet({ ...base, lines: [{ lotId: lot, qty: 45, expected: 50 }], reason: "other" }), { ok: false, reason: "reason_required" });
+  assert.deepEqual(await editPallet({ ...base, lines: [{ lotId: lot, qty: 45, expected: 50 }], reason: "count_correction" }), { ok: true });
   assert.equal(await onHand(lot), 45);
   const after = await palletByNo(palletNos[0]);
   assert.deepEqual([after.columnCode, after.positionNo, after.totalBoxes], ["Z", 9, 45]);
@@ -127,7 +127,7 @@ test("ویرایش و خروج on_hand را زیرِ heldِ رزروِ زنده 
   const r = await reserve({ tenantId: T, agentAccountId: AG, ttlHours: 24, idempotencyKey: "h1", items: [{ lotId: lot, quantityBoxes: 15 }] });
   assert.equal(r.ok, true);
   const p = await palletByNo(palletNos[0]);
-  const e = await editPallet({ tenantId: T, actorUserId: U, palletId: p.id, columnCode: "A", positionNo: 1, lines: [{ lotId: lot, qty: 10 }], reason: "damage" });
+  const e = await editPallet({ tenantId: T, actorUserId: U, palletId: p.id, columnCode: "A", positionNo: 1, lines: [{ lotId: lot, qty: 10, expected: 20 }], reason: "damage" });
   assert.equal(e.ok ? "" : e.reason, "below_committed");
   const x = await exitStock({ tenantId: T, actorUserId: U, palletId: p.id, lines: [{ lotId: lot, qty: 6 }], reason: "waste" });
   assert.equal(x.ok ? "" : x.reason, "below_committed");
@@ -200,7 +200,7 @@ test("ناوردا در دیتابیس: نوشتنِ مستقیم با نقشِ 
 });
 
 test("RLS: پالت و جمعِ موجودیِ tenantِ دیگر دیده نمی‌شود", async () => {
-  assert.equal((await listPallets({ tenantId: TB, status: "all" })).length, 0);
+  assert.equal((await listPallets({ tenantId: TB, status: "all" })).pallets.length, 0);
   assert.equal((await stockSummary({ tenantId: TB })).length, 0);
   const [n] = await appSql.begin(async (tx) => {
     await tx`SELECT set_config('app.tenant_id', ${TB}, true)`;
@@ -290,4 +290,50 @@ test("migration 0009: موجودیِ قبلی پالتِ «بدون محل» م�
   const [{ forced }] = await sql<{ forced: number }[]>`
     SELECT count(*)::int AS forced FROM pg_class WHERE relname IN ('pallet', 'pallet_item') AND relrowsecurity AND relforcerowsecurity`;
   assert.equal(forced, 2);
+});
+
+test("ویرایشِ کهنه: اگر بعد از باز شدن فرم کارتنی خارج شده، ثبتِ عددِ قدیمی رد می‌شود و کارتن برنمی‌گردد", async () => {
+  const g = await goodsIn({ tenantId: T, actorUserId: U, warehouseId: W1, pallets: [{ columnCode: "ST", positionNo: 1, repeat: 1,
+    lines: [{ variantId: V2, batchNumber: "st", qty: 30 }, { variantId: V3, batchNumber: "st", qty: 30 }] }] });
+  assert.equal(g.ok, true);
+  if (!g.ok) return;
+  const [a, b] = [(await lotOf(V2, "st"))!, (await lotOf(V3, "st"))!];
+  const p = await palletByNo(g.palletNos[0]);
+  // فرم با A=30 و B=30 باز شد؛ بعد ۵ کارتن A خارج شد
+  assert.deepEqual(await exitStock({ tenantId: T, actorUserId: U, palletId: p.id, lines: [{ lotId: a, qty: 5 }], reason: "waste" }), { ok: true });
+  const r = await editPallet({ tenantId: T, actorUserId: U, palletId: p.id, columnCode: "ST", positionNo: 1, reason: "count_correction",
+    lines: [{ lotId: a, qty: 30, expected: 30 }, { lotId: b, qty: 28, expected: 30 }] });
+  assert.equal(r.ok ? "" : r.reason, "stale");
+  assert.equal(await onHand(a), 25, "کارتنِ خارج‌شده برنگشت");
+  assert.equal(await onHand(b), 30);
+  // فقط ردیفِ تغییرکرده با expectedِ درست پذیرفته می‌شود
+  assert.deepEqual(await editPallet({ tenantId: T, actorUserId: U, palletId: p.id, columnCode: "ST", positionNo: 1, reason: "count_correction",
+    lines: [{ lotId: b, qty: 28, expected: 30 }] }), { ok: true });
+  assert.equal(await onHand(a), 25);
+  assert.equal(await onHand(b), 28);
+  await assertInvariant();
+});
+
+test("یک lot دو بار در یک درخواست رد می‌شود؛ انتقالِ همه‌صفر یعنی هیچ، نه کلِ پالت", async () => {
+  const { lot, palletNos } = await stock("dup", 10, 1, "DU");
+  const p = await palletByNo(palletNos[0]);
+  const x = await exitStock({ tenantId: T, actorUserId: U, palletId: p.id, reason: "waste", lines: [{ lotId: lot, qty: 3 }, { lotId: lot, qty: 3 }] });
+  assert.equal(x.ok ? "" : x.reason, "duplicate_line");
+  const t = await transferPallet({ tenantId: T, actorUserId: U, palletId: p.id, columnCode: "ZZ", positionNo: 1, lines: [{ lotId: lot, qty: 0 }] });
+  assert.equal(t.ok ? "" : t.reason, "no_quantity");
+  assert.equal((await palletByNo(palletNos[0])).columnCode, "DU");
+  assert.equal(await onHand(lot), 10);
+  await assertInvariant();
+});
+
+test("ورودِ کالای هم‌زمان با کلیدِ تازه فقط یک Lot می‌سازد", async () => {
+  const one = () => goodsIn({ tenantId: T, actorUserId: U, warehouseId: W2, pallets: [{ repeat: 1, lines: [{ variantId: V3, batchNumber: "race-new", qty: 4 }] }] });
+  for (let round = 0; round < 3; round++) {
+    const rs = await Promise.all([one(), one(), one(), one()]);
+    for (const r of rs) assert.equal(r.ok, true, JSON.stringify(r));
+  }
+  const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM inventory_lot WHERE warehouse_id = ${W2} AND batch_number = 'race-new'`;
+  assert.equal(n, 1, "سه دور × چهار ورودِ هم‌زمان باید یک Lot بسازند");
+  assert.equal(await onHand((await lotOf(V3, "race-new", W2))!), 48);
+  await assertInvariant();
 });

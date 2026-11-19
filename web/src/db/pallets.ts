@@ -13,6 +13,10 @@ import { enqueueRestockNotifications } from "./alerts";
  */
 
 export type LotQty = { lotId: string; qty: number };
+/** ردیفِ ویرایش: `expected` همان تعدادی است که فرم دیده بود. ویرایش مطلق است، پس بدون آن فرمِ کهنه کارتنِ خارج‌شده را برمی‌گرداند. */
+export type EditLine = LotQty & { expected: number };
+
+const hasDupLots = (lines: LotQty[]) => new Set(lines.map((l) => l.lotId)).size !== lines.length;
 
 /** held زنده‌ی هر lot (همان SUMِ reservations.ts)، بعد از قفلِ balance. تعهد = allocated + blocked + held. */
 export async function heldOf(tx: TransactionSql, tenantId: string, lotIds: string[]) {
@@ -226,9 +230,10 @@ export type PalletRow = {
 
 export async function listPallets(p: {
   tenantId: string; warehouseId?: string | null; q?: string | null; status?: "in_stock" | "exited" | "all"; limit?: number;
-}): Promise<PalletRow[]> {
+}): Promise<{ pallets: PalletRow[]; truncated: boolean }> {
   const { tenantId } = p;
   const status = p.status ?? "in_stock";
+  const limit = Math.min(p.limit ?? 500, 2000);
   const q = p.q?.trim() ? `%${p.q.trim()}%` : null;
   return withTenant(tenantId, async (tx) => {
     const rows = await tx<(Omit<PalletRow, "status" | "totalBoxes"> & { lines: PalletLine[] | null })[]>`
@@ -251,11 +256,12 @@ export async function listPallets(p: {
               JOIN product_variant pv ON pv.id = l.variant_id JOIN product pr ON pr.id = pv.product_id
               WHERE x.pallet_id = p.id AND (pr.name ILIKE ${q} OR pr.code ILIKE ${q} OR pv.sku ILIKE ${q} OR l.batch_number ILIKE ${q})))` : tx``}
       ORDER BY w.name, p.column_code NULLS FIRST, p.position_no NULLS FIRST, p.pallet_no
-      LIMIT ${Math.min(p.limit ?? 500, 2000)}`;
-    return rows.map((r) => {
+      LIMIT ${limit + 1}`;
+    const pallets = rows.slice(0, limit).map((r): PalletRow => {
       const lines = r.lines ?? [];
       return { ...r, lines, status: lines.length ? "in_stock" : "exited", totalBoxes: lines.reduce((s, l) => s + l.qty, 0) };
     });
+    return { pallets, truncated: rows.length > limit };
   });
 }
 
@@ -302,7 +308,7 @@ export type AdjustReason = (typeof ADJUST_REASONS)[number];
 
 export type PalletOpResult =
   | { ok: true; newPalletNo?: number }
-  | { ok: false; reason: "not_found" | "unknown_line" | "exceeds_pallet" | "below_committed" | "reason_required" | "empty_pallet"; detail?: string };
+  | { ok: false; reason: "not_found" | "unknown_line" | "duplicate_line" | "exceeds_pallet" | "below_committed" | "reason_required" | "empty_pallet" | "stale" | "no_quantity"; detail?: string };
 
 type Item = { id: string; lot_id: string; qty_boxes: number };
 type Loaded = { pallet: { id: string; pallet_no: number; warehouse_id: string; column_code: string | null; position_no: number | null; note: string | null }; items: Item[]; bal: Map<string, LockedBalance> };
@@ -331,14 +337,18 @@ const loc = (c: string | null, n: number | null) => ({ columnCode: c, positionNo
  */
 export async function editPallet(p: {
   tenantId: string; actorUserId: string; palletId: string; columnCode: string | null; positionNo: number | null;
-  note?: string | null; lines: LotQty[]; reason?: AdjustReason | null; reasonNote?: string | null;
+  note?: string | null; lines: EditLine[]; reason?: AdjustReason | null; reasonNote?: string | null;
 }): Promise<PalletOpResult> {
   const { tenantId } = p;
+  if (hasDupLots(p.lines)) return { ok: false, reason: "duplicate_line" };
   return withTenant(tenantId, async (tx) => {
     const x = await loadPallet(tx, tenantId, p.palletId);
     if (!x) return { ok: false, reason: "not_found" };
     const cur = new Map(x.items.map((i) => [i.lot_id, i]));
     for (const l of p.lines) if (!cur.has(l.lotId)) return { ok: false, reason: "unknown_line" };
+    // بین باز شدن فرم و ثبت، خروج یا بارگیری این ردیف را عوض کرده: ثبتِ عددِ مطلقِ کهنه آن را برمی‌گرداند
+    for (const l of p.lines) if (cur.get(l.lotId)!.qty_boxes !== l.expected)
+      return { ok: false, reason: "stale", detail: `${l.lotId}: ${cur.get(l.lotId)!.qty_boxes} ≠ ${l.expected}` };
     const changes = p.lines.filter((l) => l.qty !== cur.get(l.lotId)!.qty_boxes);
     if (changes.length && !p.reason) return { ok: false, reason: "reason_required" };
     if (changes.length && p.reason === "other" && !p.reasonNote?.trim()) return { ok: false, reason: "reason_required" };
@@ -383,7 +393,10 @@ export async function transferPallet(p: {
     if (x.items.length === 0) return { ok: false, reason: "empty_pallet" };
     const col = p.columnCode?.trim() || null;
     const cur = new Map(x.items.map((i) => [i.lot_id, i]));
+    if (p.lines && hasDupLots(p.lines)) return { ok: false, reason: "duplicate_line" };
     const lines = (p.lines ?? []).filter((l) => l.qty > 0);
+    // ردیف‌ها آمده ولی همه صفر: یعنی «هیچ»، نه «کلِ پالت»
+    if (p.lines && p.lines.length > 0 && lines.length === 0) return { ok: false, reason: "no_quantity" };
     for (const l of lines) {
       const it = cur.get(l.lotId);
       if (!it) return { ok: false, reason: "unknown_line" };
@@ -423,6 +436,8 @@ export async function exitStock(p: {
 }): Promise<PalletOpResult> {
   const { tenantId } = p;
   if (p.reason === "other" && !p.note?.trim()) return { ok: false, reason: "reason_required" };
+  // تکرارِ یک lot موجودی را یک بار ولی لجر را دو بار کم می‌کرد (یافته‌ی بازبین)
+  if (hasDupLots(p.lines)) return { ok: false, reason: "duplicate_line" };
   return withTenant(tenantId, async (tx) => {
     const x = await loadPallet(tx, tenantId, p.palletId);
     if (!x) return { ok: false, reason: "not_found" };
