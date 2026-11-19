@@ -13,6 +13,7 @@ tenant ──< agent_account (assigned_staff_user_id → app_user) ──< agent
    │                                              │                     (on_hand/allocated/blocked)
    │                                              ├──< inventory_transaction (لجر append-only)
    │                                              └──< pallet_item >── pallet (انبار، ستون، شماره)   (فاز ۷)
+   ├─ warehouse ──< warehouse_cell (نقشه: جای پالت = ستون + شماره، یا راهرو)   (فاز ۸)
    │
    ├─ reservation ──< reservation_item ─→ lot        (held = SUM active)
    ├─ sales_request ──< sales_request_item ──< sales_request_allocation ─→ lot
@@ -59,6 +60,7 @@ shared_catalog.token    ──  ظرفیتِ دسترسیِ عمومی؛ URL ش�
 | دسترسیِ staff | فقط نقشِ `tenant_membership.role`. ستون‌های `allowed_pages` و `can_manage_access` از فاز ۲ بی‌استفاده‌اند و چون migration 0004 به آن‌ها وابسته است حذف نشده‌اند |
 | پشتیبانِ ثابتِ نمایندگی (بدونِ composite FK چون app_user سراسری است) | `agent_account.assigned_staff_user_id UUID REFERENCES app_user(id)`؛ عضویتِ tenant در لایه‌ی app چک می‌شود (`isActiveStaffMember`) |
 | **جمعِ کارتنِ پالت‌های هر lot = on_hand** (فاز ۷) | تریگرِ deferredِ `check_pallet_sum` روی `inventory_balance` و `pallet_item`؛ اول ردیفِ balance را `FOR UPDATE` قفل می‌کند. پالت ترکیبی = چند `pallet_item` با lotهای مختلف. پالت و lot در یک انبار: FK ترکیبیِ `(tenant_id, lot_id, warehouse_id)` و `(tenant_id, pallet_id, warehouse_id)` |
+| **نقشه‌ی انبار** (فاز ۸) | `warehouse_cell` با FK ترکیبی به انبار و ایندکس یکتای `uq_warehouse_cell_slot` روی «ستون + شماره» (بدون حساسیت به حروف و فاصله). پالت عمداً FK به خانه ندارد و با `column_code` + `position_no` خودش روی خانه نشان داده می‌شود؛ پس ذخیره‌ی چیدمان پالتی را عوض نمی‌کند. ذخیره، ردیف انبار را `FOR UPDATE` قفل می‌کند |
 | موجودیِ اولیه از مسیرِ لجر می‌آید، نه UPDATE مستقیم | `inventory_transaction.transaction_type='initial_stock'` هنگامِ ساختِ محصول با انبار+تعداد |
 | روزِ صفرِ tenantِ تازه بدونِ SQL دستی | `app_user.is_platform_admin` (بالاتر از سطحِ tenant) + `db/platform.ts::createTenant` (یک تراکنش: tenant + اولین admin) |
 | **SECURITY DEFINER از search_path injection محافظت** (Phase 10-post) | هر چهار تابع با `SET search_path = public, pg_temp` |
