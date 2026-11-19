@@ -6,14 +6,15 @@ import { Field } from "@/components/field";
 import { Notice } from "@/components/states";
 import { postJson } from "@/lib/api";
 import { normalize } from "@/lib/search";
+import { columnKey, slotKey } from "@/lib/slotKey";
 import { cn } from "@/lib/utils";
 import { num } from "../shared";
 
 /** خانه‌ی چیدمان، همان شکل `/api/warehouse-map` (فاز ۸). */
 export type Cell = { x: number; y: number; kind: "slot" | "aisle"; columnCode: string | null; positionNo: number | null };
-/** مثل سرور: بدون حساسیت به حروف و فاصله. */
-export const slotKey = (col: string, pos: number) => `${col.trim().toUpperCase()}#${pos}`;
-export const slotName = (c: Pick<Cell, "columnCode" | "positionNo">) => `${c.columnCode}${num(c.positionNo ?? 0)}`;
+/** «A۳»؛ ستونِ عددی با خط تیره («۱۲-۳») تا ستون ۱ شماره‌ی ۲۳ با ستون ۱۲ شماره‌ی ۳ یکی خوانده نشود. */
+export const slotName = (c: Pick<Cell, "columnCode" | "positionNo">) =>
+  `${c.columnCode}${/[0-9۰-۹٠-٩]$/.test(c.columnCode ?? "") ? "-" : ""}${num(c.positionNo ?? 0)}`;
 
 type Tool = "slot" | "aisle" | "erase";
 const MAX = 60;
@@ -54,17 +55,18 @@ export function LayoutEditor({
   const minCols = Math.max(1, ...[...cells.values()].map((c) => c.x + 1));
   const minRows = Math.max(1, ...[...cells.values()].map((c) => c.y + 1));
 
-  function apply(x: number, y: number) {
+  function apply(x: number, y: number, dragged = false) {
     const k = `${x},${y}`;
     const m = new Map(live.current.cells);
     if (tool === "erase") m.delete(k);
     else if (tool === "aisle") m.set(k, { x, y, kind: "aisle", columnCode: null, positionNo: null });
     else {
-      const col = normalize(code).toUpperCase(), pos = Number(normalize(live.current.next));
+      const col = columnKey(code), pos = Number(normalize(live.current.next));
       if (!col) { setError("اول نام ستون را بنویسید."); return; }
       if (!Number.isInteger(pos) || pos < 1) { setError("شماره‌ی بعدی باید عدد صحیح مثبت باشد."); return; }
       const cur = m.get(k);
-      if (cur?.kind === "slot" && slotKey(cur.columnCode!, cur.positionNo!) === slotKey(col, pos)) return;
+      // جای موجود هرگز بی‌صدا شماره‌ی تازه نمی‌گیرد (کشیدن دوباره روی همان خانه‌ها شماره را جا می‌انداخت)
+      if (cur?.kind === "slot") { if (!dragged) setError(`این خانه جای ${slotName(cur)} است؛ برای عوض کردنش اول «پاک کن».`); return; }
       const clash = [...m.values()].find((c) => c.kind === "slot" && slotKey(c.columnCode!, c.positionNo!) === slotKey(col, pos));
       if (clash) { setError(`${slotName(clash)} قبلاً روی نقشه هست؛ شماره‌ی بعدی را عوض کنید.`); return; }
       m.set(k, { x, y, kind: "slot", columnCode: col, positionNo: pos });
@@ -88,10 +90,12 @@ export function LayoutEditor({
     } finally { setPending(false); }
   }
 
-  const size = (v: string, min: number, set: (n: number) => void) => {
+  // هنگامِ تایپ کوچک‌تر از خانه‌های استفاده‌شده هم پذیرفته می‌شود («۲» در راهِ «۲۰»)؛ شبکه هرگز آن‌ها را نمی‌بُرد
+  const size = (v: string, set: (n: number) => void) => {
     const n = Number(normalize(v));
-    if (Number.isInteger(n)) set(Math.min(MAX, Math.max(min, n)));
+    if (Number.isInteger(n)) set(Math.min(MAX, Math.max(1, n)));
   };
+  const gridCols = Math.max(cols, minCols), gridRows = Math.max(rows, minRows);
 
   return (
     <div className="grid grid-cols-1 gap-3">
@@ -103,31 +107,31 @@ export function LayoutEditor({
           ))}
         </div>
         <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-4">
-          <Field id="le-code" label="ستون" hint="مثلاً A یا ۱۲">
+          <Field id="le-code" label="ستون" hint="مثلاً A یا 12">
             <Input value={code} maxLength={40} disabled={tool !== "slot"}
-              onChange={(e) => { setCode(e.target.value); setNext(String(maxPos([...cells.values()], normalize(e.target.value).toUpperCase()) + 1)); }} />
+              onChange={(e) => { setCode(e.target.value); setNext(String(maxPos([...cells.values()], columnKey(e.target.value)) + 1)); }} />
           </Field>
           <Field id="le-next" label="شماره‌ی بعدی">
             <Input inputMode="numeric" value={next} disabled={tool !== "slot"} onChange={(e) => setNext(e.target.value)} />
           </Field>
           <Field id="le-cols" label="ستون‌های شبکه">
-            <Input type="number" min={minCols} max={MAX} value={cols} onChange={(e) => size(e.target.value, minCols, setCols)} />
+            <Input type="number" min={minCols} max={MAX} value={cols} onChange={(e) => size(e.target.value, setCols)} onBlur={() => setCols(gridCols)} />
           </Field>
           <Field id="le-rows" label="ردیف‌های شبکه">
-            <Input type="number" min={minRows} max={MAX} value={rows} onChange={(e) => size(e.target.value, minRows, setRows)} />
+            <Input type="number" min={minRows} max={MAX} value={rows} onChange={(e) => size(e.target.value, setRows)} onBlur={() => setRows(gridRows)} />
           </Field>
         </div>
         <p className="text-xs text-muted-foreground">روی خانه بزنید یا ماوس را روی چند خانه بکشید. با «جای پالت» هر خانه شماره‌ی بعدی همان ستون را می‌گیرد.</p>
         {error && <Notice tone="error">{error}</Notice>}
         <div data-map-scroll className="overflow-auto pb-1">
-          <div role="group" aria-label="شبکه‌ی چیدمان" className="grid w-max select-none gap-1" style={{ gridTemplateColumns: `repeat(${cols}, 2.75rem)` }}>
-            {Array.from({ length: rows * cols }, (_, i) => {
-              const x = i % cols, y = Math.floor(i / cols), c = cells.get(`${x},${y}`);
+          <div role="group" aria-label="شبکه‌ی چیدمان" className="grid w-max select-none gap-1" style={{ gridTemplateColumns: `repeat(${gridCols}, 2.75rem)` }}>
+            {Array.from({ length: gridRows * gridCols }, (_, i) => {
+              const x = i % gridCols, y = Math.floor(i / gridCols), c = cells.get(`${x},${y}`);
               return (
                 <button key={`${x},${y}`} type="button" data-cell={`${x},${y}`}
                   aria-label={`خانه‌ی ${num(x + 1)}، ${num(y + 1)}: ${c?.kind === "slot" ? `جای ${slotName(c)}` : c?.kind === "aisle" ? "راهرو" : "خالی"}`}
                   onPointerDown={(e) => { if (e.button === 0) { painting.current = true; apply(x, y); } }}
-                  onPointerEnter={() => { if (painting.current) apply(x, y); }}
+                  onPointerEnter={() => { if (painting.current) apply(x, y, true); }}
                   onClick={(e) => { if (e.detail === 0) apply(x, y); }}
                   className={cn("flex size-11 items-center justify-center rounded-md border text-[10px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                     c?.kind === "slot" ? "border-primary bg-primary/10 font-medium"
@@ -149,5 +153,5 @@ export function LayoutEditor({
 }
 
 function maxPos(cells: Cell[], col: string) {
-  return Math.max(0, ...cells.filter((c) => c.kind === "slot" && slotKey(c.columnCode!, 1) === slotKey(col || " ", 1)).map((c) => c.positionNo!));
+  return Math.max(0, ...cells.filter((c) => c.kind === "slot" && columnKey(c.columnCode!) === columnKey(col || " ")).map((c) => c.positionNo!));
 }

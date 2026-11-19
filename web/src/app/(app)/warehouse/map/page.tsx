@@ -12,15 +12,18 @@ import { useContexts, type Ctx } from "@/lib/useContexts";
 import { cn } from "@/lib/utils";
 import { PalletDialog, type PalletMode } from "../pallet-dialog";
 import { SearchBox, lineName, lotLabel, num, palletError, useWarehouses, type Pallet } from "../shared";
-import { LayoutEditor, slotKey, slotName, type Cell } from "./layout-editor";
+import { slotKey } from "@/lib/slotKey";
+import { LayoutEditor, slotName, type Cell } from "./layout-editor";
 
 type MapStatus = "free" | "partial" | "reserved";
 type MapPallet = Pallet & { mapStatus: MapStatus };
 
+// رنگ تنها نشانه نیست (WCAG 1.4.1): رزرو هاشور می‌خورد، بخشی رزرو حاشیه‌ی دوخط و تمام رزرو حاشیه‌ی ضخیم
+const HATCH = "[background-image:repeating-linear-gradient(-45deg,transparent_0_5px,color-mix(in_oklab,currentColor_18%,transparent)_5px_6px)]";
 const STATUS: Record<MapStatus, { label: string; cell: string; dot: string }> = {
   free: { label: "آزاد", cell: "border-success bg-success/15", dot: "bg-success" },
-  partial: { label: "بخشی رزرو", cell: "border-warning bg-warning/20", dot: "bg-warning" },
-  reserved: { label: "تمام رزرو", cell: "border-destructive bg-destructive/15", dot: "bg-destructive" },
+  partial: { label: "بخشی رزرو", cell: `border-3 border-double border-warning bg-warning/20 ${HATCH}`, dot: "bg-warning" },
+  reserved: { label: "تمام رزرو", cell: `border-3 border-destructive bg-destructive/15 ${HATCH}`, dot: "bg-destructive" },
 };
 /** پالتِ رو در یک جا: بیشترین تعهد رنگ خانه را تعیین می‌کند. */
 const worst = (ps: MapPallet[]): MapStatus =>

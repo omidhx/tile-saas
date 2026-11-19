@@ -7,6 +7,7 @@ import { goodsIn, transferPallet } from "./pallets";
 import { reserve } from "./reservations";
 import { deleteWarehouse } from "./warehouses";
 import { getWarehouseMap, saveLayout, type Cell } from "./warehouseMap";
+import { columnKey, slotKey } from "@/lib/slotKey";
 
 /** فاز ۸: نقشه‌ی انبار. oracle اتصال admin است؛ کد محصول با app_user و RLS. */
 
@@ -76,6 +77,24 @@ test("خانه‌ی تکراری و «ستون + شماره»ی تکراری ر�
     VALUES (${T}, ${W1}, 9, 9, 'slot', 'a ', 1)`), /uq_warehouse_cell_slot/);
   // چیدمانِ قبلی دست نخورده
   assert.equal((await getWarehouseMap({ tenantId: T, warehouseId: W1 }))!.cells.length, 6);
+});
+
+test("ستون با رقم فارسی یا عربی و ي/ك عربی همان جای لاتین است؛ در JS و در SQL", async () => {
+  assert.equal(columnKey(" ۱۲ "), "12");
+  assert.equal(columnKey("٣a"), "3A");
+  assert.equal(columnKey("كي"), "کی");
+  assert.equal(slotKey("ب۱", 2), slotKey("ب1", 2));
+  const W3 = "a3333333-3333-3333-3333-33333333333a";
+  await sql`INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES (${W3},${T},'انبار فارسی','WF','main')`;
+  const r = await goodsIn({ tenantId: T, actorUserId: U, warehouseId: W3, pallets: [{ columnCode: "۱۲", positionNo: 3, repeat: 1, lines: [{ variantId: V, batchNumber: "fa1", qty: 5 }] }] });
+  assert.equal(r.ok, true);
+  // پالتِ «۱۲» با جای «12» تطبیق دارد: بیرون از نقشه نمی‌ماند
+  assert.deepEqual(await saveLayout({ tenantId: T, actorUserId: U, warehouseId: W3, cells: [slot(0, 0, "12", 3)] }), { ok: true, cells: 1, offMap: 0 });
+  const d = await saveLayout({ tenantId: T, actorUserId: U, warehouseId: W3, cells: [slot(0, 0, "12", 3), slot(1, 0, "۱۲", 3)] });
+  assert.equal(!d.ok && d.reason, "duplicate_slot");
+  await assert.rejects(withTenant(T, (tx) => tx`
+    INSERT INTO warehouse_cell (tenant_id, warehouse_id, x, y, kind, column_code, position_no)
+    VALUES (${T}, ${W3}, 5, 5, 'slot', '١٢', 3)`), /uq_warehouse_cell_slot/);
 });
 
 test("رنگ وضعیت: آزاد، بخشی رزرو، تمام رزرو — از held زنده، نه ستون ذخیره‌شده", async () => {

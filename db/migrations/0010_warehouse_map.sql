@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS warehouse_cell (
     CHECK ((kind = 'slot') = (column_code IS NOT NULL AND position_no IS NOT NULL))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_warehouse_cell_slot
-    ON warehouse_cell (tenant_id, warehouse_id, upper(btrim(column_code)), position_no) WHERE kind = 'slot';
+    ON warehouse_cell (tenant_id, warehouse_id, upper(translate(btrim(column_code), '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩يك', '01234567890123456789یک')), position_no) WHERE kind = 'slot';
 
 ALTER TABLE warehouse_cell ENABLE ROW LEVEL SECURITY;
 ALTER TABLE warehouse_cell FORCE ROW LEVEL SECURITY;

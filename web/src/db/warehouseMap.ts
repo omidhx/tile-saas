@@ -1,6 +1,7 @@
 import { withTenant } from "./client";
 import { writeAudit } from "./audit";
 import { listPallets, type PalletRow } from "./pallets";
+import { slotKey } from "@/lib/slotKey";
 
 /**
  * نقشه‌ی انبار (فاز ۸). مدیر چیدمان را یک بار روی شبکه می‌کشد: هر خانه یا «جای پالت» (ستون + شماره) است
@@ -15,8 +16,8 @@ export type MapStatus = "free" | "partial" | "reserved";
 export type MapPallet = PalletRow & { mapStatus: MapStatus };
 
 export const GRID_MAX = 60;
-/** کلید تطبیق پالت با خانه: بدون حساسیت به حروف و فاصله، مثل uq_warehouse_cell_slot. */
-export const slotKey = (col: string, pos: number) => `${col.trim().toUpperCase()}#${pos}`;
+/** همان columnKeyِ lib/slotKey.ts، در SQL (و همان عبارتِ ایندکسِ uq_warehouse_cell_slot). */
+const colKey = (c: string) => `upper(translate(btrim(${c}), '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩يك', '01234567890123456789یک'))`;
 
 export async function getWarehouseMap(p: { tenantId: string; warehouseId: string }) {
   const { tenantId, warehouseId } = p;
@@ -34,7 +35,7 @@ export async function getWarehouseMap(p: { tenantId: string; warehouseId: string
     return { cells, avail: new Map(avail.map((a) => [a.lot_id, a])) };
   });
   if (!base) return null;
-  const { pallets, truncated } = await listPallets({ tenantId, warehouseId, status: "in_stock", limit: 2000 });
+  const { pallets, truncated } = await listPallets({ tenantId, warehouseId, status: "in_stock", limit: 10_000 });
   const withStatus = pallets.map((pl): MapPallet => {
     const lots = pl.lines.map((l) => base.avail.get(l.lotId));
     const mapStatus: MapStatus = lots.every((a) => a && a.available <= 0) ? "reserved"
@@ -68,8 +69,9 @@ export async function saveLayout(p: { tenantId: string; actorUserId: string; war
   if (dup) return { ok: false, reason: "duplicate_slot", detail: dup.replace("#", " ") };
 
   return withTenant(tenantId, async (tx) => {
-    // دو ذخیره‌ی هم‌زمان روی یک انبار پشت هم می‌روند، نه اینکه DELETE یکی وسط INSERT دیگری بیفتد
-    const [wh] = await tx`SELECT 1 FROM warehouse WHERE tenant_id = ${tenantId} AND id = ${warehouseId} FOR UPDATE`;
+    // دو ذخیره‌ی هم‌زمان روی یک انبار پشت هم می‌روند، نه اینکه DELETE یکی وسط INSERT دیگری بیفتد.
+    // NO KEY: قفلِ FOR KEY SHAREِ چکِ FK (ورود کالا، تقسیم پالت، ایمپورت در همین انبار) را نمی‌بندد.
+    const [wh] = await tx`SELECT 1 FROM warehouse WHERE tenant_id = ${tenantId} AND id = ${warehouseId} FOR NO KEY UPDATE`;
     if (!wh) return { ok: false, reason: "warehouse_not_found" };
     const [{ before }] = await tx<{ before: number }[]>`
       SELECT count(*)::int AS before FROM warehouse_cell WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}`;
@@ -84,7 +86,7 @@ export async function saveLayout(p: { tenantId: string; actorUserId: string; war
       WHERE p.tenant_id = ${tenantId} AND p.warehouse_id = ${warehouseId}
         AND EXISTS (SELECT 1 FROM pallet_item x WHERE x.pallet_id = p.id)
         AND NOT EXISTS (SELECT 1 FROM warehouse_cell c WHERE c.tenant_id = p.tenant_id AND c.warehouse_id = p.warehouse_id
-          AND c.kind = 'slot' AND upper(btrim(c.column_code)) = upper(btrim(p.column_code)) AND c.position_no = p.position_no)`;
+          AND c.kind = 'slot' AND ${tx.unsafe(colKey("c.column_code"))} = ${tx.unsafe(colKey("p.column_code"))} AND c.position_no = p.position_no)`;
     await writeAudit(tx, {
       tenantId, actorUserId: p.actorUserId, action: "warehouse.layout", entity: "warehouse", entityId: warehouseId,
       oldValue: { cells: before },

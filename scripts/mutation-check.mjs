@@ -109,7 +109,7 @@ const MUTATIONS = [
     edits: [["        await takeFromPallets(tx, tenantId, items.map((i) => ({ lotId: i.lot_id, qty: i.quantity_boxes })));", "        void takeFromPallets;"]], tests: [PALLET] },
   // فاز ۸: نقشه‌ی انبار. قفلِ ذخیره‌ی چیدمان و یکتاییِ «ستون + شماره» در خود دیتابیس
   { id: "p8l", expect: "دو ذخیره‌ی هم‌زمانِ چیدمان", why: "قفلِ ردیفِ انبار در ذخیره‌ی چیدمان حذف شد", file: "web/src/db/warehouseMap.ts",
-    edits: [["AND id = ${warehouseId} FOR UPDATE`;", "AND id = ${warehouseId}`;\n    await tx`SELECT pg_sleep(0.05)`;"]], tests: [MAP] },
+    edits: [["AND id = ${warehouseId} FOR NO KEY UPDATE`;", "AND id = ${warehouseId}`;\n    await tx`SELECT pg_sleep(0.05)`;"]], tests: [MAP] },
   { id: "p8u", expect: "«ستون + شماره»ی تکراری رد می‌شود", why: "ایندکسِ یکتای جای پالت روی نقشه حذف شد", file: "db/schema.sql",
     edits: [["CREATE UNIQUE INDEX uq_warehouse_cell_slot\n    ON", "CREATE INDEX uq_warehouse_cell_slot\n    ON"]], tests: [MAP] },
 ];

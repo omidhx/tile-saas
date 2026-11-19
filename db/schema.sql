@@ -385,7 +385,7 @@ CREATE CONSTRAINT TRIGGER pallet_item_sum
 -- ---------------------------------------------------------------------------
 -- مدیر چیدمان را یک بار روی شبکه می‌کشد: هر خانه یا «جای پالت» (ستون + شماره) است یا راهرو؛ خانه‌ای که
 -- ردیف ندارد خالی است. پالت عمداً به خانه FK ندارد: با همان pallet.column_code + position_no روی خانه
--- نشان داده می‌شود (بدون حساسیت به حروف و فاصله). پس عوض کردن چیدمان هیچ پالتی را عوض نمی‌کند و
+-- نشان داده می‌شود (با همان کلیدِ ایندکسِ پایین). پس عوض کردن چیدمان هیچ پالتی را عوض نمی‌کند و
 -- پالتی که محلش روی نقشه نیست «بیرون از نقشه» دیده می‌شود. جابه‌جایی پالت روی نقشه همان transferPallet است.
 CREATE TABLE warehouse_cell (
     id           UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -402,9 +402,10 @@ CREATE TABLE warehouse_cell (
     FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id),
     CHECK ((kind = 'slot') = (column_code IS NOT NULL AND position_no IS NOT NULL))
 );
--- یک «ستون + شماره» فقط یک جا روی نقشه دارد؛ وگرنه پالت روی دو خانه نشان داده می‌شد.
+-- یک «ستون + شماره» فقط یک جا روی نقشه دارد؛ وگرنه پالت روی دو خانه نشان داده می‌شد. کلید همان columnKeyِ
+-- web/src/lib/slotKey.ts است: رقم فارسی و عربی = لاتین، ي/ك = ی/ک، بدون فاصله‌ی دو طرف و حساسیت به حروف.
 CREATE UNIQUE INDEX uq_warehouse_cell_slot
-    ON warehouse_cell (tenant_id, warehouse_id, upper(btrim(column_code)), position_no) WHERE kind = 'slot';
+    ON warehouse_cell (tenant_id, warehouse_id, upper(translate(btrim(column_code), '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩يك', '01234567890123456789یک')), position_no) WHERE kind = 'slot';
 
 -- ---------------------------------------------------------------------------
 -- ۵.۵ رزرو — available >= requested همیشه، بدون استثنا (قانون #۲)
