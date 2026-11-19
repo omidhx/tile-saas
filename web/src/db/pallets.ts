@@ -233,7 +233,7 @@ export async function listPallets(p: {
 }): Promise<{ pallets: PalletRow[]; truncated: boolean }> {
   const { tenantId } = p;
   const status = p.status ?? "in_stock";
-  const limit = Math.min(p.limit ?? 500, 2000);
+  const limit = Math.min(p.limit ?? 500, 10_000); // ۱۰٬۰۰۰ فقط برای نقشه؛ فهرستِ /api/pallets سقفش را نمی‌فرستد
   const q = p.q?.trim() ? `%${p.q.trim()}%` : null;
   return withTenant(tenantId, async (tx) => {
     const rows = await tx<(Omit<PalletRow, "status" | "totalBoxes"> & { lines: PalletLine[] | null })[]>`

@@ -20,6 +20,7 @@ const ACTION_FA: Record<string, string> = {
   "product.edit": "ویرایشِ محصول",
   "pallet.edit": "ویرایشِ پالت",
   "pallet.transfer": "انتقالِ پالت",
+  "warehouse.layout": "چیدمانِ نقشه‌ی انبار",
   "customer.edit": "ویرایشِ مشتری",
   "tenant_settings.edit": "تنظیماتِ کارخانه",
   "tenant_features.edit": "امکاناتِ کارخانه",

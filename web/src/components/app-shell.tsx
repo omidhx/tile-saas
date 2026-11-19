@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BoxesIcon, ChartColumnIcon, FileSpreadsheetIcon, HistoryIcon, LayersIcon, PackagePlusIcon, InboxIcon, LayoutGridIcon, LogOutIcon, MenuIcon, MoonIcon,
-  PackageIcon, SettingsIcon, ShieldCheckIcon, StoreIcon, SunIcon, UserCogIcon, UsersIcon, WarehouseIcon,
+  MapIcon, PackageIcon, SettingsIcon, ShieldCheckIcon, StoreIcon, SunIcon, UserCogIcon, UsersIcon, WarehouseIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, LucideIcon> = {
   inbox: InboxIcon, package: PackageIcon, sheet: FileSpreadsheetIcon, users: UsersIcon, chart: ChartColumnIcon,
-  history: HistoryIcon, packagePlus: PackagePlusIcon, boxes: BoxesIcon, layers: LayersIcon, team: UserCogIcon, store: StoreIcon, warehouse: WarehouseIcon, settings: SettingsIcon, shield: ShieldCheckIcon,
+  history: HistoryIcon, packagePlus: PackagePlusIcon, boxes: BoxesIcon, layers: LayersIcon, team: UserCogIcon, store: StoreIcon, warehouse: WarehouseIcon, settings: SettingsIcon, shield: ShieldCheckIcon, map: MapIcon,
 };
 const ROLE_FA: Record<string, string> = { admin: "مدیر کارخانه", staff: "کارمند فروش" };
 

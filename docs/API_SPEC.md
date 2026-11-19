@@ -143,6 +143,7 @@ Lotهای قابل‌سفارش برای یک context. فقط `available>0`. **�
 | `/api/shared-catalog` | agent | کاتالوگِ سفارشیِ نماینده: فهرست/ساخت/باطل‌کردن/حذف. صفحه‌ی عمومیِ مشتری در `/c/<slug>/<token>` (بدونِ لاگین، فقط عکس/مشخصات/موجود، بدونِ قیمت) |
 | `/api/incoming` | staff | موجودی در راه؛ `PATCH action=arrive` وارد لجر می‌کند |
 | `/api/pallets` | staff | انبار و پالت (فاز ۷): `GET` فهرست پالت‌ها (`warehouseId`، `q`، `status=in_stock|exited|all`؛ `view=exits` سابقه‌ی خروج)، `POST` ورود کالا (چند پالت، ردیف‌های ترکیبی، `repeat`)، `PATCH action=edit|transfer|exit`. ۴۰۹ `below_committed` یعنی on_hand زیر allocated + blocked + held می‌رفت |
+| `/api/warehouse-map` | staff / admin | نقشه‌ی انبار (فاز ۸): `GET ?warehouseId` خانه‌های چیدمان و پالت‌های در انبار با `mapStatus` (free / partial / reserved، از held زنده)؛ `PUT` جایگزینی کامل چیدمان، فقط admin. جابه‌جایی پالت روی نقشه همان `PATCH /api/pallets action=transfer` است |
 | `/api/stock` | staff | جمع موجودی هر کالا در هر انبار، با held محاسبه‌ای و تعداد پالت |
 | `/api/customers` | staff | مشتری‌ها + گزارشِ پرخریدترین + تاریخچه |
 | `/api/reports` | staff | گزارش‌های مدیریتی (عملکردِ نماینده، پرفروش، راکد) |

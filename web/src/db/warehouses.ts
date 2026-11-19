@@ -66,6 +66,8 @@ export async function deleteWarehouse(params: { tenantId: string; warehouseId: s
       )::int AS n`;
     if (n > 0) return { ok: false, reason: "has_history" };
 
+    // نقشه سابقه نیست: انبارِ بی‌کالا با چیدمانِ کشیده‌شده هم پاک می‌شود (وگرنه FK ۵۰۰ می‌داد)
+    await tx`DELETE FROM warehouse_cell WHERE tenant_id = ${tenantId} AND warehouse_id = ${warehouseId}`;
     await tx`DELETE FROM warehouse WHERE tenant_id = ${tenantId} AND id = ${warehouseId}`;
     return { ok: true };
   });

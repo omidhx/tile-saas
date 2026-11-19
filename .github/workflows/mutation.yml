@@ -20,6 +20,8 @@ on:
       - "web/src/db/imports.ts"
       - "web/src/db/pallets.ts"
       - "web/src/db/pallets.test.ts"
+      - "web/src/db/warehouseMap.ts"
+      - "web/src/db/warehouseMap.test.ts"
       - "web/src/lib/importRows.ts"
       - "web/src/db/_testdb.ts"
       - "web/src/auth/**"

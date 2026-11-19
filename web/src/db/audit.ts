@@ -40,7 +40,8 @@ export type AuditAction =
   | "tenant_features.edit"
   | "sms_config.edit"
   | "pallet.edit"
-  | "pallet.transfer";
+  | "pallet.transfer"
+  | "warehouse.layout";
 
 export async function writeAudit(
   tx: TransactionSql,
