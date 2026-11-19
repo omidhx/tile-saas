@@ -28,6 +28,15 @@ INSERT INTO warehouse (id, tenant_id, name, code, type) VALUES
 INSERT INTO inventory_lot (id, tenant_id, variant_id, warehouse_id, batch_number) VALUES
     ('a4444444-4444-4444-4444-444444444444', '11111111-1111-1111-1111-111111111111',
      'a2222222-2222-2222-2222-222222222222', 'a3333333-3333-3333-3333-333333333333', 'B-001');
+-- یک دستور، یک تراکنش: جمع پالت‌های lot باید با on_hand برابر باشد (تریگر deferredِ check_pallet_sum، فاز ۷)
+WITH p AS (
+    INSERT INTO pallet (id, tenant_id, warehouse_id) VALUES
+        ('a9999999-9999-9999-9999-999999999999', '11111111-1111-1111-1111-111111111111', 'a3333333-3333-3333-3333-333333333333')
+), i AS (
+    INSERT INTO pallet_item (tenant_id, pallet_id, lot_id, warehouse_id, qty_boxes) VALUES
+        ('11111111-1111-1111-1111-111111111111', 'a9999999-9999-9999-9999-999999999999',
+         'a4444444-4444-4444-4444-444444444444', 'a3333333-3333-3333-3333-333333333333', 100)
+)
 INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes, allocated_qty_boxes, blocked_qty_boxes) VALUES
     ('11111111-1111-1111-1111-111111111111', 'a4444444-4444-4444-4444-444444444444', 100, 30, 10);
 INSERT INTO agent_account (id, tenant_id, legal_name, code) VALUES
