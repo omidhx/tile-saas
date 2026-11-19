@@ -3,13 +3,21 @@ import type { Ctx } from "@/lib/useContexts";
 /**
  * منوی پنل پشتیبان، گروه‌بندی‌شده مثل طلاسرام (عملیات، محصولات، فروش، گزارش‌ها، تنظیمات). هر دو پوسته
  * (PageShell قدیم و AppShell تازه) از همین می‌خوانند؛ `icon` نام آیکن lucide است و فقط پوسته‌ی تازه آن را نشان می‌دهد.
- * لینکِ صفحه‌ای که کاربر بهش دسترسی ندارد اصلاً نشان داده نمی‌شود. صفحه‌های انبار و حواله‌ی کامل در فاز ۷ تا ۹ اضافه می‌شوند.
+ * لینکِ صفحه‌ای که کاربر بهش دسترسی ندارد اصلاً نشان داده نمی‌شود. صفحه‌های انبار در فاز ۷ آمدند؛ حواله‌ی کامل فاز ۹.
  */
 export type NavItem = { href: string; label: string; icon?: string; adminOnly?: boolean };
 export type NavGroup = { title: string; items: NavItem[] };
 
 export const STAFF_NAV_GROUPS: NavGroup[] = [
   { title: "عملیات", items: [{ href: "/staff", label: "کارتابل", icon: "inbox" }] },
+  {
+    title: "انبار",
+    items: [
+      { href: "/warehouse/goods-in", label: "ورود کالا", icon: "packagePlus" },
+      { href: "/warehouse", label: "لیست کالاهای انبار", icon: "boxes" },
+      { href: "/warehouse/stock", label: "جمع موجودی", icon: "layers" },
+    ],
+  },
   {
     title: "محصولات",
     items: [

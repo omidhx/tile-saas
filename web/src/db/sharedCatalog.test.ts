@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import {
   createCatalog, updateCatalog, listCatalogs, setCatalogActive, deleteCatalog, getPublicCatalog,
@@ -40,7 +40,7 @@ before(async () => {
     -- فقط V1 موجودی دارد
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT}','${T}','${V1}','${WH}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',50);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 beforeEach(async () => { await sql`DELETE FROM shared_catalog WHERE tenant_id = ${T}`; });
 

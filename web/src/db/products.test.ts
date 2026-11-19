@@ -27,7 +27,7 @@ beforeEach(async () => {
   // بدونِ پاک‌کردنِ اول لجر/بالانس/لات/قیمت، حذفِ variant با خطای FK رد می‌شود
   // (تستِ basePrice یک price_list_item می‌سازد که تستِ بعدی را همین‌جا گیر می‌انداخت).
   await sql`DELETE FROM inventory_transaction WHERE tenant_id = ${T}`;
-  await sql`DELETE FROM inventory_balance WHERE tenant_id = ${T}`;
+  await sql.unsafe(`DELETE FROM pallet_item WHERE tenant_id = '${T}'; DELETE FROM pallet WHERE tenant_id = '${T}'; DELETE FROM inventory_balance WHERE tenant_id = '${T}'`);
   await sql`DELETE FROM inventory_lot WHERE tenant_id = ${T}`;
   await sql`DELETE FROM price_list_item WHERE tenant_id = ${T}`;
   await sql`DELETE FROM price_list WHERE tenant_id = ${T}`;

@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, ALIGN_PALLETS } from "./_testdb";
 import { reserve } from "./reservations";
 import { withTenant } from "./client";
 import { T, seedTenant } from "./_fixtures";
@@ -22,7 +22,7 @@ before(async () => {
     INSERT INTO agent_account (id,tenant_id,legal_name,code) VALUES ('${AG}','${T}','Ag','AG1');
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT}','${T}','a2222222-2222-2222-2222-222222222222','a3333333-3333-3333-3333-333333333333');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',10);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 /** رزرو active برای کل موجودی؛ منقضی یا زنده. */

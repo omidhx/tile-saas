@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser, enableAllFeatures } from "./_fixtures";
 import { reserve, listReservations } from "./reservations";
@@ -30,7 +30,7 @@ before(async () => {
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT}','${T}','${V}','${WH}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',100);
     INSERT INTO price_list_item (tenant_id,price_list_id,variant_id,price) VALUES ('${T}','${PL}','${V}',1000000);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 test("رزروِ active: بدونِ purchaseValue، با estimatedValue از قیمتِ زنده", async () => {

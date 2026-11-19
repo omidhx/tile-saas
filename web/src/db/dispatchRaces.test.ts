@@ -1,7 +1,7 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, ALIGN_PALLETS } from "./_testdb";
 import { reserve } from "./reservations";
 import { approveReservation } from "./salesRequests";
 import { createDispatchFromRequest, setDispatchStatus } from "./dispatches";
@@ -37,7 +37,7 @@ before(async () => {
       ('${LOT_A}','${T}','${V}','${WH_A}'), ('${LOT_B}','${T}','${V}','${WH_B}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES
       ('${T}','${LOT_A}',1000), ('${T}','${LOT_B}',1000);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 async function approved(items: { lotId: string; quantityBoxes: number }[]) {

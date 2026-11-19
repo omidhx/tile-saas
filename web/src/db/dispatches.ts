@@ -1,4 +1,5 @@
 import { withTenant } from "./client";
+import { takeFromPallets } from "./pallets";
 import { toJalali } from "@/lib/date";
 
 export type CreateDispatchResult =
@@ -302,6 +303,10 @@ export async function setDispatchStatus(params: {
                     'sales_dispatch', ${dispatchId}, ${actorUserId})`;
         }
       }
+      // کارتن‌های بارگیری‌شده از پالت‌ها هم کم می‌شوند، زیرِ همان قفل (ناوردای پالت، فاز ۷).
+      // پالت تا فاز ۹ روی حواله انتخاب نمی‌شود، پس از قدیمی‌ترین پالتِ lot برداشته می‌شود.
+      if (toStatus === "loaded")
+        await takeFromPallets(tx, tenantId, items.map((i) => ({ lotId: i.lot_id, qty: i.quantity_boxes })));
       // درخواست فقط وقتی لغو می‌شود که هیچ حواله‌ی زنده‌ی دیگری نمانده باشد. سفارشِ
       // دوانباره دو حواله دارد؛ لغوِ یکی کلِ درخواست را لغو می‌کرد و دیگری بارگیری می‌شد
       // (E3-F4). قسمتِ لغوشده دوباره ساخته نمی‌شود، چون تخصیصش همین‌جا آزاد شد.

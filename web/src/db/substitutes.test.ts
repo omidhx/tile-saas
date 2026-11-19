@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { suggestSubstitutes, addSubstitute, listSubstitutes, removeSubstitute } from "./substitutes";
 import { T, seedTenant, enableAllFeatures } from "./_fixtures";
@@ -47,7 +47,7 @@ before(async () => {
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES
       ('${T}','a4444444-4444-4444-4444-44444444440b',50),
       ('${T}','a4444444-4444-4444-4444-44444444440c',80);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 beforeEach(async () => { await sql`DELETE FROM product_substitute WHERE tenant_id = ${T}`; });
 

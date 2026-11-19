@@ -69,3 +69,28 @@ export async function resetSchema() {
   await sql.unsafe(`ALTER ROLE app_user PASSWORD '${decodeURIComponent(app.password).replaceAll("'", "''")}'`);
   await assertAppRoleIsRestricted();
 }
+
+/**
+ * seedِ تست موجودی را مستقیم در inventory_balance می‌نویسد. از فاز ۷ جمعِ پالت‌های هر lot باید با
+ * on_hand برابر باشد (تریگرِ deferredِ check_pallet_sum)، پس هر seed یا UPDATEِ مستقیمِ on_hand در
+ * **همان تراکنش** این را هم اجرا می‌کند: برای هر lotِ ناتراز، ردیف‌های پالتش پاک و یک پالتِ «بدون محل»
+ * با همان on_hand ساخته می‌شود. فقط برای تست؛ کد محصول هرگز موجودی را این‌طور «تراز» نمی‌کند.
+ */
+export const ALIGN_PALLETS = `
+WITH bad AS MATERIALIZED (
+  SELECT gen_random_uuid() AS pid, b.tenant_id, b.lot_id, l.warehouse_id, b.on_hand_qty_boxes AS q
+  FROM inventory_balance b JOIN inventory_lot l ON l.id = b.lot_id
+  WHERE b.on_hand_qty_boxes <> COALESCE((SELECT SUM(qty_boxes) FROM pallet_item pi WHERE pi.lot_id = b.lot_id), 0)
+), del AS (DELETE FROM pallet_item pi USING bad WHERE pi.lot_id = bad.lot_id),
+p AS (INSERT INTO pallet (id, tenant_id, warehouse_id) SELECT pid, tenant_id, warehouse_id FROM bad WHERE q > 0)
+INSERT INTO pallet_item (tenant_id, pallet_id, lot_id, warehouse_id, qty_boxes)
+SELECT tenant_id, pid, lot_id, warehouse_id, q FROM bad WHERE q > 0;
+`;
+
+/** همان ALIGN_PALLETS برای seedی که با چند دستورِ جدا نوشته می‌شود: همه در یک تراکنش. */
+export async function withAlignedPallets(fn: (tx: postgres.TransactionSql) => Promise<unknown>) {
+  await sql.begin(async (tx) => {
+    await fn(tx);
+    await tx.unsafe(ALIGN_PALLETS);
+  });
+}

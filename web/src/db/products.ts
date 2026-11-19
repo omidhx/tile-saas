@@ -1,5 +1,6 @@
 import { withTenant } from "./client";
 import { writeAudit, type AuditValue } from "./audit";
+import { addUnplacedPallets } from "./pallets";
 import type { TransactionSql } from "postgres";
 import { deleteUploadFile, deleteUploadFiles } from "@/lib/fileCleanup";
 
@@ -163,6 +164,7 @@ export async function createProduct(tenantId: string, a: Attrs, actorUserId?: st
         INSERT INTO inventory_transaction
           (tenant_id, lot_id, transaction_type, on_hand_delta_boxes, reference_type, reference_id, actor_user_id)
         VALUES (${tenantId}, ${lot.id}, 'initial_stock', ${a.initialStock.quantityBoxes}, 'product', ${p.id}, ${actorUserId ?? null})`;
+      await addUnplacedPallets(tx, tenantId, [{ lotId: lot.id, qty: a.initialStock.quantityBoxes }], "موجودیِ اولیه", actorUserId ?? null);
     }
     return { ok: true as const, id: p.id };
   });

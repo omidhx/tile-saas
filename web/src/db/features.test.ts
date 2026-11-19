@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, ALIGN_PALLETS } from "./_testdb";
 import { T, U, seedTenantUser, enableAllFeatures } from "./_fixtures";
 import { getFeatures, setFeatures } from "./features";
 import { ensureDefaultPriceList, resolvePrices } from "./pricing";
@@ -51,7 +51,7 @@ before(async () => {
     INSERT INTO agent_price_override (tenant_id,agent_account_id,variant_id,price) VALUES ('${T}','${AG}','${V}',500);
     INSERT INTO volume_discount (tenant_id,variant_id,min_qty_boxes,percent_off) VALUES ('${T}','${V}',10,10);
     UPDATE tenant SET auto_approve_limit = 1000000 WHERE id = '${T}';
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 beforeEach(async () => {

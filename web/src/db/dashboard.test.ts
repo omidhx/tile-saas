@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve } from "./reservations";
@@ -29,7 +29,7 @@ before(async () => {
     INSERT INTO product_variant (id,tenant_id,product_id,sku) VALUES ('${V}','${T}','a1111111-1111-1111-1111-111111111111','S1');
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT}','${T}','${V}','${WH}');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',100);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 test("قبل از هر حرکتی: صفر و بدونِ رو-به-اتمام (موجودی ۱۰۰ بالای آستانه است)", async () => {

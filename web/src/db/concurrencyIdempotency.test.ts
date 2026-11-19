@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sql, resetSchema } from "./_testdb";
+import { sql, resetSchema, withAlignedPallets } from "./_testdb";
 import { reserve } from "./reservations";
 
 // UUID‌های ثابت برای تست
@@ -30,7 +30,7 @@ async function seedTenantForReservations() {
   await sql`INSERT INTO product_variant (id, tenant_id, product_id, sku) VALUES (${V1}, ${T1}, ${P1}, 'SKU1')`;
   await sql`INSERT INTO warehouse (id, tenant_id, name, code, type) VALUES (${W1}, ${T1}, 'Main', 'W1', 'main')`;
   await sql`INSERT INTO inventory_lot (id, tenant_id, variant_id, warehouse_id) VALUES (${L1}, ${T1}, ${V1}, ${W1})`;
-  await sql`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${T1}, ${L1}, 100)`;
+  await withAlignedPallets((tx) => tx`INSERT INTO inventory_balance (tenant_id, lot_id, on_hand_qty_boxes) VALUES (${T1}, ${L1}, 100)`);
 }
 
 test("idempotency: دو رزرو هم‌زمان با key و payload یکسان → یکی dedupe", async () => {

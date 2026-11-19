@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, withAlignedPallets } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { applySnapshot } from "./imports";
 import { reserve } from "./reservations";
@@ -64,13 +64,13 @@ test("کلِ زنجیره (import→رزرو→تأیید→بارگیری) لج
 test("ناترازی را می‌گیرد: UPDATE دستی روی موجودی بدون لجر", async () => {
   const [lot] = await sql<{ id: string }[]>`SELECT id FROM inventory_lot WHERE tenant_id = ${T}`;
   // شبیه‌سازیِ دست‌کاریِ مستقیمِ دیتابیس (کاری که لجر برای گرفتنش وجود دارد)
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes + 5 WHERE lot_id = ${lot.id}`;
+  await withAlignedPallets((tx) => tx`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes + 5 WHERE lot_id = ${lot.id}`);
 
   const drift = await findDrift(T);
   assert.equal(drift.length, 1, "باید ۱ Lot ناتراز پیدا کند");
   assert.equal(drift[0].onHand - drift[0].ledgerOnHand, 5, "اختلاف دقیقاً ۵ است");
 
-  await sql`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes - 5 WHERE lot_id = ${lot.id}`;
+  await withAlignedPallets((tx) => tx`UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes - 5 WHERE lot_id = ${lot.id}`);
   assert.equal((await findDrift(T)).length, 0, "بعد از برگرداندن، دوباره تراز");
 });
 

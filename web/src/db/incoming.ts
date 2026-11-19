@@ -1,5 +1,6 @@
 import { withTenant } from "./client";
 import { enqueueRestockNotifications } from "./alerts";
+import { addUnplacedPallets } from "./pallets";
 
 /**
  * موجودی در راه / پیش‌فروش تولید (v2، spec ۹) — «فلوی کامل‌تر از فلگ ساده».
@@ -123,9 +124,12 @@ export async function markArrived(p: {
         VALUES (${p.tenantId}, ${lot.id}, 0)`;
     }
 
+    // قفلِ balance قبل از تغییر (قانون ۴؛ E3-F10)، و کارتن‌ها روی پالتِ «بدون محل» (فاز ۷)
+    await tx`SELECT 1 FROM inventory_balance WHERE tenant_id = ${p.tenantId} AND lot_id = ${lot.id} FOR UPDATE`;
     await tx`
       UPDATE inventory_balance SET on_hand_qty_boxes = on_hand_qty_boxes + ${inc.quantity_boxes}
       WHERE tenant_id = ${p.tenantId} AND lot_id = ${lot.id}`;
+    await addUnplacedPallets(tx, p.tenantId, [{ lotId: lot.id, qty: inc.quantity_boxes }], "رسیدنِ محموله‌ی در راه", p.actorUserId);
     await tx`
       INSERT INTO inventory_transaction
         (tenant_id, lot_id, transaction_type, on_hand_delta_boxes, reference_type, reference_id, actor_user_id, note)

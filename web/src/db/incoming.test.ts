@@ -35,7 +35,7 @@ beforeEach(async () => {
   await sql`DELETE FROM reservation_item WHERE tenant_id = ${T}`;
   await sql`DELETE FROM reservation WHERE tenant_id = ${T}`;
   await sql`DELETE FROM inventory_transaction WHERE tenant_id = ${T}`;
-  await sql`DELETE FROM inventory_balance WHERE tenant_id = ${T}`;
+  await sql.unsafe(`DELETE FROM pallet_item WHERE tenant_id = '${T}'; DELETE FROM pallet WHERE tenant_id = '${T}'; DELETE FROM inventory_balance WHERE tenant_id = '${T}'`);
   await sql`DELETE FROM inventory_lot WHERE tenant_id = ${T}`;
 });
 

@@ -20,6 +20,8 @@ const RESERVE_SUITE = [
 ];
 const LOCK = "      ORDER BY lot_id\n      FOR UPDATE`;";
 const BACKUP_TEST = ["bash", "scripts/ci-backup-script-test.sh"];
+const PALLETS = "web/src/db/pallets.ts";
+const PALLET = "src/db/pallets.test.ts";
 
 const MUTATIONS = [
   // ۱۰ موردی که در ممیزی از تست‌ها رد شدند
@@ -93,6 +95,17 @@ const MUTATIONS = [
     tests: ["src/db/importBroken.test.ts"] },
   { id: "p5a", expect: "سه ایمپورتِ هم‌زمان با بچِ تازه", why: "قفلِ ایمپورتِ هر tenant حذف شد", file: "web/src/db/imports.ts",
     edits: [['  tx`SELECT pg_advisory_xact_lock(hashtext(${"import:" + tenantId}))`;', "  tx`SELECT 1`;"]], tests: ["src/db/importBroken.test.ts"] },
+  // فاز ۷: پالت. ناوردا «جمعِ پالت‌های هر lot = on_hand» در دیتابیس و قفلِ موجودی در مسیرهای پالت
+  { id: "p7t", expect: "ناوردا در دیتابیس", why: "تریگرِ ناوردای پالت هیچ‌وقت خطا نمی‌دهد", file: "db/schema.sql",
+    edits: [["        IF COALESCE(v_on, 0) <> v_sum THEN", "        IF FALSE THEN"]], tests: [PALLET] },
+  { id: "p7l", expect: "هم‌زمانی پالت: ۱۲ خروج", why: "قفلِ balance در مسیرهای پالت حذف و پنجره‌ی race با pg_sleep باز شد", file: PALLETS,
+    edits: [["    ORDER BY lot_id FOR UPDATE`;\n  const held = await heldOf(", "    ORDER BY lot_id`;\n  await tx`SELECT pg_sleep(0.05)`;\n  const held = await heldOf("]], tests: [PALLET] },
+  { id: "p7x", expect: "ویرایش و خروج on_hand را زیرِ heldِ رزروِ زنده نمی‌برند", why: "چکِ تعهد در خروجِ غیرفروش حذف شد", file: PALLETS,
+    edits: [["      if (b.on_hand - l.qty < b.committed)", "      if (false && b.on_hand - l.qty < b.committed)"]], tests: [PALLET] },
+  { id: "p7g", expect: "ورودِ کالای هم‌زمان با کلیدِ تازه", why: "قفلِ ساختِ lot در ورود کالا حذف و پنجره با pg_sleep باز شد", file: PALLETS,
+    edits: [['    await tx`SELECT pg_advisory_xact_lock(hashtext(${"import:" + tenantId}))`;', "    await tx`SELECT pg_sleep(0.05)`;"]], tests: [PALLET] },
+  { id: "p7d", expect: "بارگیری کارتن را از قدیمی‌ترین پالت", why: "بارگیری کارتن را از پالت کم نمی‌کند", file: "web/src/db/dispatches.ts",
+    edits: [["        await takeFromPallets(tx, tenantId, items.map((i) => ({ lotId: i.lot_id, qty: i.quantity_boxes })));", "        void takeFromPallets;"]], tests: [PALLET] },
 ];
 
 const repo = resolve(fileURLToPath(import.meta.url), "../..");

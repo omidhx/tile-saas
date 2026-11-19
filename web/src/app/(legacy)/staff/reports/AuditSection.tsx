@@ -18,6 +18,8 @@ const ACTION_FA: Record<string, string> = {
   "auto_approve_limit.tenant": "سقف تأیید خودکار — کارخانه",
   "auto_approve_limit.agent": "سقف تأیید خودکار — نمایندگی",
   "product.edit": "ویرایشِ محصول",
+  "pallet.edit": "ویرایشِ پالت",
+  "pallet.transfer": "انتقالِ پالت",
   "customer.edit": "ویرایشِ مشتری",
   "tenant_settings.edit": "تنظیماتِ کارخانه",
   "tenant_features.edit": "امکاناتِ کارخانه",

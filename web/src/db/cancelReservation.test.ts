@@ -1,6 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { sql } from "./_testdb";
+import { sql, ALIGN_PALLETS } from "./_testdb";
 import { resetSchema } from "./_testdb";
 import { T, U, seedTenantUser } from "./_fixtures";
 import { reserve, cancelReservation } from "./reservations";
@@ -20,7 +20,7 @@ before(async () => {
     INSERT INTO warehouse (id,tenant_id,name,code,type) VALUES ('a3333333-3333-3333-3333-333333333333','${T}','W','W1','main');
     INSERT INTO inventory_lot (id,tenant_id,variant_id,warehouse_id) VALUES ('${LOT}','${T}','${VAR}','a3333333-3333-3333-3333-333333333333');
     INSERT INTO inventory_balance (tenant_id,lot_id,on_hand_qty_boxes) VALUES ('${T}','${LOT}',100);
-  `);
+  ${ALIGN_PALLETS}`);
 });
 
 const available = async () =>
