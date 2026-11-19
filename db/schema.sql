@@ -381,6 +381,32 @@ CREATE CONSTRAINT TRIGGER pallet_item_sum
     DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_pallet_sum();
 
 -- ---------------------------------------------------------------------------
+-- ۵.۴ج نقشه‌ی انبار — خانه‌های شبکه (فاز ۸)
+-- ---------------------------------------------------------------------------
+-- مدیر چیدمان را یک بار روی شبکه می‌کشد: هر خانه یا «جای پالت» (ستون + شماره) است یا راهرو؛ خانه‌ای که
+-- ردیف ندارد خالی است. پالت عمداً به خانه FK ندارد: با همان pallet.column_code + position_no روی خانه
+-- نشان داده می‌شود (بدون حساسیت به حروف و فاصله). پس عوض کردن چیدمان هیچ پالتی را عوض نمی‌کند و
+-- پالتی که محلش روی نقشه نیست «بیرون از نقشه» دیده می‌شود. جابه‌جایی پالت روی نقشه همان transferPallet است.
+CREATE TABLE warehouse_cell (
+    id           UUID NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id    UUID NOT NULL REFERENCES tenant(id),
+    warehouse_id UUID NOT NULL,
+    x            INT NOT NULL CHECK (x BETWEEN 0 AND 59),
+    y            INT NOT NULL CHECK (y BETWEEN 0 AND 59),
+    kind         TEXT NOT NULL CHECK (kind IN ('slot', 'aisle')),
+    column_code  TEXT CHECK (column_code IS NULL OR length(btrim(column_code)) BETWEEN 1 AND 40),
+    position_no  INT CHECK (position_no > 0),
+    PRIMARY KEY (id),
+    UNIQUE (tenant_id, id),
+    UNIQUE (tenant_id, warehouse_id, x, y),
+    FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouse(tenant_id, id),
+    CHECK ((kind = 'slot') = (column_code IS NOT NULL AND position_no IS NOT NULL))
+);
+-- یک «ستون + شماره» فقط یک جا روی نقشه دارد؛ وگرنه پالت روی دو خانه نشان داده می‌شد.
+CREATE UNIQUE INDEX uq_warehouse_cell_slot
+    ON warehouse_cell (tenant_id, warehouse_id, upper(btrim(column_code)), position_no) WHERE kind = 'slot';
+
+-- ---------------------------------------------------------------------------
 -- ۵.۵ رزرو — available >= requested همیشه، بدون استثنا (قانون #۲)
 -- ---------------------------------------------------------------------------
 

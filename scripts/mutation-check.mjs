@@ -22,6 +22,7 @@ const LOCK = "      ORDER BY lot_id\n      FOR UPDATE`;";
 const BACKUP_TEST = ["bash", "scripts/ci-backup-script-test.sh"];
 const PALLETS = "web/src/db/pallets.ts";
 const PALLET = "src/db/pallets.test.ts";
+const MAP = "src/db/warehouseMap.test.ts";
 
 const MUTATIONS = [
   // ۱۰ موردی که در ممیزی از تست‌ها رد شدند
@@ -106,6 +107,11 @@ const MUTATIONS = [
     edits: [['    await tx`SELECT pg_advisory_xact_lock(hashtext(${"import:" + tenantId}))`;', "    await tx`SELECT pg_sleep(0.05)`;"]], tests: [PALLET] },
   { id: "p7d", expect: "بارگیری کارتن را از قدیمی‌ترین پالت", why: "بارگیری کارتن را از پالت کم نمی‌کند", file: "web/src/db/dispatches.ts",
     edits: [["        await takeFromPallets(tx, tenantId, items.map((i) => ({ lotId: i.lot_id, qty: i.quantity_boxes })));", "        void takeFromPallets;"]], tests: [PALLET] },
+  // فاز ۸: نقشه‌ی انبار. قفلِ ذخیره‌ی چیدمان و یکتاییِ «ستون + شماره» در خود دیتابیس
+  { id: "p8l", expect: "دو ذخیره‌ی هم‌زمانِ چیدمان", why: "قفلِ ردیفِ انبار در ذخیره‌ی چیدمان حذف شد", file: "web/src/db/warehouseMap.ts",
+    edits: [["AND id = ${warehouseId} FOR UPDATE`;", "AND id = ${warehouseId}`;\n    await tx`SELECT pg_sleep(0.05)`;"]], tests: [MAP] },
+  { id: "p8u", expect: "«ستون + شماره»ی تکراری رد می‌شود", why: "ایندکسِ یکتای جای پالت روی نقشه حذف شد", file: "db/schema.sql",
+    edits: [["CREATE UNIQUE INDEX uq_warehouse_cell_slot\n    ON", "CREATE INDEX uq_warehouse_cell_slot\n    ON"]], tests: [MAP] },
 ];
 
 const repo = resolve(fileURLToPath(import.meta.url), "../..");

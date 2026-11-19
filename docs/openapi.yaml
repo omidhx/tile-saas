@@ -1156,6 +1156,24 @@ paths:
         "409": { description: below_committed — would take on_hand under allocated + blocked + held }
         "422": { description: unknown_line / exceeds_pallet / reason_required / empty_pallet }
 
+  /api/warehouse-map:
+    get:
+      tags: [Warehouse]
+      summary: Warehouse map — layout cells and in-stock pallets with status colour (staff)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Cells and pallets }
+        "404": { description: Warehouse not found in this tenant }
+    put:
+      tags: [Warehouse]
+      summary: Replace a warehouse's layout (slots = column + position, aisles); pallets are not changed (admin)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Saved; offMap = in-stock pallets whose location is not on the new layout }
+        "403": { description: Not an admin }
+        "404": { description: Warehouse not found in this tenant }
+        "422": { description: duplicate_cell / duplicate_slot / invalid_cell }
+
   /api/stock:
     get:
       tags: [Warehouse]

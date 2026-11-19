@@ -43,7 +43,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
     sales_request, sales_request_allocation, sales_request_item,
     shared_catalog, shared_catalog_item,
     stock_alert, tenant_membership,
-    volume_discount, waitlist_entry, warehouse
+    volume_discount, waitlist_entry, warehouse, warehouse_cell
 TO app_user;
 
 -- ۵. جداول سراسری (غیر tenant-scoped)
